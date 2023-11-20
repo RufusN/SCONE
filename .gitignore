@@ -6,3 +6,6 @@ cream.egg-info/
 # Ignore all hidden files (except gitignore)
 .*
 !/.gitignore
+
+# Ignore build folder
+build/
