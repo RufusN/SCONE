@@ -25,6 +25,24 @@ source {
   particle neutron;
   E 14.1;
 }
+
+viz {
+  bmp2 { 
+    type bmp; 
+    output sphere_with_dt_geom; 
+    what material; 
+    centre (0.0 0.0 0.0); 
+    axis z; 
+    res (1000 1000);  }
+  bmp1 { 
+    type bmp; 
+    output sphere_with_dt_mesh; 
+    what uniqueID; 
+    centre (0.0 0.0 0.0); 
+    axis z; 
+    res (2000 2000);  }
+} 
+
 tally  {
                 k_eff { type keffImplicitClerk;}
                 fiss { type collisionClerk; response (fiss); fiss {type macroResponse; MT -6;}}
@@ -102,7 +120,7 @@ materials {
         94239.03  0.026697;
         94240.03  0.0018700;
         94241.03  0.00011639;
-        31000.03  0.0014755;
+        31067.03  0.0014755;
       }
     }
 
