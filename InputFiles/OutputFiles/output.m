@@ -1,8 +1,8 @@
 seed = 730121214;
 pop = 20000;
 Source_batches = 200;
-Total_CPU_Time = 2.77422E+01;
-Transport_time = 2.76355E+00;
+Total_CPU_Time = 2.63598E+01;
+Transport_time = 2.66443E+00;
 batchSize = 1;
 k_eff_IMP_PROD = [ 4.45890E+04,3.50227E+01];
 k_eff_IMP_ABS = [ 1.19749E+04,1.01813E+01];
