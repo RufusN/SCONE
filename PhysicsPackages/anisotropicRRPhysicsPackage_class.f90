@@ -733,6 +733,7 @@ contains
     matIdx0 = 0
     totalLength = ZERO
     activeRay = .false.
+    newRay = .true.
     do while (totalLength < self % termination)
 
       ! Get material and cell the ray is moving through
@@ -787,12 +788,11 @@ contains
       lenFlt = real(length,defFlt)
       baseIdx = (cIdx - 1) * self % nG
       !sourceVec => self % source(baseIdx + 1 : baseIdx + self % nG)
-      angularMomVec => self % angularMoment(baseIdx + 1 : baseIdx + self % nG, :)
       sourceVec => self % angularSource(baseIdx + 1 : baseIdx + self % nG, :)
 
       !calculate source along track if boundary hit
-      if (.not. newray .AND. event == BOUNDARY_EV) then 
-      
+      if (newray .OR. event == BOUNDARY_EV) then 
+        newRay = .false.
         do g = 1, self % nG
           currentAngularSource(g) = ZERO
           ! idx = 1 is flat source .
@@ -811,28 +811,28 @@ contains
       do g = 1, self % nG
         attenuate(g) = exponential(totVec(g) * lenFlt) !aka F1 in LS
 
-        delta(g) = (fluxVec(g) - currentAngularSource(g)) * attenuate(g)
-
-        do SH = 1, self % harmonicLength
-            angularMomVec(g,idx) = angularMomVec + RCoeffs(idx) * delta(g) 
-
-            if (self % volume(cIdx) > volume_tolerance) then
-              totalAngularMoment = (angularMomVec(g,idx)/self % volume(cIdx) * totVec(g)) + currentAngularSource(g)
-            end if 
-
-        end do        
+        delta(g) = (fluxVec(g) - currentAngularSource(g)) * attenuate(g)     
         fluxVec(g) = fluxVec(g) - delta(g)
       end do
 
       ! Accumulate to scalar flux
       if (activeRay) then
-        
+
+        angularMomVec => self % angularMoment(baseIdx + 1 : baseIdx + self % nG, :)
         scalarVec => self % scalarFlux(baseIdx + 1 : baseIdx + self % nG)
       
         call OMP_set_lock(self % locks(cIdx))
         !$omp simd aligned(scalarVec)
         do g = 1, self % nG
           scalarVec(g) = scalarVec(g) + delta(g) 
+          do SH = 1, self % harmonicLength
+            angularMomVec(g,idx) = angularMomVec + RCoeffs(idx) * delta(g) 
+
+            if (self % volume(cIdx) > volume_tolerance) then
+              totalAngularMoment = (angularMomVec(g,idx)/self % volume(cIdx) * totVec(g)) + currentAngularSource(g)
+            end if 
+
+          end do   
         end do
         self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
         call OMP_unset_lock(self % locks(cIdx))
@@ -1102,12 +1102,19 @@ contains
   !!
   subroutine resetFluxes(self)
     class(anisotropicRandomRayPhysicsPackage), intent(inout) :: self
-    integer(shortInt)                             :: idx
+    integer(shortInt)                                        :: idx, SH
 
     !$omp parallel do schedule(static)
     do idx = 1, size(self % scalarFlux)
       self % prevFlux(idx) = self % scalarFlux(idx)
       self % scalarFlux(idx) = 0.0_defFlt
+
+      !$omp simd
+      do SH = 1, self % harmonicLength
+        self % angularMoment(idx,SH) = ZERO
+        self % angularSource(idx,SH) = ZERO
+      end do
+
     end do
     !$omp end parallel do
 
