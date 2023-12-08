@@ -52,9 +52,6 @@ module anisotropicRandomRayPhysicsPackage_class
   private
 
   ! Parameter for when to skip a tiny volume
-  real(defReal), parameter :: volume_tolerance = 1.0E-12
-
-  ! Parameter for when to skip a tiny volume
   real(defReal), parameter :: volume_tolerance = 1.0E-10, &
                                 SQRT3 = sqrt(3._defReal), &
                                 SQRT5_8 = sqrt(5._defReal/8._defReal), &
@@ -446,7 +443,7 @@ contains
     allocate(self % angularMoment(self % nCells * self % nG, self % harmonicLength))
     allocate(self % fluxScores(self % nCells * self % nG, 2))
     allocate(self % source(self % nCells * self % nG))
-    allocate(self % source(self % nCells * self % nG, self % harmonicLength))
+    allocate(self % angularSource(self % nCells * self % nG, self % harmonicLength))
     allocate(self % volume(self % nCells))
     allocate(self % volumeTracks(self % nCells))
     allocate(self % cellHit(self % nCells))
@@ -861,12 +858,12 @@ contains
     !! rational approximation of angles? 
     class(anisotropicRandomRayPhysicsPackage), intent(inout)       :: self
     real(defReal), dimension(self % harmonicLength), intent(out)   :: RCoeffs ! Array to store harmonic coefficients
-    real(defReal)                                                  :: X,Y,Z
+    real(defReal)                                                  :: dirX,dirY,dirZ
 
 
-    X = mu(1)
-    Y = mu(2)
-    Z = mu(3)
+    dirX = mu(1)
+    dirY = mu(2)
+    dirZ = mu(3)
 
     ! Assign coefficients based on harmonicOrder
     select case(self % harmonicLength)
@@ -875,38 +872,38 @@ contains
 
     case(4)  
         RCoeffs(1) = 1
-        RCoeffs(2) = X 
-        RCoeffs(3) = Y
-        RCoeffs(4) = Z
+        RCoeffs(2) = dirX 
+        RCoeffs(3) = dirY
+        RCoeffs(4) = dirZ
 
     case(9) 
         RCoeffs(1) = 1
-        RCoeffs(2) = X
-        RCoeffs(3) = Y
-        RCoeffs(4) = Z
-        RCoeffs(5) = SQRT3 * Z * X
-        RCoeffs(6) = SQRT3 * Y * X
-        RCoeffs(7) = HALF * (3 * Y**2 - 1)
-        RCoeffs(8) = SQRT3 * Z * Y
-        RCoeffs(9) = (Z**2 - X**2) * SQRT3 * HALF
+        RCoeffs(2) = dirX
+        RCoeffs(3) = dirY
+        RCoeffs(4) = dirZ
+        RCoeffs(5) = SQRT3 * dirZ * dirX
+        RCoeffs(6) = SQRT3 * dirY * dirX
+        RCoeffs(7) = HALF * (3 * dirY**2 - 1)
+        RCoeffs(8) = SQRT3 * dirZ * dirY
+        RCoeffs(9) = (dirZ**2 - dirX**2) * SQRT3 * HALF
 
     case(16) 
         RCoeffs(1) = 1
-        RCoeffs(2) = X
-        RCoeffs(3) = Y
-        RCoeffs(4) = Z
-        RCoeffs(5) = SQRT3 * Z * X
-        RCoeffs(6) = SQRT3 * Y * X
-        RCoeffs(7) = HALF * (3 * Y**2 - 1)
-        RCoeffs(8) = SQRT3 * Z * Y
-        RCoeffs(9) = (Z**2 - X**2) * SQRT3 * HALF
-        RCoeffs(10) = SQRT5_8 * X * (3 * Z**2 - X**2)
-        RCoeffs(11) = SQRT15 * Y * Z * X
-        RCoeffs(12) = SQRT3_8 * X * (5 * Y**2 - 1)
-        RCoeffs(13) = one_two * Y * (5 * Y**2 - 3)
-        RCoeffs(14) = SQRT3_8 * Z (5 * Y**2 - 1)
-        RCoeffs(15) = Y * (Z**2 - X**2) * SQRT15 * HALF
-        RCoeffs(16) = SQRT5_8 * Z * (Z**2 - 3 * X**2)
+        RCoeffs(2) = dirX
+        RCoeffs(3) = dirY
+        RCoeffs(4) = dirZ
+        RCoeffs(5) = SQRT3 * dirZ * dirX
+        RCoeffs(6) = SQRT3 * dirY * dirX
+        RCoeffs(7) = HALF * (3 * dirY**2 - 1)
+        RCoeffs(8) = SQRT3 * dirZ * dirY
+        RCoeffs(9) = (dirZ**2 - dirX**2) * SQRT3 * HALF
+        RCoeffs(10) = SQRT5_8 * dirX * (3 * dirZ**2 - dirX**2)
+        RCoeffs(11) = SQRT15 * dirY * dirZ * dirX
+        RCoeffs(12) = SQRT3_8 * dirX * (5 * dirY**2 - 1)
+        RCoeffs(13) = one_two * dirY * (5 * dirY**2 - 3)
+        RCoeffs(14) = SQRT3_8 * dirZ (5 * dirY**2 - 1)
+        RCoeffs(15) = dirY * (dirZ**2 - dirX**2) * SQRT15 * HALF
+        RCoeffs(16) = SQRT5_8 * dirZ * (dirZ**2 - 3 * dirX**2)
     end select
   end subroutine SphericalHarmonicCalculator
 
