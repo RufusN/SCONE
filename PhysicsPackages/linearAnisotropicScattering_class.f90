@@ -1099,9 +1099,9 @@ contains
         RCoeffs(4) = Z
         RCoeffs(5) = SQRT3 * Z * X
         RCoeffs(6) = SQRT3 * Y * X
-        RCoeffs(7) = one_two * (3 * Y**2 - 1)
+        RCoeffs(7) = HALF * (3 * Y**2 - 1)
         RCoeffs(8) = SQRT3 * Z * Y
-        RCoeffs(9) = (Z**2 - X**2) * SQRT3 / 2
+        RCoeffs(9) = (Z**2 - X**2) * SQRT3 * HALF
 
     case(16) 
         RCoeffs(1) = 1
@@ -1110,15 +1110,15 @@ contains
         RCoeffs(4) = Z
         RCoeffs(5) = SQRT3 * Z * X
         RCoeffs(6) = SQRT3 * Y * X
-        RCoeffs(7) = one_two * (3 * Y**2 - 1)
+        RCoeffs(7) = HALF * (3 * Y**2 - 1)
         RCoeffs(8) = SQRT3 * Z * Y
-        RCoeffs(9) = (Z**2 - X**2) * SQRT3 / 2
+        RCoeffs(9) = (Z**2 - X**2) * SQRT3 * HALF
         RCoeffs(10) = SQRT5_8 * X * (3 * Z**2 - X**2)
         RCoeffs(11) = SQRT15 * Y * Z * X
         RCoeffs(12) = SQRT3_8 * X * (5 * Y**2 - 1)
         RCoeffs(13) = one_two * Y * (5 * Y**2 - 3)
         RCoeffs(14) = SQRT3_8 * Z (5 * Y**2 - 1)
-        RCoeffs(15) = Y * (Z**2 - X**2) * SQRT15 / 2
+        RCoeffs(15) = Y * (Z**2 - X**2) * SQRT15 * HALF
         RCoeffs(16) = SQRT5_8 * Z * (Z**2 - 3 * X**2)
     end select
   end subroutine SphericalHarmonicCalculator
