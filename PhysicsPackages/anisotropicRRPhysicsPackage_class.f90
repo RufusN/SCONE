@@ -1,4 +1,4 @@
-module anisotropicRandomRayPhysicsPackage_class
+module anisotropicRRPhysicsPackage_class
 
   use numPrecision
   use universalVariables
@@ -86,7 +86,7 @@ module anisotropicRandomRayPhysicsPackage_class
   !!
   !! Sample Input Dictionary:
   !!   PP {
-  !!     type anisotropicRandomRayPhysicsPackage;
+  !!     type anisotropicRRPhysicsPackage;
   !!     dead 10;              // Dead length where rays do not score to scalar fluxes
   !!     termination 100;      // Length a ray travels before it is terminated
   !!     rays 1000;            // Number of rays to sample per iteration
@@ -157,7 +157,7 @@ module anisotropicRandomRayPhysicsPackage_class
   !! Interface:
   !!   physicsPackage interface
   !!
-  type, public, extends(physicsPackage) :: anisotropicRandomRayPhysicsPackage
+  type, public, extends(physicsPackage) :: anisotropicRRPhysicsPackage
     private
     ! Components
     class(geometryStd), pointer           :: geom
@@ -204,10 +204,19 @@ module anisotropicRandomRayPhysicsPackage_class
     real(defReal), dimension(2)                :: keffScore
     real(defFlt), dimension(:), allocatable    :: scalarFlux
     real(defFlt), dimension(:), allocatable    :: prevFlux
+
+    real(defFlt), dimension(:,:), allocatable  :: angularSourceComp
+
+    real(defFlt), dimension(:,:), allocatable  :: angularDeltaComp
+
     real(defFlt), dimension(:,:), allocatable  :: angularMoment
+    real(defFlt), dimension(:,:), allocatable  :: prevAngularMoment
+
+    real(defFlt), dimension(:,:), allocatable  :: angularSource
+
+
     real(defReal), dimension(:,:), allocatable :: fluxScores
     real(defFlt), dimension(:), allocatable    :: source
-    real(defFlt), dimension(:,:), allocatable  :: angularSource
     real(defReal), dimension(:), allocatable   :: volume
     real(defReal), dimension(:), allocatable   :: volumeTracks
 
@@ -248,7 +257,7 @@ module anisotropicRandomRayPhysicsPackage_class
     procedure, private :: printSettings
 
 
-  end type anisotropicRandomRayPhysicsPackage
+  end type anisotropicRRPhysicsPackage
 
 contains
 
@@ -258,7 +267,7 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine init(self,dict)
-    class(anisotropicRandomRayPhysicsPackage), intent(inout) :: self
+    class(anisotropicRRPhysicsPackage), intent(inout) :: self
     class(dictionary), intent(inout)              :: dict
     integer(shortInt)                             :: seed_temp, i, g, g1, m
     integer(longInt)                              :: seed
@@ -272,7 +281,7 @@ contains
     type(outputFile)                              :: test_out
     class(baseMgNeutronMaterial), pointer         :: mat
     class(materialHandle), pointer                :: matPtr
-    character(100), parameter :: Here = 'init (anisotropicRandomRayPhysicsPackage_class.f90)'
+    character(100), parameter :: Here = 'init (anisotropicRRPhysicsPackage_class.f90)'
 
     call cpu_time(self % CPU_time_start)
     
@@ -290,11 +299,9 @@ contains
     ! Stabilisation factor for negative in-group scattering
     call dict % getOrDefault(self % rho, 'rho', ZERO)
 
-
-    ! Stabilisation factor for negative in-group scattering
     call dict % getOrDefault(self % harmonicOrder, 'harmonicOrder', ZERO)
 
-    self % harmonicLength = ( harmonicOrder + 1 ) **2
+    self % harmonicLength = ( harmonicOrder + 1 )**2
 
     ! Print fluxes?
     call dict % getOrDefault(self % printFlux, 'printFlux', .false.)
@@ -440,10 +447,17 @@ contains
     ! Allocate results space
     allocate(self % scalarFlux(self % nCells * self % nG))
     allocate(self % prevFlux(self % nCells * self % nG))
-    allocate(self % angularMoment(self % nCells * self % nG, self % harmonicLength))
     allocate(self % fluxScores(self % nCells * self % nG, 2))
     allocate(self % source(self % nCells * self % nG))
+
+    allocate(self % angularDeltaComp(self % nCells * self % nG, self % harmonicLength))
+
+    allocate(self % angularSourceComp(self % nCells * self % nG, self % harmonicLength))
+
+    allocate(self % angularMoment(self % nCells * self % nG, self % harmonicLength))
+
     allocate(self % angularSource(self % nCells * self % nG, self % harmonicLength))
+
     allocate(self % volume(self % nCells))
     allocate(self % volumeTracks(self % nCells))
     allocate(self % cellHit(self % nCells))
@@ -491,7 +505,7 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine run(self)
-    class(anisotropicRandomRayPhysicsPackage), intent(inout) :: self
+    class(anisotropicRRPhysicsPackage), intent(inout) :: self
 
     call self % printSettings()
     call self % cycles()
@@ -512,7 +526,7 @@ contains
   !! given criteria or when a fixed number of iterations has been passed.
   !!
   subroutine cycles(self)
-    class(anisotropicRandomRayPhysicsPackage), intent(inout) :: self
+    class(anisotropicRRPhysicsPackage), intent(inout) :: self
     type(ray), save                               :: r
     type(RNG), target, save                       :: pRNG
     real(defFlt)                                  :: hitRate, ONE_KEFF
@@ -663,12 +677,12 @@ contains
   !! and performs the build operation
   !!
   subroutine initialiseRay(self, r)
-    class(anisotropicRandomRayPhysicsPackage), intent(inout) :: self
+    class(anisotropicRRPhysicsPackage), intent(inout) :: self
     type(ray), intent(inout)                      :: r
     real(defReal)                                 :: mu, phi
     real(defReal), dimension(3)                   :: u, rand3, x
     integer(shortInt)                             :: i, matIdx, cIdx
-    character(100), parameter :: Here = 'initialiseRay (anisotropicRandomRayPhysicsPackage_class.f90)'
+    character(100), parameter :: Here = 'initialiseRay (anisotropicRRPhysicsPackage_class.f90)'
 
     i = 0
     mu = TWO * r % pRNG % get() - ONE
@@ -710,23 +724,25 @@ contains
   !! Records the number of integrations/ray movements.
   !!
   subroutine transportSweep(self, r, ints)
-    class(anisotropicRandomRayPhysicsPackage), target, intent(inout) :: self
+    class(anisotropicRRPhysicsPackage), target, intent(inout) :: self
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
-    integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx
+    integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
+                                                             SH, event
     real(defReal)                                         :: totalLength, length
-    logical(defBool)                                      :: activeRay, hitVacuum
+    logical(defBool)                                      :: activeRay, hitVacuum, newRay
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt
-    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
-    real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec
+    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, currentAngularSource
+    real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, sourceCompVec, deltaCompVec
     real(defReal), dimension(3)                           :: r0, mu0
+    real(defReal), dimension(self % harmonicLength)       :: RCoeffs   
     
     ! Set initial angular flux to angle average of cell source
     cIdx = r % coords % uniqueID
     do g = 1, self % nG
       idx = (cIdx - 1) * self % nG + g
-      fluxVec(g) = self % source(idx)
+      fluxVec(g) = self % angularSource(idx,1)
     end do
 
     ints = 0
@@ -741,7 +757,6 @@ contains
       cIdx    = r % coords % uniqueID
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
-        
         ! Cache total cross section
         totVec => self % sigmaT((matIdx - 1) * self % nG + 1:self % nG)
       end if
@@ -791,16 +806,17 @@ contains
       sourceVec => self % angularSource(baseIdx + 1 : baseIdx + self % nG, :)
 
       !calculate source along track if boundary hit
-      if (newray .OR. event == BOUNDARY_EV) then 
+      if (newRay .OR. event == BOUNDARY_EV) then 
         newRay = .false.
         do g = 1, self % nG
           currentAngularSource(g) = ZERO
-          ! idx = 1 is flat source .
-          do SH = 2 self % harmonicLength
+          !SH = 1 is flat source
+          do SH = 1, self % harmonicLength
 
             !call subrountine for RCoeffs
+            call SphericalHarmonicCalculator(self,mu0)
 
-            currentAngularSource(g) = currentAngularSource + sourceVec(g,idx) * RCoeffs(idx)
+            currentAngularSource(g) = currentAngularSource + sourceVec(g,SH) * RCoeffs(SH)
 
           end do 
         end do
@@ -810,7 +826,6 @@ contains
       !$omp simd aligned(totVec)
       do g = 1, self % nG
         attenuate(g) = exponential(totVec(g) * lenFlt) !aka F1 in LS
-
         delta(g) = (fluxVec(g) - currentAngularSource(g)) * attenuate(g)     
         fluxVec(g) = fluxVec(g) - delta(g)
       end do
@@ -818,21 +833,22 @@ contains
       ! Accumulate to scalar flux
       if (activeRay) then
 
-        angularMomVec => self % angularMoment(baseIdx + 1 : baseIdx + self % nG, :)
+        !angularMomVec => self % angularMoment(baseIdx + 1 : baseIdx + self % nG, :)
+        deltaCompVec => self % angularDeltaComp(baseIdx + 1 : baseIdx + self % nG, :)
+        sourceCompVec => self % angularSourceComp(baseIdx + 1 : baseIdx + self % nG, :)
         scalarVec => self % scalarFlux(baseIdx + 1 : baseIdx + self % nG)
       
         call OMP_set_lock(self % locks(cIdx))
         !$omp simd aligned(scalarVec)
         do g = 1, self % nG
           scalarVec(g) = scalarVec(g) + delta(g) 
+
           do SH = 1, self % harmonicLength
-            angularMomVec(g,idx) = angularMomVec + RCoeffs(idx) * delta(g) 
+            deltaCompVec(g,SH)  = deltaCompVec(g,SH) + RCoeffs(SH) * delta(g) 
+            sourceCompVec(g,SH) = sourceCompVec(g,SH) + RCoeffs(SH) * currentAngularSource(g)/totVec(g)
+          end do  
 
-            if (self % volume(cIdx) > volume_tolerance) then
-              totalAngularMoment = (angularMomVec(g,idx)/self % volume(cIdx) * totVec(g)) + currentAngularSource(g)
-            end if 
 
-          end do   
         end do
         self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
         call OMP_unset_lock(self % locks(cIdx))
@@ -856,7 +872,7 @@ contains
   subroutine SphericalHarmonicCalculator(self,mu)
     !! angle: x = r sin θ cos φ, y = r sin θ sin φ, and z = r cos θ
     !! rational approximation of angles? 
-    class(anisotropicRandomRayPhysicsPackage), intent(inout)       :: self
+    class(anisotropicRRPhysicsPackage), intent(inout)       :: self
     real(defReal), dimension(self % harmonicLength), intent(out)   :: RCoeffs ! Array to store harmonic coefficients
     real(defReal)                                                  :: dirX,dirY,dirZ
 
@@ -912,14 +928,14 @@ contains
   !! the flux by the neutron source
   !!
   subroutine normaliseFluxAndVolume(self, it)
-    class(anisotropicRandomRayPhysicsPackage), intent(inout) :: self
+    class(anisotropicRRPhysicsPackage), intent(inout) :: self
     integer(shortInt), intent(in)                 :: it
     real(defFlt)                                  :: norm
     real(defReal)                                 :: normVol
     real(defFlt), save                            :: total, vol, sigGG, D
-    integer(shortInt), save                       :: g, matIdx, idx
+    integer(shortInt), save                       :: g, matIdx, idx, SH
     integer(shortInt)                             :: cIdx
-    !$omp threadprivate(total, vol, idx, g, matIdx, sigGG, D)
+    !$omp threadprivate(total, vol, idx, g, matIdx, sigGG, D, SH)
 
     norm = real(ONE / self % lengthPerIt, defFlt)
     normVol = ONE / (self % lengthPerIt * it)
@@ -939,6 +955,11 @@ contains
 
         if (vol > volume_tolerance) then
           self % scalarFlux(idx) = self % scalarFlux(idx) * norm / ( total * vol)
+          do SH = 1, self % harmonicLength
+
+            self % angularDeltaComp(idx,SH) =  self % angularDeltaComp(idx,SH) * norm / ( total * vol)
+
+          end do
         end if
         
         ! Apply stabilisation for negative XSs
@@ -956,6 +977,7 @@ contains
         end if
 
         self % scalarFlux(idx) =  (self % scalarflux(idx) + self % source(idx) + D * self % prevFlux(idx) ) / (1 + D)
+        self % angularMoment(idx,SH) =  self % angularDeltaComp(idx,SH) + self % angularSourceComp
         !TO DO normalise angular moments. 
       end do
 
@@ -968,7 +990,7 @@ contains
   !! Kernel to update sources given a cell index
   !!
   subroutine sourceUpdateKernel(self, cIdx, ONE_KEFF)
-    class(anisotropicRandomRayPhysicsPackage), target, intent(inout) :: self
+    class(anisotropicRRPhysicsPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
     real(defFlt), intent(in)                              :: ONE_KEFF
     real(defFlt)                                          :: scatter, fission
@@ -1048,7 +1070,7 @@ contains
   !! Calculate keff
   !!
   subroutine calculateKeff(self)
-    class(anisotropicRandomRayPhysicsPackage), intent(inout) :: self
+    class(anisotropicRRPhysicsPackage), intent(inout) :: self
     real(defFlt)                                  :: fissionRate, prevFissionRate
     real(defFlt), save                            :: fissLocal, prevFissLocal, vol
     integer(shortInt), save                       :: matIdx, g, idx, mIdx
@@ -1101,7 +1123,7 @@ contains
   !! Sets prevFlux to scalarFlux and zero's scalarFlux
   !!
   subroutine resetFluxes(self)
-    class(anisotropicRandomRayPhysicsPackage), intent(inout) :: self
+    class(anisotropicRRPhysicsPackage), intent(inout) :: self
     integer(shortInt)                                        :: idx, SH
 
     !$omp parallel do schedule(static)
@@ -1111,6 +1133,9 @@ contains
 
       !$omp simd
       do SH = 1, self % harmonicLength
+        self % prevAngularMoment(idx,SH) = self % angularMoment(idx,SH) 
+        self % angularDeltaComp(idx,SH) = ZERO
+        self % angularSourceComp(idx,SH) = ZERO
         self % angularMoment(idx,SH) = ZERO
         self % angularSource(idx,SH) = ZERO
       end do
@@ -1124,7 +1149,7 @@ contains
   !! Accumulate flux scores for stats
   !!
   subroutine accumulateFluxAndKeffScores(self)
-    class(anisotropicRandomRayPhysicsPackage), intent(inout) :: self
+    class(anisotropicRRPhysicsPackage), intent(inout) :: self
     real(defReal), save                            :: flux
     integer(shortInt)                              :: idx
     !$omp threadprivate(flux)
@@ -1146,7 +1171,7 @@ contains
   !! Finalise flux scores for stats
   !!
   subroutine finaliseFluxAndKeffScores(self,it)
-    class(anisotropicRandomRayPhysicsPackage), intent(inout) :: self
+    class(anisotropicRRPhysicsPackage), intent(inout) :: self
     integer(shortInt), intent(in)                 :: it
     integer(shortInt)                             :: idx
     real(defReal)                                 :: N1, Nm1
@@ -1186,7 +1211,7 @@ contains
   !!   None
   !!
   subroutine printResults(self)
-    class(anisotropicRandomRayPhysicsPackage), intent(inout) :: self
+    class(anisotropicRRPhysicsPackage), intent(inout) :: self
     type(outputFile)                              :: out
     character(nameLen)                            :: name
     integer(shortInt)                             :: cIdx, g1
@@ -1426,7 +1451,7 @@ contains
   !!   None
   !!
   subroutine printSettings(self)
-    class(anisotropicRandomRayPhysicsPackage), intent(in) :: self
+    class(anisotropicRRPhysicsPackage), intent(in) :: self
 
     print *, repeat("<>", MAX_COL/2)
     print *, "/\/\ RANDOM RAY EIGENVALUE CALCULATION /\/\"
@@ -1451,7 +1476,7 @@ contains
   !! Return to uninitialised state
   !!
   subroutine kill(self)
-    class(anisotropicRandomRayPhysicsPackage), intent(inout) :: self
+    class(anisotropicRRPhysicsPackage), intent(inout) :: self
     integer(shortInt) :: i
 
     ! Clean Nuclear Data, Geometry and visualisation
@@ -1516,4 +1541,4 @@ contains
 
   end subroutine kill
 
-end module anisotropicRandomRayPhysicsPackage_class
+end module anisotropicRRPhysicsPackage_class
