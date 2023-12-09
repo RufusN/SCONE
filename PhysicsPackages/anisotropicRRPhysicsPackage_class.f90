@@ -834,18 +834,18 @@ contains
       if (activeRay) then
 
         !angularMomVec => self % angularMoment(baseIdx + 1 : baseIdx + self % nG, :)
-        deltaCompVec => self % angularDeltaComp(baseIdx + 1 : baseIdx + self % nG, :)
+        deltaCompVec  => self % angularDeltaComp(baseIdx + 1 : baseIdx + self % nG, :)
         sourceCompVec => self % angularSourceComp(baseIdx + 1 : baseIdx + self % nG, :)
-        scalarVec => self % scalarFlux(baseIdx + 1 : baseIdx + self % nG)
+        !scalarVec => self % scalarFlux(baseIdx + 1 : baseIdx + self % nG)
       
         call OMP_set_lock(self % locks(cIdx))
         !$omp simd aligned(scalarVec)
         do g = 1, self % nG
-          scalarVec(g) = scalarVec(g) + delta(g) 
+          !scalarVec(g) = scalarVec(g) + delta(g) 
 
           do SH = 1, self % harmonicLength
             deltaCompVec(g,SH)  = deltaCompVec(g,SH) + RCoeffs(SH) * delta(g) 
-            sourceCompVec(g,SH) = sourceCompVec(g,SH) + RCoeffs(SH) * currentAngularSource(g)/totVec(g)
+            sourceCompVec(g,SH) = sourceCompVec(g,SH) + RCoeffs(SH) * currentAngularSource(g)
           end do  
 
 
@@ -932,10 +932,10 @@ contains
     integer(shortInt), intent(in)                 :: it
     real(defFlt)                                  :: norm
     real(defReal)                                 :: normVol
-    real(defFlt), save                            :: total, vol, sigGG, D
-    integer(shortInt), save                       :: g, matIdx, idx, SH
+    real(defFlt), save                            :: total, vol
+    integer(shortInt), save                       :: g, idx, SH
     integer(shortInt)                             :: cIdx
-    !$omp threadprivate(total, vol, idx, g, matIdx, sigGG, D, SH)
+    !$omp threadprivate(total, vol, idx, g, SH)
 
     norm = real(ONE / self % lengthPerIt, defFlt)
     normVol = ONE / (self % lengthPerIt * it)
@@ -954,29 +954,10 @@ contains
         idx   = self % nG * (cIdx - 1) + g
 
         if (vol > volume_tolerance) then
-          self % scalarFlux(idx) = self % scalarFlux(idx) * norm / ( total * vol)
           do SH = 1, self % harmonicLength
-
             self % angularDeltaComp(idx,SH) =  self % angularDeltaComp(idx,SH) * norm / ( total * vol)
-
           end do
         end if
-        
-        ! Apply stabilisation for negative XSs
-        if (matIdx < VOID_MAT) then
-          sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
-
-          ! Presumes non-zero total XS
-          if ((sigGG < 0) .and. (total > 0)) then
-            D = -real(self % rho, defFlt) * sigGG / total
-          else
-            D = 0.0_defFlt
-          end if
-        else
-          D = 0.0_defFlt
-        end if
-
-        self % scalarFlux(idx) =  (self % scalarflux(idx) + self % source(idx) + D * self % prevFlux(idx) ) / (1 + D)
         self % angularMoment(idx,SH) =  self % angularDeltaComp(idx,SH) + self % angularSourceComp
         !TO DO normalise angular moments. 
       end do
@@ -1019,48 +1000,47 @@ contains
     chi => self % chi(matIdx + (1):(self % nG))
 
     baseIdx = self % ng * (cIdx - 1)
-    fluxVec => self % prevFlux(baseIdx+(1):(self % nG))
 
-    !TO DO calculate angular source. 
+    !fluxVec => self % prevFlux(baseIdx+(1):(self % nG))
+    angularMomVec => self % prevAngularMoment(baseIdx+(1):(self % nG), :)
 
     ! Calculate fission source
     fission = 0.0_defFlt
     !$omp simd reduction(+:fission) aligned(fluxVec)
     do gIn = 1, self % nG
-      fission = fission + fluxVec(gIn) * nuFission(gIn)
+      fission = fission + angularMomVec(gIn,1) * nuFission(gIn)
     end do
     fission = fission * ONE_KEFF
 
-    do g = 1, self % nG
 
-      scatterVec => scatterXS(self % nG * (g - 1) + (1):self % nG)
+      do g = 1, self % nG
 
-      ! Calculate scattering source
-      scatter = 0.0_defFlt
+        scatterVec => scatterXS(self % nG * (g - 1) + (1):self % nG)
 
-      sourceVec => self % angularSource(baseIdx + 1 : baseIdx + self % nG, 2:)
+        do SH = 2, self % harmonicLength
 
-      ! Sum contributions from all energies
-      !$omp simd reduction(+:scatter) aligned(fluxVec)
-      do gIn = 1, self % nG
-        scatter = scatter + fluxVec(gIn) * scatterVec(gIn)
-        do SH = 1, self % harmonicLength
-            sourceVec(gIn,SH) = S1SourceVec(gIn,SH) + angularMomVec(gIn, SH) * scatterVec(gIn)
+        ! Calculate scattering source
+        scatter = 0.0_defFlt
+
+        !sourceVec => self % angularSource(baseIdx + 1 : baseIdx + self % nG, 1:)
+
+        ! Sum contributions from all energies
+        !$omp simd reduction(+:scatter) aligned(fluxVec)
+        do gIn = 1, self % nG
+          scatter = scatter + angularMomVec(gIn, SH) * scatterVec(gIn)
         end do
+
+        ! Output index
+        idx = baseIdx + g
+
+        self % angularSource(idx,SH) = scatter
+        self % angularSource(idx,SH) =  self % angularSource(idx,SH)/total(g)
+       
+
       end do
-
-      ! Output index
-      idx = baseIdx + g
-
       !flat source
-      self % angularSource(idx,1) = chi(g) * fission + scatter
-      self % angularSource(idx,1) = self % angularSource(idx) / total(g)
-
-      !higher order scattering
-      do SH = 1, self % harmonicLength
-        sourceVec(gIn,SH) = sourceVec(g) / total(g)
-      end do
-      
+      self % angularSource(idx,1) = scatter + chi(g) * fission 
+      self % angularSource(idx,1) = self % angularSource(idx,1) / total(g)
 
     end do
 
