@@ -969,9 +969,9 @@ contains
               self % angularDeltaComp(idx,SH) =  self % angularDeltaComp(idx,SH) * norm / ( total * vol)
           end if
           
-          !self % angularSourceComp(idx,SH) =  self % angularSourceComp(idx,SH) 
+          !self % angularSourceComp(idx,SH) =  self % angularSourceComp(idx,SH) * normalisation factor
 
-          self % angularMoment(idx,SH) =  self % angularDeltaComp(idx,SH) + self % angularSource(idx,SH)
+          self % angularMoment(idx,SH) =  self % angularDeltaComp(idx,SH) + self % angularSourceComp(idx,SH)
 
         end do
 
