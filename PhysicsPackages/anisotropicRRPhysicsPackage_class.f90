@@ -215,6 +215,8 @@ module anisotropicRRPhysicsPackage_class
 
     real(defReal), dimension(:,:), allocatable  :: angularSource
 
+    real(shortInt), dimension(:), allocatable  :: sourceCounter
+
 
     real(defReal), dimension(:,:), allocatable :: fluxScores
     !real(defFlt), dimension(:), allocatable    :: source
@@ -459,6 +461,9 @@ contains
     allocate(self % prevAngularMoment(self % nCells * self % nG, self % harmonicLength))
 
     allocate(self % angularSource(self % nCells * self % nG, self % harmonicLength))
+
+    allocate(self % sourceCounter(self % nCells))
+    
     
 
     allocate(self % volume(self % nCells))
@@ -554,6 +559,7 @@ contains
     self % angularMoment     = ZERO
     self % prevAngularMoment = 1.0_defReal
     self % angularSource     = ZERO
+    self % sourceCounter     = 0
 
     self % fluxScores = ZERO
     self % keffScore  = ZERO
@@ -822,8 +828,6 @@ contains
         newRay = .false. 
         !call subrountine for RCoeffs
         call self % sphericalHarmonicCalculator(mu0, RCoeffs)
-        !print *, 'RCoeffs:'
-        !print *, RCoeffs
         do g = 1, self % nG
           currentAngularSource(g) = ZERO
           do SH = 1, self % harmonicLength
@@ -831,6 +835,13 @@ contains
           end do 
         end do
       end if
+
+      do g = 1, self % nG
+        currentAngularSource(g) = ZERO
+        do SH = 1, self % harmonicLength
+          currentAngularSource(g) = currentAngularSource(g) + sourceVec(g,SH) * RCoeffs(SH)
+        end do 
+      end do
 
 
       !$omp simd aligned(totVec)
@@ -844,9 +855,12 @@ contains
       if (activeRay) then
 
         !angularMomVec => self % angularMoment(baseIdx + 1 : baseIdx + self % nG, :)
+        !scalarVec => self % scalarFlux(baseIdx + 1 : baseIdx + self % nG)
+
+
         deltaCompVec  => self % angularDeltaComp(baseIdx + 1 : baseIdx + self % nG, :)
         sourceCompVec => self % angularSourceComp(baseIdx + 1 : baseIdx + self % nG, :)
-        !scalarVec => self % scalarFlux(baseIdx + 1 : baseIdx + self % nG)
+      
       
         call OMP_set_lock(self % locks(cIdx))
         !$omp simd aligned(scalarVec)
@@ -856,6 +870,7 @@ contains
           do SH = 1, self % harmonicLength
             deltaCompVec(g,SH)  = deltaCompVec(g,SH) + RCoeffs(SH) * delta(g) 
             sourceCompVec(g,SH) = sourceCompVec(g,SH) + RCoeffs(SH) * currentAngularSource(g)
+            self % sourceCounter(cIdx) = self % sourceCounter(cIdx) + 1
           end do  
 
 
@@ -884,7 +899,7 @@ contains
     class(anisotropicRRPhysicsPackage), intent(inout)       :: self
     real(defReal), dimension(self % harmonicLength), intent(out)   :: RCoeffs ! Array to store harmonic coefficients
     real(defReal)                                                  :: dirX,dirY,dirZ
-    real(defReal), dimension(3)                                    :: mu
+    real(defReal), dimension(3), intent(in)                        :: mu
 
 
     dirX = mu(1)
@@ -941,7 +956,7 @@ contains
     class(anisotropicRRPhysicsPackage), intent(inout) :: self
     integer(shortInt), intent(in)                 :: it
     real(defFlt)                                  :: norm
-    real(defReal)                                 :: normVol
+    real(defReal)                                 :: normVol, anglesum
     real(defFlt), save                            :: total, vol
     integer(shortInt), save                       :: g, idx, SH, matIdx
     integer(shortInt)                             :: cIdx
@@ -968,10 +983,13 @@ contains
           if (vol > volume_tolerance) then
               self % angularDeltaComp(idx,SH) =  self % angularDeltaComp(idx,SH) * norm / ( total * vol)
           end if
-          
-          !self % angularSourceComp(idx,SH) =  self % angularSourceComp(idx,SH) * normalisation factor
 
-          self % angularMoment(idx,SH) =  self % angularDeltaComp(idx,SH) + self % angularSourceComp(idx,SH)
+          !if (self % sourceCounter(cIdx) > 0) then
+              !self % angularSourceComp(idx,SH) =  self % angularSourceComp(idx,SH) !/ self % sourceCounter(cIdx)
+          !end if
+          anglesum = sum(self % angularSource(idx,:))
+         
+          self % angularMoment(idx,SH) =  self % angularDeltaComp(idx,SH) + anglesum !self % angularSource(idx,1)
 
         end do
 
@@ -984,6 +1002,8 @@ contains
     print *, MAXVAL(self % angularSource)
     print *, MAXVAL(self % angularDeltaComp)
     print *, MAXVAL(self % angularSourceComp)
+    print *, MAXVAL(self % sourceCounter)
+    print *, MAXVAL(self % angularSource(:, 2:))
 
   end subroutine normaliseFluxAndVolume
   
@@ -1129,7 +1149,7 @@ contains
     class(anisotropicRRPhysicsPackage), intent(inout) :: self
     integer(shortInt)                                 :: idx, SH
 
-   ! !$omp parallel do schedule(static)
+   !$omp parallel do schedule(static)
     do idx = 1, (self % nG * self % nCells)
       !self % prevFlux(idx) = self % scalarFlux(idx)
       !self % scalarFlux(idx) = 0.0_defFlt
@@ -1144,7 +1164,12 @@ contains
       end do
 
     end do
-    !!$omp end parallel do
+   !$omp end parallel do
+
+    do idx = 1, self % nCells
+      self % sourceCounter(idx) = ZERO
+    end do
+
 
   end subroutine resetFluxes
 
@@ -1536,6 +1561,8 @@ contains
     if(allocated(self % angularMoment)) deallocate(self % angularMoment)
     if(allocated(self % prevAngularMoment)) deallocate(self % prevAngularMoment)
     if(allocated(self % angularSource)) deallocate(self % angularSource)
+
+    if(allocated(self % sourceCounter)) deallocate(self % sourceCounter)
 
     if(allocated(self % fluxScores)) deallocate(self % fluxScores)
     !if(allocated(self % source)) deallocate(self % source)
