@@ -98,6 +98,7 @@ module anisotropicRRPhysicsPackage_class
   !!     #fluxMap {<map>}#     // Optionally output one-group fluxes according to a given map
   !!     #plot 1;#             // Optionally make VTK viewable plot of fluxes and uncertainties
   !!     #rho 0;#              // Optional stabilisation for negative in-group scattering XSs
+  !!     #SHOrder 0;#    // Optional spherical harmonic order for higher order scattering.
   !!
   !!     geometry {<Geometry Definition>}
   !!     nuclearData {<Nuclear data definition>}
@@ -123,6 +124,8 @@ module anisotropicRRPhysicsPackage_class
   !!   active      -> Number of active cycles to perform
   !!   cache       -> Logical check whether to use distance caching
   !!   rho         -> Stabilisation factor: 0 is no stabilisation, 1 is aggressive stabilisation
+  !!   SHOrder     -> Order of higher order scattering, isotropic 0 by default, maximum P3 / 3rd order
+  !!   SHLength    -> Number of spherical harmonics for given SHOrder.
   !!   outputFile  -> Output file name
   !!   outputFormat-> Output file format
   !!   plotResults -> Plot results?
@@ -142,11 +145,11 @@ module anisotropicRRPhysicsPackage_class
   !!
   !!   keff        -> Estimated value of keff
   !!   keffScore   -> Vector holding cumulative keff score and keff^2 score
-  !!   scalarFlux  -> Array of scalar flux values of length = nG * nCells
-  !!   prevFlux    -> Array of previous scalar flux values of length = nG * nCells
+  !!   moments     -> Array of angular moments, dimension = [nG * nCells, SHLength], [:,1] element are scalar fluxs.
+  !!   prevMoments -> Array of previous angular moments, dimension = [nG * nCells, SHLength]
   !!   fluxScore   -> Array of scalar flux values and squared values to be reported 
   !!                  in results, dimension =  [nG * nCells, 2]
-  !!   source      -> Array of neutron source values of length = nG * nCells
+  !!   source      -> Array of neutron source moment values, dimension = [nG * nCells, SHLength]
   !!   volume      -> Array of stochastically estimated cell volumes of length = nCells
   !!   cellHit     -> Array tracking whether given cells have been hit during tracking
   !!   cellFound   -> Array tracking whether a cell was ever found
@@ -179,8 +182,8 @@ module anisotropicRRPhysicsPackage_class
     integer(shortInt)  :: active      = 0
     logical(defBool)   :: cache       = .false.
     real(defReal)      :: rho         = ZERO
-    integer(shortInt)  :: harmonicOrder  = 0
-    integer(shortInt)  :: harmonicLength = 1
+    integer(shortInt)  :: SHOrder  = 0
+    integer(shortInt)  :: SHLength = 1
     character(pathLen) :: outputFile
     character(nameLen) :: outputFormat
     logical(defBool)   :: plotResults = .false.
@@ -202,9 +205,9 @@ module anisotropicRRPhysicsPackage_class
     ! Results space
     real(defFlt)                               :: keff
     real(defReal), dimension(2)                :: keffScore
-    real(defReal), dimension(:,:), allocatable :: angularMoment
-    real(defReal), dimension(:,:), allocatable :: prevAngularMoment
-    real(defReal), dimension(:,:), allocatable :: angularSource
+    real(defReal), dimension(:,:), allocatable :: moments
+    real(defReal), dimension(:,:), allocatable :: prevMoments
+    real(defReal), dimension(:,:), allocatable :: source
     real(defReal), dimension(:,:), allocatable :: fluxScores
     real(defReal), dimension(:), allocatable   :: volume
     real(defReal), dimension(:), allocatable   :: volumeTracks
@@ -288,9 +291,11 @@ contains
     ! Stabilisation factor for negative in-group scattering
     call dict % getOrDefault(self % rho, 'rho', ZERO)
 
-    call dict % getOrDefault(self % harmonicOrder, 'harmonicOrder', 0)
+    ! Higher order scattering order
+    call dict % getOrDefault(self % SHOrder, 'SHOrder', 0)
 
-    self % harmonicLength = (self % harmonicOrder + 1 )**2
+    ! Number of spherical harmonics for given SHOrder
+    self % SHLength = (self % SHOrder + 1 )**2
 
     ! Print fluxes?
     call dict % getOrDefault(self % printFlux, 'printFlux', .false.)
@@ -436,10 +441,10 @@ contains
     ! Allocate results space
 
     allocate(self % fluxScores(self % nCells * self % nG, 2))
-    allocate(self % angularMoment(self % nCells * self % nG, self % harmonicLength))
-    allocate(self % prevAngularMoment(self % nCells * self % nG, self % harmonicLength))
+    allocate(self % moments(self % nCells * self % nG, self % SHLength))
+    allocate(self % prevMoments(self % nCells * self % nG, self % SHLength))
 
-    allocate(self % angularSource(self % nCells * self % nG, self % harmonicLength))
+    allocate(self % source(self % nCells * self % nG, self % SHLength))
     
     
 
@@ -531,9 +536,9 @@ contains
     !self % scalarFlux = 0.0_defFlt
     !self % prevFlux   = 1.0_defFlt
 
-    self % angularMoment     = ZERO
-    self % prevAngularMoment = 1.0_defReal
-    self % angularSource     = ZERO
+    self % moments     = ZERO
+    self % prevMoments = 1.0_defReal
+    self % source     = ZERO
 
     self % fluxScores = ZERO
     self % keffScore  = ZERO
@@ -723,17 +728,17 @@ contains
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
-    real(defReal), dimension(self % nG)                   :: currentAngularSource
+    real(defReal), dimension(self % nG)                   :: currentSource
     real(defFlt), pointer, dimension(:)                   :: scalarVec, totVec
     real(defReal), dimension(3)                           :: r0, mu0
-    real(defReal), dimension(self % harmonicLength)       :: RCoeffs   
+    real(defReal), dimension(self % SHLength)       :: RCoeffs   
     real(defReal), pointer, dimension(:,:)                :: sourceVec, angularMomVec
 
     ! Set initial angular flux to angle average of cell source
     cIdx = r % coords % uniqueID
     do g = 1, self % nG
       idx = (cIdx - 1) * self % nG + g
-      fluxVec(g) = self % angularSource(idx,1)
+      fluxVec(g) = self % source(idx,1)
     end do
 
     ints = 0
@@ -794,20 +799,20 @@ contains
 
       lenFlt = real(length,defFlt)
       baseIdx = (cIdx - 1) * self % nG
-      !sourceVec => self % source(baseIdx + 1 : baseIdx + self % nG)
-      sourceVec => self % angularSource(baseIdx + 1 : baseIdx + self % nG, :)
+      sourceVec => self % source(baseIdx + 1 : baseIdx + self % nG, :)
 
       !calculate source along track if boundary hit
       if (newRay .OR. event == BOUNDARY_EV) then 
         newRay = .false. 
-        !call subrountine for RCoeffs
+        !call subroutine for RCoeffs
         call self % sphericalHarmonicCalculator(mu0, RCoeffs)
       end if
 
+      !$omp simd
       do g = 1, self % nG
-        currentAngularSource(g) = ZERO
-        do SH = 1, self % harmonicLength
-          currentAngularSource(g) = currentAngularSource(g) + sourceVec(g,SH) * RCoeffs(SH)
+        currentSource(g) = ZERO
+        do SH = 1, self % SHLength
+          currentSource(g) = currentSource(g) + sourceVec(g,SH) * RCoeffs(SH)
         end do 
       end do
 
@@ -815,19 +820,19 @@ contains
       !$omp simd aligned(totVec)
       do g = 1, self % nG
         attenuate(g) = exponential(totVec(g) * lenFlt) !aka F1 in LS
-        delta(g) = (fluxVec(g) - currentAngularSource(g)) * attenuate(g)     
+        delta(g) = (fluxVec(g) - currentSource(g)) * attenuate(g)     
         fluxVec(g) = fluxVec(g) - delta(g)
       end do
 
       ! Accumulate to scalar flux
       if (activeRay) then
 
-        angularMomVec => self % angularMoment(baseIdx + 1 : baseIdx + self % nG, :)
+        angularMomVec => self % moments(baseIdx + 1 : baseIdx + self % nG, :)
       
         call OMP_set_lock(self % locks(cIdx))
-        !$omp simd aligned(scalarVec)
+        !$omp simd aligned(angularMomVec)
         do g = 1, self % nG
-          do SH = 1, self % harmonicLength
+          do SH = 1, self % SHLength
             angularMomVec(g,SH)  = angularMomVec(g,SH) + RCoeffs(SH) * delta(g) 
           end do  
         end do
@@ -851,9 +856,9 @@ contains
   end subroutine transportSweep
 
   subroutine SphericalHarmonicCalculator(self, mu, RCoeffs)
-    !! angle: x = r sin θ cos φ, y = r sin θ sin φ, and z = r cos θ
+    ! angle: x = r sin θ cos φ, y = r sin θ sin φ, and z = r cos θ
     class(anisotropicRRPhysicsPackage), intent(inout)       :: self
-    real(defReal), dimension(self % harmonicLength), intent(out)   :: RCoeffs ! Array to store harmonic coefficients
+    real(defReal), dimension(self % SHLength), intent(out)   :: RCoeffs ! Array to store harmonic coefficients
     real(defReal)                                                  :: dirX,dirY,dirZ
     real(defReal), dimension(3), intent(in)                        :: mu
 
@@ -862,8 +867,8 @@ contains
     dirY = mu(2)
     dirZ = mu(3)
 
-    ! Assign coefficients based on harmonicOrder
-    select case(self % harmonicLength)
+    ! Assign coefficients based on SHOrder
+    select case(self % SHLength)
     case(1)  
         RCoeffs(1) = 1  
 
@@ -934,13 +939,13 @@ contains
         total = self % sigmaT((matIdx - 1) * self % nG + g)
         idx   = self % nG * (cIdx - 1) + g
 
-        do SH = 1, self % harmonicLength
+        do SH = 1, self % SHLength
 
           if (vol > volume_tolerance) then
-              self % angularMoment(idx,SH) =  self % angularMoment(idx,SH) * norm / ( total * vol)
+              self % moments(idx,SH) =  self % moments(idx,SH) * norm / ( total * vol)
           end if
 
-          self % angularMoment(idx,SH) =  self % angularMoment(idx,SH) + self % angularSource(idx,SH)
+          self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH)
         end do
 
 
@@ -972,8 +977,8 @@ contains
       baseIdx = self % ng * (cIdx - 1)
       do g = 1, self % nG
         idx = baseIdx + g
-        do SH = 1, self % harmonicLength
-          self % angularSource(idx,SH) = ZERO
+        do SH = 1, self % SHLength
+          self % source(idx,SH) = ZERO
         end do
       end do
       return
@@ -989,7 +994,7 @@ contains
     baseIdx = self % ng * (cIdx - 1)
 
     !fluxVec => self % prevFlux(baseIdx+(1):(self % nG))
-    angularMomVec => self % prevAngularMoment(baseIdx + 1 : baseIdx + self % nG, :)
+    angularMomVec => self % prevMoments(baseIdx + 1 : baseIdx + self % nG, :)
 
     ! Calculate fission source
     fission = 0.0_defFlt
@@ -1005,7 +1010,7 @@ contains
       scatterVec => scatterXS(self % nG * (g - 1) + (1):self % nG)
       idx = baseIdx + g
 
-      do SH = 2, self % harmonicLength
+      do SH = 2, self % SHLength
 
         ! Calculate scattering source
         scatter = 0.0_defFlt
@@ -1016,7 +1021,7 @@ contains
           scatter = scatter + angularMomVec(gIn, SH) * scatterVec(gIn)
         end do
 
-        self % angularSource(idx,SH) = scatter / total(g)
+        self % source(idx,SH) = scatter / total(g)
 
       end do
 
@@ -1026,8 +1031,8 @@ contains
         scatter = scatter + angularMomVec(gIn, 1) * scatterVec(gIn)
       end do
 
-      self % angularSource(idx,1) = scatter + chi(g) * fission 
-      self % angularSource(idx,1) = self % angularSource(idx,1) / total(g)
+      self % source(idx,1) = scatter + chi(g) * fission 
+      self % source(idx,1) = self % source(idx,1) / total(g)
 
   end do
 
@@ -1070,8 +1075,8 @@ contains
         
         ! Source index
         idx = self % nG * (cIdx - 1) + g
-        fissLocal     = fissLocal     + self % angularMoment(idx,1) * self % nuSigmaF(mIdx + g)
-        prevFissLocal = prevFissLocal + self % prevAngularMoment(idx,1) * self % nuSigmaF(mIdx + g)
+        fissLocal     = fissLocal     + self % moments(idx,1) * self % nuSigmaF(mIdx + g)
+        prevFissLocal = prevFissLocal + self % prevMoments(idx,1) * self % nuSigmaF(mIdx + g)
 
       end do
 
@@ -1096,10 +1101,10 @@ contains
    !$omp parallel do schedule(static)
     do idx = 1, (self % nG * self % nCells)
       !$omp simd
-      do SH = 1, self % harmonicLength
-        self % prevAngularMoment(idx,SH) = self % angularMoment(idx,SH) 
-        self % angularMoment(idx,SH) = ZERO
-        self % angularSource(idx,SH) = ZERO
+      do SH = 1, self % SHLength
+        self % prevMoments(idx,SH) = self % moments(idx,SH) 
+        self % moments(idx,SH) = ZERO
+        self % source(idx,SH) = ZERO
       end do
 
     end do
@@ -1118,7 +1123,7 @@ contains
 
     !$omp parallel do schedule(static)
     do idx = 1, (self % nG * self % nCells)
-      flux = real(self % angularMoment(idx,1),defReal)
+      flux = real(self % moments(idx,1),defReal)
       self % fluxScores(idx,1) = self % fluxScores(idx, 1) + flux
       self % fluxScores(idx,2) = self % fluxScores(idx, 2) + flux * flux
     end do
@@ -1476,8 +1481,8 @@ contains
     self % active      = 0
     self % cache       = .false.
     self % rho         = ZERO
-    self % harmonicLength  = 1
-    self % harmonicOrder   = 0
+    self % SHLength  = 1
+    self % SHOrder   = 0
     self % mapFission  = .false.
     self % mapFlux     = .false.
     self % plotResults = .false.
@@ -1488,9 +1493,9 @@ contains
     self % keff        = ZERO
     self % keffScore   = ZERO
 
-    if(allocated(self % angularMoment)) deallocate(self % angularMoment)
-    if(allocated(self % prevAngularMoment)) deallocate(self % prevAngularMoment)
-    if(allocated(self % angularSource)) deallocate(self % angularSource)
+    if(allocated(self % moments)) deallocate(self % moments)
+    if(allocated(self % prevMoments)) deallocate(self % prevMoments)
+    if(allocated(self % source)) deallocate(self % source)
     if(allocated(self % fluxScores)) deallocate(self % fluxScores)
     if(allocated(self % volume)) deallocate(self % volume)
     if(allocated(self % volumeTracks)) deallocate(self % volumeTracks)
