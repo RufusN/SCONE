@@ -202,24 +202,10 @@ module anisotropicRRPhysicsPackage_class
     ! Results space
     real(defFlt)                               :: keff
     real(defReal), dimension(2)                :: keffScore
-    !real(defFlt), dimension(:), allocatable    :: scalarFlux
-    !real(defFlt), dimension(:), allocatable    :: prevFlux
-
-    real(defReal), dimension(:,:), allocatable  :: angularSourceComp
-
-    real(defReal), dimension(:,:), allocatable  :: angularDeltaComp
-
-    real(defReal), dimension(:,:), allocatable  :: angularMoment
-
-    real(defReal), dimension(:,:), allocatable  :: prevAngularMoment
-
-    real(defReal), dimension(:,:), allocatable  :: angularSource
-
-    real(shortInt), dimension(:), allocatable  :: sourceCounter
-
-
+    real(defReal), dimension(:,:), allocatable :: angularMoment
+    real(defReal), dimension(:,:), allocatable :: prevAngularMoment
+    real(defReal), dimension(:,:), allocatable :: angularSource
     real(defReal), dimension(:,:), allocatable :: fluxScores
-    !real(defFlt), dimension(:), allocatable    :: source
     real(defReal), dimension(:), allocatable   :: volume
     real(defReal), dimension(:), allocatable   :: volumeTracks
 
@@ -448,21 +434,12 @@ contains
     self % nCells = self % geom % numberOfCells()
 
     ! Allocate results space
-    !allocate(self % scalarFlux(self % nCells * self % nG))
-    !allocate(self % prevFlux(self % nCells * self % nG))
+
     allocate(self % fluxScores(self % nCells * self % nG, 2))
-    !allocate(self % source(self % nCells * self % nG))
-
-    allocate(self % angularDeltaComp(self % nCells * self % nG, self % harmonicLength))
-
-    allocate(self % angularSourceComp(self % nCells * self % nG, self % harmonicLength))
-
     allocate(self % angularMoment(self % nCells * self % nG, self % harmonicLength))
     allocate(self % prevAngularMoment(self % nCells * self % nG, self % harmonicLength))
 
     allocate(self % angularSource(self % nCells * self % nG, self % harmonicLength))
-
-    allocate(self % sourceCounter(self % nCells))
     
     
 
@@ -554,12 +531,9 @@ contains
     !self % scalarFlux = 0.0_defFlt
     !self % prevFlux   = 1.0_defFlt
 
-    self % angularDeltaComp  = ZERO
-    self % angularSourceComp = ZERO
     self % angularMoment     = ZERO
     self % prevAngularMoment = 1.0_defReal
     self % angularSource     = ZERO
-    self % sourceCounter     = 0
 
     self % fluxScores = ZERO
     self % keffScore  = ZERO
@@ -753,8 +727,8 @@ contains
     real(defFlt), pointer, dimension(:)                   :: scalarVec, totVec
     real(defReal), dimension(3)                           :: r0, mu0
     real(defReal), dimension(self % harmonicLength)       :: RCoeffs   
-    real(defReal), pointer, dimension(:,:)                :: sourceCompVec, deltaCompVec, sourceVec
-    
+    real(defReal), pointer, dimension(:,:)                :: sourceVec, angularMomVec
+
     ! Set initial angular flux to angle average of cell source
     cIdx = r % coords % uniqueID
     do g = 1, self % nG
@@ -828,12 +802,6 @@ contains
         newRay = .false. 
         !call subrountine for RCoeffs
         call self % sphericalHarmonicCalculator(mu0, RCoeffs)
-        do g = 1, self % nG
-          currentAngularSource(g) = ZERO
-          do SH = 1, self % harmonicLength
-            currentAngularSource(g) = currentAngularSource(g) + sourceVec(g,SH) * RCoeffs(SH)
-          end do 
-        end do
       end if
 
       do g = 1, self % nG
@@ -854,26 +822,14 @@ contains
       ! Accumulate to scalar flux
       if (activeRay) then
 
-        !angularMomVec => self % angularMoment(baseIdx + 1 : baseIdx + self % nG, :)
-        !scalarVec => self % scalarFlux(baseIdx + 1 : baseIdx + self % nG)
-
-
-        deltaCompVec  => self % angularDeltaComp(baseIdx + 1 : baseIdx + self % nG, :)
-        sourceCompVec => self % angularSourceComp(baseIdx + 1 : baseIdx + self % nG, :)
-      
+        angularMomVec => self % angularMoment(baseIdx + 1 : baseIdx + self % nG, :)
       
         call OMP_set_lock(self % locks(cIdx))
         !$omp simd aligned(scalarVec)
         do g = 1, self % nG
-          !scalarVec(g) = scalarVec(g) + delta(g) 
-
           do SH = 1, self % harmonicLength
-            deltaCompVec(g,SH)  = deltaCompVec(g,SH) + RCoeffs(SH) * delta(g) 
-            sourceCompVec(g,SH) = sourceCompVec(g,SH) + RCoeffs(SH) * currentAngularSource(g)
-            self % sourceCounter(cIdx) = self % sourceCounter(cIdx) + 1
+            angularMomVec(g,SH)  = angularMomVec(g,SH) + RCoeffs(SH) * delta(g) 
           end do  
-
-
         end do
         self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
         call OMP_unset_lock(self % locks(cIdx))
@@ -894,7 +850,7 @@ contains
 
   end subroutine transportSweep
 
-  subroutine SphericalHarmonicCalculator(self,mu, RCoeffs)
+  subroutine SphericalHarmonicCalculator(self, mu, RCoeffs)
     !! angle: x = r sin θ cos φ, y = r sin θ sin φ, and z = r cos θ
     class(anisotropicRRPhysicsPackage), intent(inout)       :: self
     real(defReal), dimension(self % harmonicLength), intent(out)   :: RCoeffs ! Array to store harmonic coefficients
@@ -981,16 +937,10 @@ contains
         do SH = 1, self % harmonicLength
 
           if (vol > volume_tolerance) then
-              self % angularDeltaComp(idx,SH) =  self % angularDeltaComp(idx,SH) * norm / ( total * vol)
+              self % angularMoment(idx,SH) =  self % angularMoment(idx,SH) * norm / ( total * vol)
           end if
 
-          !if (self % sourceCounter(cIdx) > 0) then
-              !self % angularSourceComp(idx,SH) =  self % angularSourceComp(idx,SH) !/ self % sourceCounter(cIdx)
-          !end if
-          anglesum = sum(self % angularSource(idx,:))
-         
-          self % angularMoment(idx,SH) =  self % angularDeltaComp(idx,SH) + anglesum !self % angularSource(idx,1)
-
+          self % angularMoment(idx,SH) =  self % angularMoment(idx,SH) + self % angularSource(idx,SH)
         end do
 
 
@@ -998,12 +948,6 @@ contains
 
     end do
     !$omp end parallel do
-    print *, MAXVAL(self % angularMoment)
-    print *, MAXVAL(self % angularSource)
-    print *, MAXVAL(self % angularDeltaComp)
-    print *, MAXVAL(self % angularSourceComp)
-    print *, MAXVAL(self % sourceCounter)
-    print *, MAXVAL(self % angularSource(:, 2:))
 
   end subroutine normaliseFluxAndVolume
   
@@ -1151,25 +1095,15 @@ contains
 
    !$omp parallel do schedule(static)
     do idx = 1, (self % nG * self % nCells)
-      !self % prevFlux(idx) = self % scalarFlux(idx)
-      !self % scalarFlux(idx) = 0.0_defFlt
-
       !$omp simd
       do SH = 1, self % harmonicLength
         self % prevAngularMoment(idx,SH) = self % angularMoment(idx,SH) 
-        self % angularDeltaComp(idx,SH) = ZERO
-        self % angularSourceComp(idx,SH) = ZERO
         self % angularMoment(idx,SH) = ZERO
         self % angularSource(idx,SH) = ZERO
       end do
 
     end do
    !$omp end parallel do
-
-    do idx = 1, self % nCells
-      self % sourceCounter(idx) = ZERO
-    end do
-
 
   end subroutine resetFluxes
 
@@ -1553,19 +1487,11 @@ contains
 
     self % keff        = ZERO
     self % keffScore   = ZERO
-    !if(allocated(self % scalarFlux)) deallocate(self % scalarFlux)
-    !if(allocated(self % prevFlux)) deallocate(self % prevFlux)
 
-    if(allocated(self % angularDeltaComp)) deallocate(self % angularDeltaComp)
-    if(allocated(self % angularSourceComp)) deallocate(self % angularSourceComp)
     if(allocated(self % angularMoment)) deallocate(self % angularMoment)
     if(allocated(self % prevAngularMoment)) deallocate(self % prevAngularMoment)
     if(allocated(self % angularSource)) deallocate(self % angularSource)
-
-    if(allocated(self % sourceCounter)) deallocate(self % sourceCounter)
-
     if(allocated(self % fluxScores)) deallocate(self % fluxScores)
-    !if(allocated(self % source)) deallocate(self % source)
     if(allocated(self % volume)) deallocate(self % volume)
     if(allocated(self % volumeTracks)) deallocate(self % volumeTracks)
     if(allocated(self % cellHit)) deallocate(self % cellHit)
