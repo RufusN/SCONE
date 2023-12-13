@@ -107,10 +107,10 @@ module linearAnisotropicScattering_class
   !!     active 200;           // Number of scoring cycles (would use eps otherwise)
   !!     #seed 86868;#         // Optional RNG seed
   !!     #cache 1;#            // Optionally use distance caching to accelerate ray tracing
-  !!     #rho  0.6;#           // Optional stabilisation factor - default is 0, no stabilisation
   !!     #fissionMap {<map>}#  // Optionally output fission rates according to a given map
   !!     #fluxMap {<map>}#     // Optionally output one-group fluxes according to a given map
   !!     #plot 1;#             // Optionally make VTK viewable plot of fluxes and uncertainties
+  !!     #SHOrder 0;#    // Optional spherical harmonic order for higher order scattering.
   !!
   !!     geometry {<Geometry Definition>}
   !!     nuclearData {<Nuclear data definition>}
@@ -135,7 +135,8 @@ module linearAnisotropicScattering_class
   !!   inactive    -> Number of inactive cycles to perform
   !!   active      -> Number of active cycles to perform
   !!   cache       -> Logical check whether to use distance caching
-  !!   rho         -> Diagonal stabilisation factor, following Gunow
+  !!   SHOrder     -> Order of higher order scattering, isotropic 0 by default, maximum P3 / 3rd order
+  !!   SHLength    -> Number of spherical harmonics for given SHOrder.
   !!   outputFile  -> Output file name
   !!   outputFormat-> Output file format
   !!   plotResults -> Plot results?
@@ -207,8 +208,8 @@ module linearAnisotropicScattering_class
     integer(shortInt)  :: inactive    = 0
     integer(shortInt)  :: active      = 0
     logical(defBool)   :: cache       = .false.
-    real(defReal)      :: rho         = ZERO
-    integer(shortInt)  :: harmonicOrder = ZERO
+    integer(shortInt)  :: SHOrder  = 0
+    integer(shortInt)  :: SHLength = 1
     character(pathLen) :: outputFile
     character(nameLen) :: outputFormat
     logical(defBool)   :: plotResults = .false.
@@ -327,11 +328,11 @@ contains
     ! Perform distance caching?
     call dict % getOrDefault(self % cache, 'cache', .false.)
 
-    ! Stabilisation factor for negative in-group scattering
-    call dict % getOrDefault(self % rho, 'rho', ZERO)
+    ! Higher order scattering order
+    call dict % getOrDefault(self % SHOrder, 'SHOrder', 0)
 
-    ! Stabilisation factor for negative in-group scattering
-    call dict % getOrDefault(self % harmonicOrder, 'harmonicOrder', ZERO)
+    ! Number of spherical harmonics for given SHOrder
+    self % SHLength = (self % SHOrder + 1 )**2
 
     ! Print fluxes?
     call dict % getOrDefault(self % printFlux, 'printFlux', .false.)
@@ -1855,7 +1856,6 @@ contains
     self % pop         = 0
     self % inactive    = 0
     self % active      = 0
-    self % rho         = ZERO
     self % cache       = .false.
     self % mapFission  = .false.
     self % mapFlux     = .false.
