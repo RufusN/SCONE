@@ -4,7 +4,7 @@ module anisotropicRRPhysicsPackage_class
   use universalVariables
   use genericProcedures,              only : fatalError, numToChar, rotateVector, printFishLineR
   use hashFunctions_func,             only : FNV_1
-  use exponentialRA_func,             only : exponential
+  use exponentialRA_func,             only : exponential, expTau
   use dictionary_class,               only : dictionary
   use outputFile_class,               only : outputFile
   use rng_class,                      only : RNG
