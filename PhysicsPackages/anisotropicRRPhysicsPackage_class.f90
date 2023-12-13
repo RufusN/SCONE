@@ -794,7 +794,7 @@ contains
         call self % sphericalHarmonicCalculator(mu0, RCoeffs)
       end if
 
-      !$omp simd aligned(currentSource)
+      !$omp simd
       do g = 1, self % nG
         currentSource(g) = ZERO
         do SH = 1, self % SHLength
