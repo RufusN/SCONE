@@ -805,7 +805,7 @@ contains
 
       !$omp simd aligned(totVec)
       do g = 1, self % nG
-        attenuate(g) = exponential(totVec(g) * lenFlt) !aka F1 in LS
+        attenuate(g) = expTau(totVec(g) * lenFlt) * length
         delta(g) = (fluxVec(g) - currentSource(g)) * attenuate(g)     
         fluxVec(g) = fluxVec(g) - delta(g)
       end do
@@ -928,7 +928,7 @@ contains
         do SH = 1, self % SHLength
 
           if (vol > volume_tolerance) then
-              self % moments(idx,SH) =  self % moments(idx,SH) * norm / ( total * vol)
+              self % moments(idx,SH) =  self % moments(idx,SH) * norm / (vol)
           end if
 
           self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH)

@@ -59,6 +59,11 @@ contains
 
   end function expTau
 
+  !!
+  !! Computes x = 1 - exp(-tau)/tau for use in MoC calcs
+  !! Tau is the optical distance
+  !!
+
   elemental function expTau(tau) result(x)
   real(defFlt), intent(in)    :: tau
   real(defFlt)                :: x
