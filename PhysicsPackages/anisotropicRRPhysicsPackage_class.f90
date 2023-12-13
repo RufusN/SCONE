@@ -97,7 +97,6 @@ module anisotropicRRPhysicsPackage_class
   !!     #fissionMap {<map>}#  // Optionally output fission rates according to a given map
   !!     #fluxMap {<map>}#     // Optionally output one-group fluxes according to a given map
   !!     #plot 1;#             // Optionally make VTK viewable plot of fluxes and uncertainties
-  !!     #rho 0;#              // Optional stabilisation for negative in-group scattering XSs
   !!     #SHOrder 0;#    // Optional spherical harmonic order for higher order scattering.
   !!
   !!     geometry {<Geometry Definition>}
@@ -123,7 +122,6 @@ module anisotropicRRPhysicsPackage_class
   !!   inactive    -> Number of inactive cycles to perform
   !!   active      -> Number of active cycles to perform
   !!   cache       -> Logical check whether to use distance caching
-  !!   rho         -> Stabilisation factor: 0 is no stabilisation, 1 is aggressive stabilisation
   !!   SHOrder     -> Order of higher order scattering, isotropic 0 by default, maximum P3 / 3rd order
   !!   SHLength    -> Number of spherical harmonics for given SHOrder.
   !!   outputFile  -> Output file name
@@ -181,7 +179,6 @@ module anisotropicRRPhysicsPackage_class
     integer(shortInt)  :: inactive    = 0
     integer(shortInt)  :: active      = 0
     logical(defBool)   :: cache       = .false.
-    real(defReal)      :: rho         = ZERO
     integer(shortInt)  :: SHOrder  = 0
     integer(shortInt)  :: SHLength = 1
     character(pathLen) :: outputFile
@@ -287,9 +284,6 @@ contains
     
     ! Perform distance caching?
     call dict % getOrDefault(self % cache, 'cache', .false.)
-    
-    ! Stabilisation factor for negative in-group scattering
-    call dict % getOrDefault(self % rho, 'rho', ZERO)
 
     ! Higher order scattering order
     call dict % getOrDefault(self % SHOrder, 'SHOrder', 0)
@@ -850,9 +844,9 @@ contains
   subroutine SphericalHarmonicCalculator(self, mu, RCoeffs)
     ! angle: x = r sin θ cos φ, y = r sin θ sin φ, and z = r cos θ
     class(anisotropicRRPhysicsPackage), intent(inout)       :: self
-    real(defReal), dimension(self % SHLength), intent(out)   :: RCoeffs ! Array to store harmonic coefficients
-    real(defReal)                                                  :: dirX,dirY,dirZ
-    real(defReal), dimension(3), intent(in)                        :: mu
+    real(defReal), dimension(self % SHLength), intent(out)  :: RCoeffs ! Array to store harmonic coefficients
+    real(defReal)                                           :: dirX,dirY,dirZ
+    real(defReal), dimension(3), intent(in)                 :: mu
 
 
     dirX = mu(1)
@@ -942,7 +936,7 @@ contains
           if (self % moments(idx,SH) < ZERO) then
             self % moments(idx,SH) = ZERO
           end if
-          
+
         end do
 
 
@@ -1477,7 +1471,6 @@ contains
     self % inactive    = 0
     self % active      = 0
     self % cache       = .false.
-    self % rho         = ZERO
     self % SHLength  = 1
     self % SHOrder   = 0
     self % mapFission  = .false.
