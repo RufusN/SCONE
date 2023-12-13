@@ -60,7 +60,7 @@ contains
   end function exponential
 
   !!
-  !! Computes x = 1 - exp(-tau)/tau for use in MoC calcs
+  !! Computes x = (1 - exp(-tau))/tau for use in MoC calcs
   !! Tau is the optical distance
   !!
 

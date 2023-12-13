@@ -805,9 +805,10 @@ contains
 
       !$omp simd aligned(totVec)
       do g = 1, self % nG
-        attenuate(g) = expTau(totVec(g) * lenFlt) * length
+        attenuate(g) = expTau(totVec(g) * lenFlt) * lenFlt
         delta(g) = (fluxVec(g) - currentSource(g)) * attenuate(g)     
-        fluxVec(g) = fluxVec(g) - delta(g)
+        fluxVec(g) = fluxVec(g) - delta(g) * totVec(g)
+
       end do
 
       ! Accumulate to scalar flux
@@ -928,10 +929,10 @@ contains
         do SH = 1, self % SHLength
 
           if (vol > volume_tolerance) then
-              self % moments(idx,SH) =  self % moments(idx,SH) * norm / (vol)
+              self % moments(idx,SH) =  self % moments(idx,SH) * norm / vol
           end if
 
-          self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH)
+          self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
 
           if (self % moments(idx,SH) < ZERO) then
             self % moments(idx,SH) = ZERO
