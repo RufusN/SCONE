@@ -443,11 +443,7 @@ contains
     allocate(self % fluxScores(self % nCells * self % nG, 2))
     allocate(self % moments(self % nCells * self % nG, self % SHLength))
     allocate(self % prevMoments(self % nCells * self % nG, self % SHLength))
-
     allocate(self % source(self % nCells * self % nG, self % SHLength))
-    
-    
-
     allocate(self % volume(self % nCells))
     allocate(self % volumeTracks(self % nCells))
     allocate(self % cellHit(self % nCells))
@@ -531,18 +527,14 @@ contains
     call timerReset(self % timerMain)
     call timerStart(self % timerMain)
 
-    ! Initialise fluxes 
+    ! Initialise moments
     self % keff       = 1.0_defFlt
-    !self % scalarFlux = 0.0_defFlt
-    !self % prevFlux   = 1.0_defFlt
-
     self % moments     = ZERO
     self % prevMoments = 1.0_defReal
-    self % source     = ZERO
 
     self % fluxScores = ZERO
     self % keffScore  = ZERO
-    !self % source     = 0.0_defFlt
+    self % source     = ZERO
 
     ! Initialise other results
     self % cellHit      = 0
@@ -808,7 +800,7 @@ contains
         call self % sphericalHarmonicCalculator(mu0, RCoeffs)
       end if
 
-      !$omp simd
+      !$omp simd aligned(currentSource)
       do g = 1, self % nG
         currentSource(g) = ZERO
         do SH = 1, self % SHLength
@@ -946,6 +938,11 @@ contains
           end if
 
           self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH)
+
+          if (self % moments(idx,SH) < ZERO) then
+            self % moments(idx,SH) = ZERO
+          end if
+          
         end do
 
 
