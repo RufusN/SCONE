@@ -57,7 +57,7 @@ contains
 
     x = num / den
 
-  end function expTau
+  end function exponential
 
   !!
   !! Computes x = 1 - exp(-tau)/tau for use in MoC calcs
