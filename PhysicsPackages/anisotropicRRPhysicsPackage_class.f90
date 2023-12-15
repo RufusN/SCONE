@@ -785,7 +785,7 @@ contains
 
       ints = ints + 1
 
-      if (matIdx >= VOID_MAT) then
+      if (matIdx < VOID_MAT) then
 
         lenFlt = real(length,defFlt)
         baseIdx = (cIdx - 1) * self % nG
