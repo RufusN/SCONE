@@ -258,7 +258,7 @@ contains
   subroutine init(self,dict)
     class(anisotropicRRPhysicsPackage), intent(inout) :: self
     class(dictionary), intent(inout)              :: dict
-    integer(shortInt)                             :: seed_temp, i, g, g1, m
+    integer(shortInt)                             :: seed_temp, i, g, g1, m, SH
     integer(longInt)                              :: seed
     character(10)                                 :: time
     character(8)                                  :: date
@@ -460,7 +460,7 @@ contains
     allocate(self % sigmaT(self % nMat * self % nG))
     allocate(self % nuSigmaF(self % nMat * self % nG))
     allocate(self % chi(self % nMat * self % nG))
-    allocate(self % sigmaS(self % nMat * self % nG * self % nG))
+    allocate(self % sigmaS(self % nMat * self % nG * self % nG, SHOrder))
 
     do m = 1, self % nMat
       matPtr  => self % mgData % getMaterial(m)
@@ -471,8 +471,10 @@ contains
         self % chi(self % nG * (m - 1) + g) = real(mat % getChi(g, self % rand),defFlt)
         ! Include scattering multiplicity
         do g1 = 1, self % nG
+          do SH = 1, SHOrder
           self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1)  = &
-                  real(mat % getScatterXS(g1, g, self % rand) * mat % scatter % prod(g1, g) , defFlt)
+                  real(mat % scatter % getPnScatter(g1, g, N) * mat % scatter % prod(g1, g) , defFlt)
+          end do
         end do
       end do
     end do
@@ -783,61 +785,63 @@ contains
 
       ints = ints + 1
 
-      lenFlt = real(length,defFlt)
-      baseIdx = (cIdx - 1) * self % nG
-      sourceVec => self % source(baseIdx + 1 : baseIdx + self % nG, :)
+      if (matIdx >= VOID_MAT) then
 
-      !calculate source along track if boundary hit
-      if (newRay .OR. event == BOUNDARY_EV) then 
-        newRay = .false. 
-        !call subroutine for RCoeffs
-        call self % sphericalHarmonicCalculator(mu0, RCoeffs)
-      end if
+        lenFlt = real(length,defFlt)
+        baseIdx = (cIdx - 1) * self % nG
+        sourceVec => self % source(baseIdx + 1 : baseIdx + self % nG, :)
 
-      !$omp simd
-      do g = 1, self % nG
-        currentSource(g) = ZERO
-        do SH = 1, self % SHLength
-          currentSource(g) = currentSource(g) + sourceVec(g,SH) * RCoeffs(SH)
-        end do 
-      end do
+        !calculate source along track if boundary hit
+        if (newRay .OR. event == BOUNDARY_EV) then 
+          newRay = .false. 
+          !call subroutine for RCoeffs
+          call self % sphericalHarmonicCalculator(mu0, RCoeffs)
+        end if
 
-
-      !$omp simd aligned(totVec)
-      do g = 1, self % nG
-        attenuate(g) = expTau(totVec(g) * lenFlt) * lenFlt
-        delta(g) = (fluxVec(g) - currentSource(g)) * attenuate(g)     
-        fluxVec(g) = fluxVec(g) - delta(g) * totVec(g)
-
-      end do
-
-      ! Accumulate to scalar flux
-      if (activeRay) then
-
-        angularMomVec => self % moments(baseIdx + 1 : baseIdx + self % nG, :)
-      
-        call OMP_set_lock(self % locks(cIdx))
-        !$omp simd aligned(angularMomVec)
-        do g = 1, self % nG
-          do SH = 1, self % SHLength
-            angularMomVec(g,SH)  = angularMomVec(g,SH) + RCoeffs(SH) * delta(g) 
-          end do  
-        end do
-        self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
-        call OMP_unset_lock(self % locks(cIdx))
-
-        if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
-      
-      end if
-
-      ! Check for a vacuum hit
-      if (hitVacuum) then
         !$omp simd
         do g = 1, self % nG
-          fluxVec(g) = 0.0_defFlt
+          currentSource(g) = ZERO
+          do SH = 1, self % SHLength
+            currentSource(g) = currentSource(g) + sourceVec(g,SH) * RCoeffs(SH)
+          end do 
         end do
-      end if
 
+
+        !$omp simd aligned(totVec)
+        do g = 1, self % nG
+          attenuate(g) = expTau(totVec(g) * lenFlt) * lenFlt
+          delta(g) = (fluxVec(g) - currentSource(g)) * attenuate(g)     
+          fluxVec(g) = fluxVec(g) - delta(g) * totVec(g)
+        end do
+
+        ! Accumulate to scalar flux
+        if (activeRay) then
+
+          angularMomVec => self % moments(baseIdx + 1 : baseIdx + self % nG, :)
+        
+          call OMP_set_lock(self % locks(cIdx))
+          !$omp simd aligned(angularMomVec)
+          do g = 1, self % nG
+            do SH = 1, self % SHLength
+              angularMomVec(g,SH)  = angularMomVec(g,SH) + RCoeffs(SH) * delta(g) 
+            end do  
+          end do
+          self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
+          call OMP_unset_lock(self % locks(cIdx))
+
+          if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
+        
+        end if
+
+        ! Check for a vacuum hit
+        if (hitVacuum) then
+          !$omp simd
+          do g = 1, self % nG
+            fluxVec(g) = 0.0_defFlt
+          end do
+        end if
+
+      end if
     end do
 
   end subroutine transportSweep
@@ -916,32 +920,36 @@ contains
     !$omp parallel do schedule(static)
     do cIdx = 1, self % nCells
       matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
-      
-      ! Update volume due to additional rays
-      self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
-      vol = real(self % volume(cIdx),defFlt)
 
-      do g = 1, self % nG
+      if (matIdx < VOID_MAT) then
+        
+        ! Update volume due to additional rays
+        self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
+        vol = real(self % volume(cIdx),defFlt)
 
-        total = self % sigmaT((matIdx - 1) * self % nG + g)
-        idx   = self % nG * (cIdx - 1) + g
+        do g = 1, self % nG
 
-        do SH = 1, self % SHLength
+          total = self % sigmaT((matIdx - 1) * self % nG + g)
+          idx   = self % nG * (cIdx - 1) + g
 
-          if (vol > volume_tolerance) then
-              self % moments(idx,SH) =  self % moments(idx,SH) * norm / vol
-          end if
+          do SH = 1, self % SHLength
 
-          self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
+            if (vol > volume_tolerance) then
+                self % moments(idx,SH) =  self % moments(idx,SH) * norm / vol
+            end if
 
-          if (self % moments(idx,SH) < ZERO) then
-            self % moments(idx,SH) = ZERO
-          end if
+            self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
+
+            if (self % moments(idx,SH) < ZERO) then
+              self % moments(idx,SH) = ZERO
+            end if
+
+          end do
+
 
         end do
 
-
-      end do
+      end if
 
     end do
     !$omp end parallel do

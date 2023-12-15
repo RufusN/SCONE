@@ -231,8 +231,8 @@ module linearAnisotropicScattering_class
     ! Results space
     real(defFlt)                               :: keff
     real(defReal), dimension(2)                :: keffScore
-    real(defFlt), dimension(:), allocatable    :: scalarFlux
-    real(defFlt), dimension(:), allocatable    :: prevFlux
+    real(defReal), dimension(:,:), allocatable :: moments
+    real(defReal), dimension(:,:), allocatable :: prevMoments
     real(defFlt), dimension(:), allocatable    :: scalarX
     real(defFlt), dimension(:), allocatable    :: scalarY
     real(defFlt), dimension(:), allocatable    :: scalarZ
@@ -240,7 +240,7 @@ module linearAnisotropicScattering_class
     real(defFlt), dimension(:), allocatable    :: prevY
     real(defFlt), dimension(:), allocatable    :: prevZ
     real(defReal), dimension(:,:), allocatable :: fluxScores
-    real(defFlt), dimension(:), allocatable    :: source
+    real(defReal), dimension(:,:), allocatable :: source
     real(defFlt), dimension(:), allocatable    :: sourceX
     real(defFlt), dimension(:), allocatable    :: sourceY
     real(defFlt), dimension(:), allocatable    :: sourceZ
@@ -476,8 +476,8 @@ contains
     self % nCells = self % geom % numberOfCells()
 
     ! Allocate results space
-    allocate(self % scalarFlux(self % nCells * self % nG))
-    allocate(self % prevFlux(self % nCells * self % nG))
+    allocate(self % moments(self % nCells * self % nG, self % SHLength))
+    allocate(self % prevMoments(self % nCells * self % nG, self % SHLength))
     allocate(self % scalarX(self % nCells * self % nG))
     allocate(self % scalarY(self % nCells * self % nG))
     allocate(self % scalarZ(self % nCells * self % nG))
@@ -485,7 +485,7 @@ contains
     allocate(self % prevY(self % nCells * self % nG))
     allocate(self % prevZ(self % nCells * self % nG))
     allocate(self % fluxScores(self % nCells * self % nG, 2))
-    allocate(self % source(self % nCells * self % nG))
+    allocate(self % source(self % nCells * self % nG, self % SHLength))
     allocate(self % sourceX(self % nCells * self % nG))
     allocate(self % sourceY(self % nCells * self % nG))
     allocate(self % sourceZ(self % nCells * self % nG))
@@ -583,17 +583,17 @@ contains
 
     ! Initialise fluxes 
     self % keff       = 1.0_defFlt
-    self % scalarFlux = 0.0_defFlt
+    self % moments     = 0.0_defReal
+    self % prevMoments = 1.0_defReal
     self % scalarX  = 0.0_defFlt
     self % scalarY  = 0.0_defFlt
     self % scalarZ  = 0.0_defFlt
-    self % prevFlux = 1.0_defFlt
     self % prevX    = 0.0_defFlt
     self % prevY    = 0.0_defFlt
     self % prevZ    = 0.0_defFlt
     self % fluxScores = 0.0_defReal
     self % keffScore  = 0.0_defReal
-    self % source     = 0.0_defFlt
+    self % source     = 0.0_defReal
     self % sourceX = 0.0_defFlt
     self % sourceY = 0.0_defFlt
     self % sourceZ = 0.0_defFlt
@@ -817,6 +817,8 @@ contains
     matIdx0 = 0
     totalLength = ZERO
     activeRay = .false.
+    newRay = .true.
+
     do while (totalLength < self % termination)
 
       ! Get ray coords for LS calculations
@@ -875,7 +877,7 @@ contains
       xGradVec => self % sourceX((baseIdx + 1):(baseIdx + self % nG))
       yGradVec => self % sourceY((baseIdx + 1):(baseIdx + self % nG))
       zGradVec => self % sourceZ((baseIdx + 1):(baseIdx + self % nG))
-      sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
+      sourceVec => self % source(baseIdx + 1 : baseIdx + self % nG, :)
       mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
 
       if (self % volume(cIdx) > volume_tolerance) then
