@@ -68,6 +68,7 @@ module multiScatterMG_class
 
     ! Local procedures
     procedure :: buildFromDict
+    procedure :: getPnScatter
     procedure, non_overridable :: sampleGout
     procedure, non_overridable :: scatterXS
     procedure, non_overridable :: production
@@ -213,6 +214,15 @@ contains
     phi = TWO_PI * rand % get()
 
   end subroutine sampleOut
+
+  function getPnScatter(self, G_in, G_out, N) result(xs)
+    class(multiScatterMG), intent(in) :: self
+    integer(shortInt), intent(in)       :: G_in
+    integer(shortInt), intent(in)       :: G_out
+    integer(shortInt), intent(in)       :: N
+    real(defReal)                       :: xs
+
+  end function getPnScatter
 
   !!
   !! Sample outgoing energy group

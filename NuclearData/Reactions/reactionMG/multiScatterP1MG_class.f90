@@ -43,6 +43,7 @@ module multiScatterP1MG_class
     procedure :: kill
     procedure :: sampleOut
     procedure :: buildFromDict
+    procedure :: getPnScatter
   end type multiScatterP1MG
 
 contains
@@ -83,6 +84,15 @@ contains
     phi = TWO_PI * rand % get()
 
   end subroutine sampleOut
+
+  function getPnScatter(self, G_in, G_out, N) result(xs)
+    class(multiScatterP1MG), intent(in) :: self
+    integer(shortInt), intent(in)       :: G_in
+    integer(shortInt), intent(in)       :: G_out
+    integer(shortInt), intent(in)       :: N
+    real(defReal)                       :: xs
+
+  end function getPnScatter
 
   !!
   !! Builds multiScatterP1MG from SCONE dictionary

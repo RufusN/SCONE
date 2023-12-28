@@ -196,7 +196,7 @@ module anisotropicRRPhysicsPackage_class
     ! Data space - absorb all nuclear data for speed
     real(defFlt), dimension(:), allocatable     :: sigmaT
     real(defFlt), dimension(:), allocatable     :: nuSigmaF
-    real(defFlt), dimension(:), allocatable     :: sigmaS
+    real(defFlt), dimension(:,:), allocatable   :: sigmaS
     real(defFlt), dimension(:), allocatable     :: chi
 
     ! Results space
@@ -288,7 +288,7 @@ contains
     ! Higher order scattering order
     call dict % getOrDefault(self % SHOrder, 'SHOrder', 0)
 
-    ! Number of spherical harmonics for given SHOrder
+    ! Number of spherical harmonic terms for given SHOrder
     self % SHLength = (self % SHOrder + 1 )**2
 
     ! Print fluxes?
@@ -460,7 +460,7 @@ contains
     allocate(self % sigmaT(self % nMat * self % nG))
     allocate(self % nuSigmaF(self % nMat * self % nG))
     allocate(self % chi(self % nMat * self % nG))
-    allocate(self % sigmaS(self % nMat * self % nG * self % nG, SHOrder))
+    allocate(self % sigmaS(self % nMat * self % nG * self % nG, self % SHOrder + 1 ))
 
     do m = 1, self % nMat
       matPtr  => self % mgData % getMaterial(m)
@@ -471,13 +471,21 @@ contains
         self % chi(self % nG * (m - 1) + g) = real(mat % getChi(g, self % rand),defFlt)
         ! Include scattering multiplicity
         do g1 = 1, self % nG
-          do SH = 1, SHOrder
-          self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1)  = &
-                  real(mat % scatter % getPnScatter(g1, g, N) * mat % scatter % prod(g1, g) , defFlt)
+          do SH = 1, self % SHOrder
+            self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, SH)  = &
+                    real(mat % scatter % getPnScatter(g1, g, SH) * mat % scatter % prod(g1, g) , defFlt)
+                    !real(mat % getScatterXS(g1, g, self % rand) * mat % scatter % prod(g1, g) , defFlt)
           end do
         end do
       end do
     end do
+
+    !print *, size(self % sigmaS)
+    !print *, size(self % sigmaS(:,2))
+    !print *, shape(self % sigmaS)
+    !print *, self % SHOrder, self % SHLength
+
+    !stop
 
   end subroutine init
 
@@ -566,11 +574,12 @@ contains
         call self % sourceUpdateKernel(i, ONE_KEFF)
       end do
       !$omp end parallel do
+
       ! Reset and start transport timer
       call timerReset(self % timerTransport)
       call timerStart(self % timerTransport)
       intersections = 0
-      
+
       !$omp parallel do schedule(dynamic) reduction(+: intersections)
       do i = 1, self % pop
 
@@ -719,7 +728,7 @@ contains
     real(defReal), dimension(self % nG)                   :: currentSource
     real(defFlt), pointer, dimension(:)                   :: scalarVec, totVec
     real(defReal), dimension(3)                           :: r0, mu0
-    real(defReal), dimension(self % SHLength)       :: RCoeffs   
+    real(defReal), dimension(self % SHLength)             :: RCoeffs   
     real(defReal), pointer, dimension(:,:)                :: sourceVec, angularMomVec
 
     ! Set initial angular flux to angle average of cell source
@@ -746,11 +755,10 @@ contains
         totVec => self % sigmaT((matIdx - 1) * self % nG + 1:self % nG)
       end if
 
-      ! Remember co-ordinates to set new cell's position
-      if (.not. self % cellFound(cIdx)) then
-        r0 = r % rGlobal()
-        mu0 = r % dirGlobal()
-      end if
+      !always calculate r0 and mu0, mu0 used in S Harmonics
+      r0 = r % rGlobal()
+      mu0 = r % dirGlobal()
+
           
       ! Set maximum flight distance and ensure ray is active
       if (totalLength >= self % dead) then
@@ -805,7 +813,6 @@ contains
             currentSource(g) = currentSource(g) + sourceVec(g,SH) * RCoeffs(SH)
           end do 
         end do
-
 
         !$omp simd aligned(totVec)
         do g = 1, self % nG
@@ -964,10 +971,11 @@ contains
     integer(shortInt), intent(in)                         :: cIdx
     real(defFlt), intent(in)                              :: ONE_KEFF
     real(defFlt)                                          :: scatter, fission
-    real(defFlt), dimension(:), pointer                   :: nuFission, total, chi, scatterXS 
-    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, SH
-    real(defFlt), pointer, dimension(:)                   :: scatterVec
-    real(defReal), pointer, dimension(:,:)                 :: angularMomVec
+    real(defFlt), dimension(:), pointer                   :: nuFission, total, chi
+    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, SH, SHidx
+    real(defFlt), pointer, dimension(:,:)                 ::  scatterXS, scatterVec
+    real(defReal), pointer, dimension(:,:)                :: angularMomVec
+    !real(defFlt), pointer, dimension(:)                   :: scatterVec
 
     ! Identify material
     matIdx  =  self % geom % geom % graph % getMatFromUID(cIdx) 
@@ -987,52 +995,70 @@ contains
     ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
     total => self % sigmaT(matIdx + (1):(self % nG))
-    scatterXS => self % sigmaS(matIdx * self % nG + (1):(self % nG*self % nG))
+    scatterXS => self % sigmaS(matIdx * self % nG + (1):(self % nG*self % nG), :)
     nuFission => self % nuSigmaF(matIdx + (1):(self % nG))
     chi => self % chi(matIdx + (1):(self % nG))
 
-    baseIdx = self % ng * (cIdx - 1)
+    baseIdx = self % nG * (cIdx - 1)
+    angularMomVec => self % prevMoments(baseIdx+(1):(self % nG), :)
 
-    !fluxVec => self % prevFlux(baseIdx+(1):(self % nG))
-    angularMomVec => self % prevMoments(baseIdx + 1 : baseIdx + self % nG, :)
+    !print *, size(angularMomVec)
+    !print *, size(angularMomVec(1,:))
+    !print *, size(nuFission)
+    !print *, '-----------------------------------------'
 
     ! Calculate fission source
     fission = 0.0_defFlt
-    !$omp simd reduction(+:fission) aligned(angularMomVec)
+    !$omp simd 
+    !reduction(+:fission) aligned(angularMomVec)
     do gIn = 1, self % nG
       fission = fission + angularMomVec(gIn,1) * nuFission(gIn)
     end do
     fission = fission * ONE_KEFF
 
-
     do g = 1, self % nG
 
-      scatterVec => scatterXS(self % nG * (g - 1) + (1):self % nG)
-      idx = baseIdx + g
+      scatterVec => scatterXS(self % nG * (g - 1) + (1):self % nG, :)
 
-      do SH = 2, self % SHLength
+      do SH = 1, self % SHLength
+        ! Calculate scattering source for higher order scattering
+        SHidx = ceiling(sqrt(real(SH, defReal)) - 1) + 1
 
-        ! Calculate scattering source
+        !print *, g, SH, SHidx, self % nG
+
+        !scatterVec => scatterXS(self % nG * (g - 1) + (1):self % nG, Shidx)
+
         scatter = 0.0_defFlt
 
         ! Sum contributions from all energies
-        !$omp simd reduction(+:scatter) aligned(angularMomVec)
+        !$omp simd 
+        !reduction(+:scatter) aligned(angularMomVec)
         do gIn = 1, self % nG
-          scatter = scatter + angularMomVec(gIn, SH) * scatterVec(gIn)
+
+          print *, g, SH, SHidx, self % nG, gIn
+          print *, '----------------------------------------- first'
+
+          print *, size(angularMomVec), size(scatterVec)
+          print *, '----------------------------------------- second'
+
+          print *, matIdx, cIdx
+          print *, '----------------------------------------- third'
+
+          scatter = scatter + angularMomVec(gIn, SH) * scatterVec(gIn, SHidx)
+
         end do
+
+        idx = baseIdx + g
 
         self % source(idx,SH) = scatter / total(g)
 
       end do
 
+      ! Calculate scattering source for isotropic scattering / flat source
 
-      scatter = 0.0_defFlt
-      do gIn = 1, self % nG
-        scatter = scatter + angularMomVec(gIn, 1) * scatterVec(gIn)
-      end do
+      idx = baseIdx + g
 
-      self % source(idx,1) = scatter + chi(g) * fission 
-      self % source(idx,1) = self % source(idx,1) / total(g)
+      self % source(idx,1) = self % source(idx,1) + chi(g) * fission / total(g)
 
   end do
 
