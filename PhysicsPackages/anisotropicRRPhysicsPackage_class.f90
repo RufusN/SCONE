@@ -480,13 +480,6 @@ contains
       end do
     end do
 
-    !print *, size(self % sigmaS)
-    !print *, size(self % sigmaS(:,2))
-    !print *, shape(self % sigmaS)
-    !print *, self % SHOrder, self % SHLength
-
-    !stop
-
   end subroutine init
 
   !!
@@ -574,7 +567,6 @@ contains
         call self % sourceUpdateKernel(i, ONE_KEFF)
       end do
       !$omp end parallel do
-
       ! Reset and start transport timer
       call timerReset(self % timerTransport)
       call timerStart(self % timerTransport)
@@ -755,7 +747,7 @@ contains
         totVec => self % sigmaT((matIdx - 1) * self % nG + 1:self % nG)
       end if
 
-      !always calculate r0 and mu0, mu0 used in S Harmonics
+      !always caluclate r0 and mu0, mu0 used in SHarmonics
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
 
@@ -973,9 +965,8 @@ contains
     real(defFlt)                                          :: scatter, fission
     real(defFlt), dimension(:), pointer                   :: nuFission, total, chi
     integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, SH, SHidx
-    real(defFlt), pointer, dimension(:,:)                 ::  scatterXS, scatterVec
+    real(defFlt), pointer, dimension(:,:)                 :: scatterVec, scatterXS
     real(defReal), pointer, dimension(:,:)                :: angularMomVec
-    !real(defFlt), pointer, dimension(:)                   :: scatterVec
 
     ! Identify material
     matIdx  =  self % geom % geom % graph % getMatFromUID(cIdx) 
@@ -1000,17 +991,24 @@ contains
     chi => self % chi(matIdx + (1):(self % nG))
 
     baseIdx = self % nG * (cIdx - 1)
+
     angularMomVec => self % prevMoments(baseIdx+(1):(self % nG), :)
 
-    !print *, size(angularMomVec)
-    !print *, size(angularMomVec(1,:))
-    !print *, size(nuFission)
-    !print *, '-----------------------------------------'
+    print *, 'fission'
+    print *, size(nuFission), size(self % nuSigmaF)
+
+    print *, 'scatter'
+    print *, size(scatterXS), size(self % sigmaS)
+
+    print *, 'moments'
+    print *, size(angularMomVec), size(self % prevMoments)
+
+    print *, 'indicies'
+    print *, self % SHOrder, self % SHLength
 
     ! Calculate fission source
     fission = 0.0_defFlt
-    !$omp simd 
-    !reduction(+:fission) aligned(angularMomVec)
+    !$omp simd reduction(+:fission) aligned(angularMomVec)
     do gIn = 1, self % nG
       fission = fission + angularMomVec(gIn,1) * nuFission(gIn)
     end do
@@ -1024,28 +1022,12 @@ contains
         ! Calculate scattering source for higher order scattering
         SHidx = ceiling(sqrt(real(SH, defReal)) - 1) + 1
 
-        !print *, g, SH, SHidx, self % nG
-
-        !scatterVec => scatterXS(self % nG * (g - 1) + (1):self % nG, Shidx)
-
         scatter = 0.0_defFlt
 
         ! Sum contributions from all energies
-        !$omp simd 
-        !reduction(+:scatter) aligned(angularMomVec)
+        !$omp simd reduction(+:scatter) aligned(angularMomVec)
         do gIn = 1, self % nG
-
-          print *, g, SH, SHidx, self % nG, gIn
-          print *, '----------------------------------------- first'
-
-          print *, size(angularMomVec), size(scatterVec)
-          print *, '----------------------------------------- second'
-
-          print *, matIdx, cIdx
-          print *, '----------------------------------------- third'
-
           scatter = scatter + angularMomVec(gIn, SH) * scatterVec(gIn, SHidx)
-
         end do
 
         idx = baseIdx + g

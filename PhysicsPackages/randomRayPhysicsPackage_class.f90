@@ -460,7 +460,6 @@ contains
         end do
       end do
     end do
-
   end subroutine init
 
   !!
@@ -893,6 +892,16 @@ contains
 
     baseIdx = self % ng * (cIdx - 1)
     fluxVec => self % prevFlux(baseIdx+(1):(self % nG))
+
+    print *, 'fission'
+    print *, size(nuFission), size(self % nuSigmaF)
+
+    print *, 'scatter'
+    print *, size(scatterXS), size(self % sigmaS)
+
+    print *, 'moments'
+    print *, size(fluxVec), size(self % prevFlux)
+
 
     ! Calculate fission source
     fission = 0.0_defFlt
