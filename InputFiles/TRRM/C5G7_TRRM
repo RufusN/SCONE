@@ -1,5 +1,5 @@
-type randomRayPhysicsPackage; 
-
+//type randomRayPhysicsPackage; 
+type anisotropicRRPhysicsPackage;
 pop      1750; 
 active   2600;  
 inactive 1000; 
