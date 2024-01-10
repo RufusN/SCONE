@@ -471,7 +471,7 @@ contains
         self % chi(self % nG * (m - 1) + g) = real(mat % getChi(g, self % rand),defFlt)
         ! Include scattering multiplicity
         do g1 = 1, self % nG
-          do SH = 1, self % SHOrder
+          do SH = 1, self % SHOrder + 1
             self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, SH)  = &
                     real(mat % scatter % getPnScatter(g1, g, SH) * mat % scatter % prod(g1, g) , defFlt)
                     !real(mat % getScatterXS(g1, g, self % rand) * mat % scatter % prod(g1, g) , defFlt)
@@ -479,6 +479,7 @@ contains
         end do
       end do
     end do
+    
 
   end subroutine init
 
@@ -994,17 +995,17 @@ contains
 
     angularMomVec => self % prevMoments(baseIdx+(1):(self % nG), :)
 
-    print *, 'fission'
-    print *, size(nuFission), size(self % nuSigmaF)
+    !print *, 'fission'
+    !print *, size(nuFission), size(self % nuSigmaF)
 
-    print *, 'scatter'
-    print *, size(scatterXS), size(self % sigmaS)
+    !print *, 'scatter'
+    !print *, size(scatterXS), size(self % sigmaS)
 
-    print *, 'moments'
-    print *, size(angularMomVec), size(self % prevMoments)
+    !print *, 'moments'
+    !print *, size(angularMomVec), size(self % prevMoments)
 
-    print *, 'indicies'
-    print *, self % SHOrder, self % SHLength
+    !print *, 'indicies'
+    !print *, self % SHOrder, self % SHLength
 
     ! Calculate fission source
     fission = 0.0_defFlt
@@ -1027,6 +1028,7 @@ contains
         ! Sum contributions from all energies
         !$omp simd reduction(+:scatter) aligned(angularMomVec)
         do gIn = 1, self % nG
+          print *, SHidx, shape(scatterVec), size(scatterVec)
           scatter = scatter + angularMomVec(gIn, SH) * scatterVec(gIn, SHidx)
         end do
 
