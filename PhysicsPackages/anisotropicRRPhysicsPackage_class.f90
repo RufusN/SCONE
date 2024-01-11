@@ -973,7 +973,7 @@ contains
     
     ! Guard against void cells
     if (matIdx >= VOID_MAT) then
-      baseIdx = self % ng * (cIdx - 1)
+      baseIdx = self % nG * (cIdx - 1)
       do g = 1, self % nG
         idx = baseIdx + g
         do SH = 1, self % SHLength
@@ -993,18 +993,6 @@ contains
     baseIdx = self % nG * (cIdx - 1)
 
     angularMomVec => self % prevMoments(baseIdx+(1):(self % nG), :)
-
-    !print *, 'fission'
-    !print *, size(nuFission), size(self % nuSigmaF)
-
-    !print *, 'scatter'
-    !print *, size(scatterXS), size(self % sigmaS)
-
-    !print *, 'moments'
-    !print *, size(angularMomVec), size(self % prevMoments)
-
-    !print *, 'indicies'
-    !print *, self % SHOrder, self % SHLength
 
     ! Calculate fission source
     fission = 0.0_defFlt
