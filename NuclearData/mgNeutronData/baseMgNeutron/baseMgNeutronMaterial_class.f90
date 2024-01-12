@@ -318,7 +318,7 @@ contains
         allocate( multiScatterMG :: self % scatter)
 
       case ('P1')
-        allocate( multiScatterP1MG :: self % scatter)
+        allocate( multiScatterPNMG :: self % scatter)
 
       case ('PN')
         allocate( multiScatterPNMG :: self % scatter)

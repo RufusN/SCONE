@@ -471,15 +471,25 @@ contains
         self % chi(self % nG * (m - 1) + g) = real(mat % getChi(g, self % rand),defFlt)
         ! Include scattering multiplicity
         do g1 = 1, self % nG
-          do SH = 1, self % SHOrder + 1
-            self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, SH)  = &
-                    real(mat % scatter % getPnScatter(g1, g, SH) * mat % scatter % prod(g1, g) , defFlt)
+
+          self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, 1)  = &
+              real(mat % getScatterXS(g1, g, self % rand) * mat % scatter % prod(g1, g) , defFlt)
+
+          do SH = 1, self % SHOrder
+            self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, SH + 1)  = &
+                    real(mat % scatter % getPnScatter(g1, g, SH ) * mat % scatter % prod(g1, g) , defFlt)
                     !real(mat % getScatterXS(g1, g, self % rand) * mat % scatter % prod(g1, g) , defFlt)
+            !print *, SH
+            !print *, mat % scatter % getPnScatter(g1, g, SH)
+            !print *, mat % scatter % prod(g1, g)
           end do
         end do
       end do
     end do
-    
+
+    !!print *, "---------------------"
+    !print *, self % sigmaS(:100,2)
+    !stop
 
   end subroutine init
 
@@ -745,7 +755,7 @@ contains
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
         ! Cache total cross section
-        totVec => self % sigmaT((matIdx - 1) * self % nG + 1:self % nG)
+        totVec => self % sigmaT(((matIdx - 1) * self % nG + 1) : ((matIdx - 1) * self % nG + self % nG))
       end if
 
       !always caluclate r0 and mu0, mu0 used in SHarmonics
@@ -786,7 +796,8 @@ contains
 
       ints = ints + 1
 
-      if (matIdx < VOID_MAT) then
+      !if (matIdx < VOID_MAT) then
+      if (matIdx <= self % nMat) then
 
         lenFlt = real(length,defFlt)
         baseIdx = (cIdx - 1) * self % nG
@@ -921,7 +932,8 @@ contains
     do cIdx = 1, self % nCells
       matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
 
-      if (matIdx < VOID_MAT) then
+      !if (matIdx < VOID_MAT) then
+      if (matIdx <= self % nMat) then
         
         ! Update volume due to additional rays
         self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
@@ -965,15 +977,17 @@ contains
     real(defFlt), intent(in)                              :: ONE_KEFF
     real(defFlt)                                          :: scatter, fission
     real(defFlt), dimension(:), pointer                   :: nuFission, total, chi
-    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, SH, SHidx
+    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, SH, SHidx, i , j
     real(defFlt), pointer, dimension(:,:)                 :: scatterVec, scatterXS
     real(defReal), pointer, dimension(:,:)                :: angularMomVec
 
     ! Identify material
     matIdx  =  self % geom % geom % graph % getMatFromUID(cIdx) 
-    
+
     ! Guard against void cells
     if (matIdx >= VOID_MAT) then
+      print *, matIdx
+    !if (matIdx > self % nMat) then
       baseIdx = self % ng * (cIdx - 1)
       do g = 1, self % nG
         idx = baseIdx + g
@@ -984,28 +998,19 @@ contains
       return
     end if
 
+    !print *, matIdx
+
     ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
-    total => self % sigmaT(matIdx + (1):(self % nG))
-    scatterXS => self % sigmaS(matIdx * self % nG + (1):(self % nG*self % nG), :)
-    nuFission => self % nuSigmaF(matIdx + (1):(self % nG))
-    chi => self % chi(matIdx + (1):(self % nG))
+
+    total => self % sigmaT((matIdx + 1) : (matIdx + self % nG))
+    scatterXS => self % sigmaS((matIdx * self % nG + 1): (matIdx * self % nG + self % nG*self % nG), :)
+    nuFission => self % nuSigmaF((matIdx + 1) : (matIdx + self % nG))
+    chi => self % chi((matIdx + 1) : (matIdx + self % nG))
 
     baseIdx = self % nG * (cIdx - 1)
 
-    angularMomVec => self % prevMoments(baseIdx+(1):(self % nG), :)
-
-    !print *, 'fission'
-    !print *, size(nuFission), size(self % nuSigmaF)
-
-    !print *, 'scatter'
-    !print *, size(scatterXS), size(self % sigmaS)
-
-    !print *, 'moments'
-    !print *, size(angularMomVec), size(self % prevMoments)
-
-    !print *, 'indicies'
-    !print *, self % SHOrder, self % SHLength
+    angularMomVec => self % prevMoments((baseIdx + 1) : (baseIdx + self % nG), :)
 
     ! Calculate fission source
     fission = 0.0_defFlt
@@ -1017,7 +1022,9 @@ contains
 
     do g = 1, self % nG
 
-      scatterVec => scatterXS(self % nG * (g - 1) + (1):self % nG, :)
+      scatterVec => scatterXS((self % nG * (g - 1) + 1) : (self % nG * (g - 1) + self % nG), :)
+
+      idx = baseIdx + g
 
       do SH = 1, self % SHLength
         ! Calculate scattering source for higher order scattering
@@ -1028,23 +1035,42 @@ contains
         ! Sum contributions from all energies
         !$omp simd reduction(+:scatter) aligned(angularMomVec)
         do gIn = 1, self % nG
-          print *, SHidx, shape(scatterVec), size(scatterVec)
           scatter = scatter + angularMomVec(gIn, SH) * scatterVec(gIn, SHidx)
         end do
 
-        idx = baseIdx + g
-
         self % source(idx,SH) = scatter / total(g)
+
+        !if (self % source(idx,SH) /= self % source(idx,SH)) then
+          !print *, self % source(idx,SH), scatter, total(g), matIdx
+          !print *, "NAN at position (", idx, ",", SH, ")"
+          !print *, scatterVec
+          !print *, angularMomVec
+          !stop
+        !end if
 
       end do
 
       ! Calculate scattering source for isotropic scattering / flat source
 
-      idx = baseIdx + g
-
       self % source(idx,1) = self % source(idx,1) + chi(g) * fission / total(g)
 
   end do
+
+
+  !print *, size(self % source), shape(self % source)
+  !do i = 1, size(self % source, dim=1)
+    !do j = 1, size(self % source, dim=2)
+      !if (self % source(i,j) /= self % source(i,j)) then
+        !print *, "NAN at position (", i, ",", j, ")"
+        !print *, "------"
+        !print *, self % source(i,j)
+        !stop
+      !end if
+    !end do
+  !end do
+
+
+
 
   end subroutine sourceUpdateKernel
 
@@ -1068,10 +1094,12 @@ contains
 
       ! Identify material
       matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
-      if (matIdx >= VOID_MAT) cycle
+      !if (matIdx >= VOID_MAT) cycle
+      if (matIdx > self % nMat) cycle
 
       matPtr => self % mgData % getMaterial(matIdx)
       mat    => baseMgNeutronMaterial_CptrCast(matPtr)
+
       if (.not. mat % isFissile()) cycle
 
       vol = real(self % volume(cIdx), defFlt)
