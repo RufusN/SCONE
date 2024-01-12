@@ -248,7 +248,7 @@ viz {
 
 nuclearData {
   handles { 
-    mg { type baseMgNeutronDatabase; PN P0;} 
+    mg { type baseMgNeutronDatabase; PN P0; } 
   } 
   materials { 
     numberOfGroups 7;
