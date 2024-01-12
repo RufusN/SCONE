@@ -797,7 +797,7 @@ contains
       ints = ints + 1
 
       !if (matIdx < VOID_MAT) then
-      if (matIdx <= self % nMat) then
+      if (matIdx <= self % nMat - 1) then
 
         lenFlt = real(length,defFlt)
         baseIdx = (cIdx - 1) * self % nG
@@ -933,7 +933,7 @@ contains
       matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
 
       !if (matIdx < VOID_MAT) then
-      if (matIdx <= self % nMat) then
+      if (matIdx <= self % nMat - 1) then
         
         ! Update volume due to additional rays
         self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
@@ -985,9 +985,9 @@ contains
     matIdx  =  self % geom % geom % graph % getMatFromUID(cIdx) 
 
     ! Guard against void cells
-    if (matIdx >= VOID_MAT) then
-      print *, matIdx
-    !if (matIdx > self % nMat) then
+    !if (matIdx >= VOID_MAT) then
+      !print *, matIdx
+    if (matIdx > self % nMat - 1) then
       baseIdx = self % ng * (cIdx - 1)
       do g = 1, self % nG
         idx = baseIdx + g
@@ -1095,7 +1095,7 @@ contains
       ! Identify material
       matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
       !if (matIdx >= VOID_MAT) cycle
-      if (matIdx > self % nMat) cycle
+      if (matIdx > self % nMat - 1) cycle
 
       matPtr => self % mgData % getMaterial(matIdx)
       mat    => baseMgNeutronMaterial_CptrCast(matPtr)
