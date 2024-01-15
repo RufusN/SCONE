@@ -202,9 +202,9 @@ module anisotropicRRPhysicsPackage_class
     ! Results space
     real(defFlt)                               :: keff
     real(defReal), dimension(2)                :: keffScore
-    real(defReal), dimension(:,:), allocatable :: moments
-    real(defReal), dimension(:,:), allocatable :: prevMoments
-    real(defReal), dimension(:,:), allocatable :: source
+    real(defFlt), dimension(:,:), allocatable  :: moments
+    real(defFlt), dimension(:,:), allocatable  :: prevMoments
+    real(defFlt), dimension(:,:), allocatable  :: source
     real(defReal), dimension(:,:), allocatable :: fluxScores
     real(defReal), dimension(:), allocatable   :: volume
     real(defReal), dimension(:), allocatable   :: volumeTracks
@@ -289,7 +289,7 @@ contains
     call dict % getOrDefault(self % SHOrder, 'SHOrder', 0)
 
     ! Number of spherical harmonic terms for given SHOrder
-    self % SHLength = (self % SHOrder + 1 )**2
+    self % SHLength = ( self % SHOrder + 1 )**2
 
     ! Print fluxes?
     call dict % getOrDefault(self % printFlux, 'printFlux', .false.)
@@ -471,16 +471,14 @@ contains
         self % chi(self % nG * (m - 1) + g) = real(mat % getChi(g, self % rand),defFlt)
         ! Include scattering multiplicity
         do g1 = 1, self % nG
-
           self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, 1)  = &
-              real(mat % getScatterXS(g1, g, self % rand) * mat % scatter % prod(g1, g) , defFlt)
+                real(mat % getScatterXS(g1, g, self % rand) * mat % scatter % prod(g1, g) , defFlt)
           if (self % SHOrder > 0) then
             do SH = 1, self % SHOrder
               self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, SH + 1)  = &
-                      real(mat % scatter % getPnScatter(g1, g, SH ) * mat % scatter % prod(g1, g) , defFlt)
-                      !real(mat % getScatterXS(g1, g, self % rand) * mat % scatter % prod(g1, g) , defFlt)
+                    real(mat % scatter % getPnScatter(g1, g, SH ) * mat % scatter % prod(g1, g) , defFlt)
             end do
-        end if
+          end if
         end do
       end do
     end do
@@ -530,13 +528,13 @@ contains
     call timerStart(self % timerMain)
 
     ! Initialise moments
-    self % keff       = 1.0_defFlt
-    self % moments     = ZERO
-    self % prevMoments = 1.0_defReal
+    self % keff        = 1.0_defFlt
+    self % moments     = 0.0_defFlt
+    self % prevMoments = 1.0_defFlt
 
     self % fluxScores = ZERO
     self % keffScore  = ZERO
-    self % source     = ZERO
+    self % source     = 0.0_defFlt
 
     ! Initialise other results
     self % cellHit      = 0
@@ -722,11 +720,11 @@ contains
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
-    real(defReal), dimension(self % nG)                   :: currentSource
+    real(defFlt), dimension(self % nG)                    :: currentSource
     real(defFlt), pointer, dimension(:)                   :: scalarVec, totVec
     real(defReal), dimension(3)                           :: r0, mu0
-    real(defReal), dimension(self % SHLength)             :: RCoeffs   
-    real(defReal), pointer, dimension(:,:)                :: sourceVec, angularMomVec
+    real(defFlt), dimension(self % SHLength)              :: RCoeffs   
+    real(defFlt), pointer, dimension(:,:)                 :: sourceVec, angularMomVec
 
     ! Set initial angular flux to angle average of cell source
     cIdx = r % coords % uniqueID
@@ -782,10 +780,11 @@ contains
       ints = ints + 1
       matIdx  = r % coords % matIdx
       cIdx    = r % coords % uniqueID
+
       !if (matIdx < VOID_MAT) then
       if (matIdx <= self % nMat) then
-        !Get material and cell the ray is moving through
 
+        !Get material and cell the ray is moving through
         if (matIdx0 /= matIdx) then
           matIdx0 = matIdx
           ! Cache total cross section
@@ -853,10 +852,9 @@ contains
   subroutine SphericalHarmonicCalculator(self, mu, RCoeffs)
     ! angle: x = r sin θ cos φ, y = r sin θ sin φ, and z = r cos θ
     class(anisotropicRRPhysicsPackage), intent(inout)       :: self
-    real(defReal), dimension(self % SHLength), intent(out)  :: RCoeffs ! Array to store harmonic coefficients
+    real(defFlt), dimension(self % SHLength), intent(out)   :: RCoeffs ! Array to store harmonic coefficients
     real(defReal)                                           :: dirX,dirY,dirZ
     real(defReal), dimension(3), intent(in)                 :: mu
-
 
     dirX = mu(1)
     dirY = mu(2)
@@ -972,7 +970,7 @@ contains
     real(defFlt), dimension(:), pointer                   :: nuFission, total, chi
     integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, SH, SHidx, i , j
     real(defFlt), pointer, dimension(:,:)                 :: scatterVec, scatterXS
-    real(defReal), pointer, dimension(:,:)                :: angularMomVec
+    real(defFlt), pointer, dimension(:,:)                 :: angularMomVec
 
     ! Identify material
     matIdx  =  self % geom % geom % graph % getMatFromUID(cIdx) 
