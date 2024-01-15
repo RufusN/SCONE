@@ -474,22 +474,16 @@ contains
 
           self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, 1)  = &
               real(mat % getScatterXS(g1, g, self % rand) * mat % scatter % prod(g1, g) , defFlt)
-
-          do SH = 1, self % SHOrder
-            self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, SH + 1)  = &
-                    real(mat % scatter % getPnScatter(g1, g, SH ) * mat % scatter % prod(g1, g) , defFlt)
-                    !real(mat % getScatterXS(g1, g, self % rand) * mat % scatter % prod(g1, g) , defFlt)
-            !print *, SH
-            !print *, mat % scatter % getPnScatter(g1, g, SH)
-            !print *, mat % scatter % prod(g1, g)
-          end do
+          if (self % SHOrder > 0) then
+            do SH = 1, self % SHOrder
+              self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, SH + 1)  = &
+                      real(mat % scatter % getPnScatter(g1, g, SH ) * mat % scatter % prod(g1, g) , defFlt)
+                      !real(mat % getScatterXS(g1, g, self % rand) * mat % scatter % prod(g1, g) , defFlt)
+            end do
+        end if
         end do
       end do
     end do
-
-    !!print *, "---------------------"
-    !print *, self % sigmaS(:100,2)
-    !stop
 
   end subroutine init
 
@@ -749,15 +743,6 @@ contains
 
     do while (totalLength < self % termination)
 
-      ! Get material and cell the ray is moving through
-      matIdx  = r % coords % matIdx
-      cIdx    = r % coords % uniqueID
-      if (matIdx0 /= matIdx) then
-        matIdx0 = matIdx
-        ! Cache total cross section
-        totVec => self % sigmaT(((matIdx - 1) * self % nG + 1) : ((matIdx - 1) * self % nG + self % nG))
-      end if
-
       !always caluclate r0 and mu0, mu0 used in SHarmonics
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
@@ -795,9 +780,17 @@ contains
       end if
 
       ints = ints + 1
-
+      matIdx  = r % coords % matIdx
+      cIdx    = r % coords % uniqueID
       !if (matIdx < VOID_MAT) then
-      if (matIdx <= self % nMat - 1) then
+      if (matIdx <= self % nMat) then
+        !Get material and cell the ray is moving through
+
+        if (matIdx0 /= matIdx) then
+          matIdx0 = matIdx
+          ! Cache total cross section
+          totVec => self % sigmaT(((matIdx - 1) * self % nG + 1) : ((matIdx - 1) * self % nG + self % nG))
+        end if
 
         lenFlt = real(length,defFlt)
         baseIdx = (cIdx - 1) * self % nG
@@ -834,7 +827,7 @@ contains
           !$omp simd aligned(angularMomVec)
           do g = 1, self % nG
             do SH = 1, self % SHLength
-              angularMomVec(g,SH)  = angularMomVec(g,SH) + RCoeffs(SH) * delta(g) 
+              angularMomVec(g,SH) = angularMomVec(g,SH) + RCoeffs(SH) * delta(g) 
             end do  
           end do
           self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
@@ -933,7 +926,7 @@ contains
       matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
 
       !if (matIdx < VOID_MAT) then
-      if (matIdx <= self % nMat - 1) then
+      if (matIdx <= self % nMat) then
         
         ! Update volume due to additional rays
         self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
@@ -985,9 +978,9 @@ contains
     matIdx  =  self % geom % geom % graph % getMatFromUID(cIdx) 
 
     ! Guard against void cells
+
     !if (matIdx >= VOID_MAT) then
-      !print *, matIdx
-    if (matIdx > self % nMat - 1) then
+    if (matIdx > self % nMat ) then
       baseIdx = self % ng * (cIdx - 1)
       do g = 1, self % nG
         idx = baseIdx + g
@@ -998,8 +991,6 @@ contains
       return
     end if
 
-    !print *, matIdx
-
     ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
 
@@ -1009,7 +1000,6 @@ contains
     chi => self % chi((matIdx + 1) : (matIdx + self % nG))
 
     baseIdx = self % nG * (cIdx - 1)
-
     angularMomVec => self % prevMoments((baseIdx + 1) : (baseIdx + self % nG), :)
 
     ! Calculate fission source
@@ -1023,13 +1013,12 @@ contains
     do g = 1, self % nG
 
       scatterVec => scatterXS((self % nG * (g - 1) + 1) : (self % nG * (g - 1) + self % nG), :)
-
       idx = baseIdx + g
 
+      ! Calculate scattering source for higher order scattering
       do SH = 1, self % SHLength
-        ! Calculate scattering source for higher order scattering
-        SHidx = ceiling(sqrt(real(SH, defReal)) - 1) + 1
 
+        SHidx = ceiling(sqrt(real(SH, defReal)) - 1) + 1
         scatter = 0.0_defFlt
 
         ! Sum contributions from all energies
@@ -1040,14 +1029,6 @@ contains
 
         self % source(idx,SH) = scatter / total(g)
 
-        !if (self % source(idx,SH) /= self % source(idx,SH)) then
-          !print *, self % source(idx,SH), scatter, total(g), matIdx
-          !print *, "NAN at position (", idx, ",", SH, ")"
-          !print *, scatterVec
-          !print *, angularMomVec
-          !stop
-        !end if
-
       end do
 
       ! Calculate scattering source for isotropic scattering / flat source
@@ -1055,22 +1036,6 @@ contains
       self % source(idx,1) = self % source(idx,1) + chi(g) * fission / total(g)
 
   end do
-
-
-  !print *, size(self % source), shape(self % source)
-  !do i = 1, size(self % source, dim=1)
-    !do j = 1, size(self % source, dim=2)
-      !if (self % source(i,j) /= self % source(i,j)) then
-        !print *, "NAN at position (", i, ",", j, ")"
-        !print *, "------"
-        !print *, self % source(i,j)
-        !stop
-      !end if
-    !end do
-  !end do
-
-
-
 
   end subroutine sourceUpdateKernel
 
@@ -1094,8 +1059,9 @@ contains
 
       ! Identify material
       matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
+
       !if (matIdx >= VOID_MAT) cycle
-      if (matIdx > self % nMat - 1) cycle
+      if (matIdx > self % nMat) cycle
 
       matPtr => self % mgData % getMaterial(matIdx)
       mat    => baseMgNeutronMaterial_CptrCast(matPtr)

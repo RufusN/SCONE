@@ -8,7 +8,7 @@ termination 220;
 plot 1;
 cache 1;
 XSdata mg;
-SHOrder 1;
+SHOrder 3; //scattering order
 dataType mg;
 outputFile BW1484_2_TRRM_TC ;
 
@@ -36,7 +36,7 @@ geometry {
   cells {
 
    cell1 { id 1; type simpleCell; surfaces (-2); filltype uni; universe 400; }
-   cell2 { id 2; type simpleCell; surfaces (2); filltype mat; material voidMat; }
+   cell2 { id 2; type simpleCell; surfaces (2); filltype mat; material void; }
 
   }
 
@@ -48,16 +48,16 @@ geometry {
     // Pin universes
     !pin10 { id 10; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
     !        radii ( 0.297335 0.42045 0.515 0.522 0.603 0.72862 0.83557 0.9303 1.01623 0.0 ); 
-    !        fills (fuel fuel fuel voidMat alClad water water water water water);}
+    !        fills (fuel fuel fuel void alClad water water water water water);}
     !pin15 { id 15; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
     !        radii ( 0.297335 0.42045 0.515 0.522 0.603 0.72862 0.83557 0.9303 1.01623 0.0 ); 
-    !        fills (fuel1 fuel1 fuel1 voidMat alClad water water water water water);}
+    !        fills (fuel1 fuel1 fuel1 void alClad water water water water water);}
     pin10 { id 10; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
             radii ( 0.297335 0.42045 0.515 0.522 0.603 0.8 0.0 ); 
-            fills (fuel fuel fuel voidMat alClad water water);}
+            fills (fuel fuel fuel void alClad water water);}
     pin15 { id 15; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
             radii ( 0.297335 0.42045 0.515 0.522 0.603 0.8 0.0 ); 
-            fills (fuel1 fuel1 fuel1 voidMat alClad water water);}
+            fills (fuel1 fuel1 fuel1 void alClad water water);}
     water1 { id 20; type pinUniverse; radii (0.0 ); fills (water1);}
 
     // Lattices
@@ -343,52 +343,52 @@ viz {
 
 nuclearData {
   handles {
-    mg { type baseMgNeutronDatabase; PN P1;} 
+    mg { type baseMgNeutronDatabase; PN P3;} 
   }
   materials {
 
     water {
       temp 75675;
       composition {}
-      xsFile ../XS_BW/water_P1.txt;
-      !xsFile ./XS_BW_noTC/mat3.txt;
+      //xsFile ../XS_BW/water_P1.txt;
+      xsFile ../XS_BW/water_P3.txt;
       }
 
     water1 {
       temp 75675;
       composition {}
-      xsFile ../XS_BW/water1_P1.txt;
-      !xsFile ./XS_BW_noTC/mat4.txt;
+      //xsFile ../XS_BW/water1_P1.txt;
+      xsFile ../XS_BW/water1_P3.txt;
       }
 
      alClad {
        temp 9876;
        composition {}
-       xsFile ../XS_BW/alClad_P1.txt;
-       !xsFile ./XS_BW_noTC/mat5.txt;
+       //xsFile ../XS_BW/alClad_P1.txt;
+      xsFile ../XS_BW/alClad_P3.txt;
     }
 
     fuel {
       temp 87476;
       composition {}
-      xsFile ../XS_BW/fuel_P1.txt;
-      !xsFile ./XS_BW_noTC/mat1.txt;
+      //xsFile ../XS_BW/fuel_P1.txt;
+      xsFile ../XS_BW/fuel_P3.txt;
     }
 
     fuel1 {
       temp 87476;
       composition {}
-      xsFile ../XS_BW/fuel1_P1.txt;
-      !xsFile ./XS_BW_noTC/mat2.txt;
+      //xsFile ../XS_BW/fuel1_P1.txt;
+      xsFile ../XS_BW/fuel1_P3.txt;
     }
 
-    voidMat {
-      temp 87476;
-      composition {}
-      xsFile ../XS_BW/void_P1.txt;
-      !xsFile ./XS_BW_noTC/mat6.txt;
+    //voidMat {
+      //temp 87476;
+      //composition {}
+      //xsFile ../XS_BW/void_P1.txt;
+      //xsFile ./XS_BW_noTC/mat6.txt;
 
-    }
+    //}
 
    }
 }
