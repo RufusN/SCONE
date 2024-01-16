@@ -780,20 +780,20 @@ contains
       ints = ints + 1
       matIdx  = r % coords % matIdx
       cIdx    = r % coords % uniqueID
-
+      
       !if (matIdx < VOID_MAT) then
       if (matIdx <= self % nMat) then
-
         !Get material and cell the ray is moving through
+
         if (matIdx0 /= matIdx) then
           matIdx0 = matIdx
           ! Cache total cross section
-          totVec => self % sigmaT(((matIdx - 1) * self % nG + 1) : ((matIdx - 1) * self % nG + self % nG))
+          totVec => self % sigmaT((matIdx - 1) * self % nG + (1):(self % nG))
         end if
 
         lenFlt = real(length,defFlt)
         baseIdx = (cIdx - 1) * self % nG
-        sourceVec => self % source(baseIdx + 1 : baseIdx + self % nG, :)
+        sourceVec => self % source(baseIdx + (1):(self % nG), :)
 
         !calculate source along track if boundary hit
         if (newRay .OR. event == BOUNDARY_EV) then 
@@ -992,13 +992,13 @@ contains
     ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
 
-    total => self % sigmaT((matIdx + 1) : (matIdx + self % nG))
-    scatterXS => self % sigmaS((matIdx * self % nG + 1): (matIdx * self % nG + self % nG*self % nG), :)
-    nuFission => self % nuSigmaF((matIdx + 1) : (matIdx + self % nG))
-    chi => self % chi((matIdx + 1) : (matIdx + self % nG))
+    total => self % sigmaT(matIdx + (1):(self % nG))
+    scatterXS => self % sigmaS(matIdx * self % nG + (1):(self % nG*self % nG), :)
+    nuFission => self % nuSigmaF(matIdx + (1):(self % nG))
+    chi => self % chi(matIdx + (1):(self % nG))
 
     baseIdx = self % nG * (cIdx - 1)
-    angularMomVec => self % prevMoments((baseIdx + 1) : (baseIdx + self % nG), :)
+    angularMomVec => self % prevMoments(baseIdx+(1):(self % nG), :)
 
     ! Calculate fission source
     fission = 0.0_defFlt
@@ -1010,7 +1010,7 @@ contains
 
     do g = 1, self % nG
 
-      scatterVec => scatterXS((self % nG * (g - 1) + 1) : (self % nG * (g - 1) + self % nG), :)
+      scatterVec => scatterXS(self % nG * (g - 1) + (1):self % nG, :)
       idx = baseIdx + g
 
       ! Calculate scattering source for higher order scattering
