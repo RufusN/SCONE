@@ -9,5 +9,6 @@ add_sources( ./physicsPackage_inter.f90
 	     ./randomRayPhysicsPackage_class.f90
 	     ./linearSourceRRPhysicsPackage_class.f90
          ./anisotropicRRPhysicsPackage_class.f90
+         ./linearP0RRPhysicsPackage_class.f90
              )
              #./dynamPhysicsPackage_class.f90)

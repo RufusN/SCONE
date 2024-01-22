@@ -820,7 +820,7 @@ contains
         ! Accumulate to scalar flux
         if (activeRay) then
 
-          angularMomVec => self % moments(baseIdx + 1 : baseIdx + self % nG, :)
+          angularMomVec => self % moments(baseIdx + (1):(self % nG), :)
         
           call OMP_set_lock(self % locks(cIdx))
           !$omp simd aligned(angularMomVec)
@@ -860,7 +860,7 @@ contains
     dirY = mu(2)
     dirZ = mu(3)
 
-    ! Assign coefficients based on SHOrder
+    ! Assign coefficients based on SHOrder/SHLength -- change to order? 
     select case(self % SHLength)
     case(1)  
         RCoeffs(1) = 1  
@@ -910,7 +910,7 @@ contains
     class(anisotropicRRPhysicsPackage), intent(inout) :: self
     integer(shortInt), intent(in)                 :: it
     real(defFlt)                                  :: norm
-    real(defReal)                                 :: normVol, anglesum
+    real(defReal)                                 :: normVol
     real(defFlt), save                            :: total, vol
     integer(shortInt), save                       :: g, idx, SH, matIdx
     integer(shortInt)                             :: cIdx
