@@ -781,8 +781,8 @@ contains
       matIdx  = r % coords % matIdx
       cIdx    = r % coords % uniqueID
       
-      !if (matIdx < VOID_MAT) then
-      if (matIdx <= self % nMat) then
+      if (matIdx < VOID_MAT - 1) then
+      !if (matIdx <= self % nMat) then
         !Get material and cell the ray is moving through
 
         if (matIdx0 /= matIdx) then
@@ -817,6 +817,14 @@ contains
           fluxVec(g) = fluxVec(g) - delta(g) * totVec(g)
         end do
 
+      else 
+        !$omp simd
+        do g = 1, self % nG
+          delta(g) = 0.0_defFlt   
+        end do
+        
+      end if
+
         ! Accumulate to scalar flux
         if (activeRay) then
 
@@ -844,7 +852,6 @@ contains
           end do
         end if
 
-      end if
     end do
 
   end subroutine transportSweep
@@ -867,38 +874,67 @@ contains
 
     case(4)  
         RCoeffs(1) = 1
-        RCoeffs(2) = dirX 
-        RCoeffs(3) = dirY
-        RCoeffs(4) = dirZ
+        RCoeffs(2) = dirZ
+        RCoeffs(3) = dirX
+        RCoeffs(4) = dirY
+        !RCoeffs(2) = dirX 
+        !RCoeffs(3) = dirY
+        !RCoeffs(4) = dirZ
+
 
     case(9) 
         RCoeffs(1) = 1
-        RCoeffs(2) = dirX
-        RCoeffs(3) = dirY
-        RCoeffs(4) = dirZ
-        RCoeffs(5) = SQRT3 * dirZ * dirX
-        RCoeffs(6) = SQRT3 * dirY * dirX
-        RCoeffs(7) = HALF * (3 * dirY**2 - 1)
-        RCoeffs(8) = SQRT3 * dirZ * dirY
-        RCoeffs(9) = (dirZ**2 - dirX**2) * SQRT3 * HALF
+        RCoeffs(2) = dirZ
+        RCoeffs(3) = dirX
+        RCoeffs(4) = dirY
+        RCoeffs(5) = SQRT3 * dirY * dirZ
+        RCoeffs(6) = SQRT3 * dirX * dirZ
+        RCoeffs(7) = HALF * (3 * dirX**2 - 1)
+        RCoeffs(8) = SQRT3 * dirY * dirZ
+        RCoeffs(9) = (dirY**2 - dirZ**2) * SQRT3 * HALF
+        !RCoeffs(1) = 1
+        !RCoeffs(2) = dirX
+        !RCoeffs(3) = dirY
+        !RCoeffs(4) = dirZ
+        !RCoeffs(5) = SQRT3 * dirZ * dirX
+        !RCoeffs(6) = SQRT3 * dirY * dirX
+        !RCoeffs(7) = HALF * (3 * dirY**2 - 1)
+        !RCoeffs(8) = SQRT3 * dirZ * dirY
+        !RCoeffs(9) = (dirZ**2 - dirX**2) * SQRT3 * HALF
 
     case(16) 
+        !RCoeffs(1) = 1
+        !RCoeffs(2) = dirX
+        !RCoeffs(3) = dirY
+        !RCoeffs(4) = dirZ
+        !RCoeffs(5) = SQRT3 * dirZ * dirX
+        !RCoeffs(6) = SQRT3 * dirY * dirX
+        !RCoeffs(7) = HALF * (3 * dirY**2 - 1)
+        !RCoeffs(8) = SQRT3 * dirZ * dirY
+        !RCoeffs(9) = (dirZ**2 - dirX**2) * SQRT3 * HALF
+        !RCoeffs(10) = SQRT5_8 * dirX * (3 * dirZ**2 - dirX**2)
+        !RCoeffs(11) = SQRT15 * dirY * dirZ * dirX
+        !RCoeffs(12) = SQRT3_8 * dirX * (5 * dirY**2 - 1)
+        !RCoeffs(13) = HALF * dirY * (5 * dirY**2 - 3)
+        !RCoeffs(14) = SQRT3_8 * dirZ * (5 * dirY**2 - 1)
+        !RCoeffs(15) = dirY * (dirZ**2 - dirX**2) * SQRT15 * HALF
+        !RCoeffs(16) = SQRT5_8 * dirZ * (dirZ**2 - 3 * dirX**2)
         RCoeffs(1) = 1
-        RCoeffs(2) = dirX
-        RCoeffs(3) = dirY
-        RCoeffs(4) = dirZ
-        RCoeffs(5) = SQRT3 * dirZ * dirX
-        RCoeffs(6) = SQRT3 * dirY * dirX
-        RCoeffs(7) = HALF * (3 * dirY**2 - 1)
-        RCoeffs(8) = SQRT3 * dirZ * dirY
-        RCoeffs(9) = (dirZ**2 - dirX**2) * SQRT3 * HALF
-        RCoeffs(10) = SQRT5_8 * dirX * (3 * dirZ**2 - dirX**2)
-        RCoeffs(11) = SQRT15 * dirY * dirZ * dirX
-        RCoeffs(12) = SQRT3_8 * dirX * (5 * dirY**2 - 1)
-        RCoeffs(13) = HALF * dirY * (5 * dirY**2 - 3)
-        RCoeffs(14) = SQRT3_8 * dirZ * (5 * dirY**2 - 1)
-        RCoeffs(15) = dirY * (dirZ**2 - dirX**2) * SQRT15 * HALF
-        RCoeffs(16) = SQRT5_8 * dirZ * (dirZ**2 - 3 * dirX**2)
+        RCoeffs(2) = dirZ
+        RCoeffs(3) = dirX
+        RCoeffs(4) = dirY
+        RCoeffs(5) = SQRT3 * dirY * dirZ
+        RCoeffs(6) = SQRT3 * dirX * dirZ
+        RCoeffs(7) = HALF * (3 * dirX**2 - 1)
+        RCoeffs(8) = SQRT3 * dirY * dirZ
+        RCoeffs(9) = (dirY**2 - dirZ**2) * SQRT3 * HALF
+        RCoeffs(10) = SQRT5_8 * dirZ * (3 * dirY**2 - dirZ**2)
+        RCoeffs(11) = SQRT15 * dirX * dirY * dirZ
+        RCoeffs(12) = SQRT3_8 * dirZ * (5 * dirX**2 - 1)
+        RCoeffs(13) = HALF * dirX * (5 * dirX**2 - 3)
+        RCoeffs(14) = SQRT3_8 * dirY * (5 * dirX**2 - 1)
+        RCoeffs(15) = dirX * (dirY**2 - dirZ**2) * SQRT15 * HALF
+        RCoeffs(16) = SQRT5_8 * dirY * (dirY**2 - 3 * dirZ**2)
     end select
   end subroutine SphericalHarmonicCalculator
 
@@ -923,8 +959,8 @@ contains
     do cIdx = 1, self % nCells
       matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
 
-      !if (matIdx < VOID_MAT) then
-      if (matIdx <= self % nMat) then
+      if (matIdx < VOID_MAT - 1) then
+      !if (matIdx <= self % nMat) then
         
         ! Update volume due to additional rays
         self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
@@ -943,12 +979,11 @@ contains
 
             self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
 
-            if (self % moments(idx,SH) < ZERO) then
-              self % moments(idx,SH) = ZERO
-            end if
-
           end do
 
+          if (self % moments(idx,1) < 0.0_defFlt) then
+            self % moments(idx,1) = 0.0_defFlt
+          end if
 
         end do
 
@@ -977,8 +1012,8 @@ contains
 
     ! Guard against void cells
 
-    !if (matIdx >= VOID_MAT) then
-    if (matIdx > self % nMat ) then
+    if (matIdx >= VOID_MAT - 1) then
+    !if (matIdx > self % nMat ) then
       baseIdx = self % ng * (cIdx - 1)
       do g = 1, self % nG
         idx = baseIdx + g
@@ -1058,8 +1093,8 @@ contains
       ! Identify material
       matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
 
-      !if (matIdx >= VOID_MAT) cycle
-      if (matIdx > self % nMat) cycle
+      if (matIdx >= VOID_MAT - 1) cycle
+      !if (matIdx > self % nMat) cycle
 
       matPtr => self % mgData % getMaterial(matIdx)
       mat    => baseMgNeutronMaterial_CptrCast(matPtr)

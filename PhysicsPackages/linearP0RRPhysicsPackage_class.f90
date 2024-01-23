@@ -930,7 +930,7 @@ contains
 
         !$omp simd
         do g = 1, self % nG
-          F1(g)  = exponential(tau(g))
+          F1(g)  = expTau(tau(g))
         end do
 
         !$omp simd
@@ -1480,19 +1480,23 @@ contains
   !!
   subroutine resetFluxes(self)
     class(linearP0RRPhysicsPackage), intent(inout) :: self
-    integer(shortInt)                                 :: idx, SH
+    integer(shortInt)                              :: idx, SH
 
    !$omp parallel do schedule(static)
     do idx = 1, (self % nG * self % nCells)
-      !$omp simd
       do SH = 1, self % SHLength
         self % prevMoments(idx,SH) = self % moments(idx,SH) 
-        self % moments(idx,SH) = ZERO
-        self % source(idx,SH) = ZERO
+        self % moments(idx,SH) = 0.0_defFLt
+        self % source(idx,SH) = 0.0_defFLt
       end do
-
+      self % prevX(idx) = self % scalarX(idx)
+      self % scalarX(idx) = 0.0_defFlt
+      self % prevY(idx) = self % scalarY(idx)
+      self % scalarY(idx) = 0.0_defFlt
+      self % prevZ(idx) = self % scalarZ(idx)
+      self % scalarZ(idx) = 0.0_defFlt
     end do
-   !$omp end parallel do
+    !$omp end parallel do
 
   end subroutine resetFluxes
 
@@ -1883,6 +1887,19 @@ contains
     if(allocated(self % volume)) deallocate(self % volume)
     if(allocated(self % volumeTracks)) deallocate(self % volumeTracks)
     if(allocated(self % cellHit)) deallocate(self % cellHit)
+    if(allocated(self % scalarX)) deallocate(self % scalarX)
+    if(allocated(self % scalarY)) deallocate(self % scalarY)
+    if(allocated(self % scalarZ)) deallocate(self % scalarZ)
+    if(allocated(self % prevX)) deallocate(self % prevX)
+    if(allocated(self % prevY)) deallocate(self % prevY)
+    if(allocated(self % prevZ)) deallocate(self % prevZ)
+    if(allocated(self % sourceX)) deallocate(self % sourceX)
+    if(allocated(self % sourceY)) deallocate(self % sourceY)
+    if(allocated(self % sourceZ)) deallocate(self % sourceZ)
+    if(allocated(self % momMat)) deallocate(self % momMat)
+    if(allocated(self % momTracks)) deallocate(self % momTracks)
+    if(allocated(self % centroid)) deallocate(self % centroid)
+    if(allocated(self % centroidTracks)) deallocate(self % centroidTracks)
     if(allocated(self % resultsMap)) then
       call self % resultsMap % kill()
       deallocate(self % resultsMap)

@@ -1,0 +1,217 @@
+type eigenPhysicsPackage;
+
+pop      1000000;
+active   300;
+inactive 150;
+XSdata ce;
+dataType ce;
+outputFile BW1484_2 ;
+
+// Specify output format default asciiMATLAB
+
+collisionOperator { neutronCE {type neutronCEstd;} }
+
+transportOperator { type transportOperatorST;
+                    cache 1;
+                   }
+
+inactiveTally {}
+
+activeTally {
+  norm totalPow;
+  normVal 100.0;
+  totalPow  { type collisionClerk; response (fission); fission { type macroResponse; MT -6;}}
+  ResMap {type collisionClerk;
+         map {type multiMap;
+              maps (xax yax);
+                !xax { type spaceMap; axis x; grid lin; min -38.1; max -3.744; N 21;}
+                !yax { type spaceMap; axis y; grid lin; min -38.1; max -3.744; N 21;}
+                xax { type spaceMap; axis x; grid lin; min -34.356; max 0.0; N 21;}
+                yax { type spaceMap; axis y; grid lin; min -34.356; max 0.0; N 21;}
+              }
+         response (fiss);
+         fiss { type macroResponse; MT -6;}
+         }
+  myMgXsClerkDiv {
+          type mgXsClerk;
+          energyMap {  
+                      type energyMap;
+                      grid predef;
+                      name wims69;
+                    }
+          spaceMap  { 
+                      type materialMap; materials (fuel fuel1 water water1 alClad);
+                    }
+           PN 1; 
+  }
+}
+
+geometry {
+  type geometryStd;
+  boundary ( 1 0 1 0 1 1);
+  graph {type shrunk;}
+
+  surfaces {
+    !squareBound { id 1; type zSquareCylinder; origin (0.0 0.0 0.0); halfwidth (34.356 34.356 0.0);}
+    squareBound { id 1; type zSquareCylinder; origin (3.744 3.744 0.0); halfwidth (38.1 38.1 0.0);}
+    tank { id 2; type zCylinder; origin (-34.356 -34.356 0.0); radius 76.2;}
+  }
+
+  cells {
+
+   cell1 { id 1; type simpleCell; surfaces (-2); filltype uni; universe 400; }
+   cell2 { id 2; type simpleCell; surfaces (2); filltype mat; material void; }
+
+  }
+
+  universes {
+    root { id 1; type rootUniverse; border 1; fill u<500>; }
+
+    everything {id 500; type cellUniverse; cells (1 2); origin (0.0 0.0 0.0 ); }
+
+    // Pin universes
+    pin10 { id 10; type pinUniverse; radii (0.515 0.522 0.603 0.0 ); fills (fuel  void  alClad water);}
+    pin15 { id 15; type pinUniverse; radii (0.515 0.522 0.603 0.0 ); fills (fuel1 void  alClad water);}
+    water { id 20; type pinUniverse; radii (0.0 ); fills (water1);}
+
+    // Lattices
+    latFuel {
+      id 100;
+      type latUniverse;
+      origin (0.0 0.0 0.0);
+      pitch (1.636 1.636 0.0);
+      shape (21 21 0);
+      padMat water;
+      map (
+        15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+        10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 15
+      ); 
+    }
+
+    latCore {
+      id 400;
+      type latUniverse;
+      origin (0.0 0.0 0.0);
+      pitch (34.356 34.356 0.0);
+      shape (2 2 0);
+      padMat water1;
+      map (
+        20 20
+       100 20
+      );
+    }
+
+  }
+
+}
+
+
+viz {
+  myVTK {
+    type vtk;
+    corner (-34.356 -34.356 -0.5);
+    width (68.712 68.712 1.0);
+    vox (700 700 1);
+  }
+  bmp {
+    type bmp;
+    output img;
+    what material;
+    !centre (0.0 0.0 0.0);
+    centre (3.744 3.744 0.0);
+    //width (25.0 25.0);
+    axis z;
+    res (500 500);
+  }
+}
+
+
+nuclearData {
+  handles {
+    ce {type aceNeutronDatabase; aceLibrary $SCONE_ACE;}
+  }
+  materials {
+
+   ! Taken from KENO inputs contained in 
+   ! 'Critical experiments supporting close proximity water storage of power reactor fuel'
+    water {
+      temp 75675;
+      composition {
+      1001.03    6.67572E-002;
+      8016.03    3.33786E-002;
+      5010.03    1.13681E-5;
+      5011.03    4.64848E-5; }
+      moder { 1001.03 lwj3.00; }
+      }
+
+    water1 {
+      temp 75675;
+      composition {
+      1001.03    6.67572E-002;
+      8016.03    3.33786E-002;
+      5010.03    1.13681E-5;
+      5011.03    4.64848E-5; }
+      moder { 1001.03 lwj3.00; }
+      }
+
+   ! Neglects other components of the clad - aluminium is dominant
+     alClad {
+       temp 9876;
+      composition {
+      13027.03  5.80754E-2;
+      12024.03  4.2255E-4;
+      12025.03  5.348735E-5;
+      12026.03  5.8836E-5;
+      14028.03  4.26886E-4;
+      14029.03  2.1761E-5;
+      14030.03  1.4353E-5;
+      24050.03  4.74865E-6; 
+      24052.03  9.16906E-5;
+      24053.03  1.03945E-5;
+      24054.03  2.59316E-5;
+      25055.03  4.43813E-5;
+      26054.03  1.19188E-5;
+      26056.03  1.87034E-4;
+      26057.03  4.31931E-6;
+      29063.03  7.0811E-5;
+      29065.03  3.16194E-5;
+      }
+    }
+
+    fuel {
+      temp 87476;
+       composition {
+      92235.03  5.67505E-4;
+      92238.03  2.22265E-002;
+       8016.03  4.55881E-002; }
+      }
+
+    fuel1 {
+      temp 87476;
+       composition {
+      92235.03  5.67505E-4;
+      92238.03  2.22265E-002;
+       8016.03  4.55881E-002; }
+      }
+
+   }
+}
