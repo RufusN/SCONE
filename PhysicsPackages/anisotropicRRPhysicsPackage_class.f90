@@ -799,7 +799,7 @@ contains
 
       if (matIdx < VOID_MAT - 1) then
 
-        if (matIdx0 /= matIdx) then !moved inside loop, seems to work. 
+        if (matIdx0 /= matIdx) then 
           matIdx0 = matIdx
           ! Cache total cross section
           totVec => self % sigmaT((matIdx - 1) * self % nG + 1:self % nG)
