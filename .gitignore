@@ -8,3 +8,6 @@ cream.egg-info/
 !/.gitignore
 
 /Build
+
+# Ignore vtk files
+*.vtk
