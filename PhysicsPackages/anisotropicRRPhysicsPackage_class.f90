@@ -54,9 +54,15 @@ module anisotropicRRPhysicsPackage_class
   ! Parameter for when to skip a tiny volume
   real(defReal), parameter :: volume_tolerance = 1.0E-10, &
                                 SQRT3 = sqrt(3._defReal), &
-                                SQRT5_8 = sqrt(5._defReal/8._defReal), &
-                                SQRT3_8 = sqrt(3._defReal/8._defReal), &
-                                SQRT15  = sqrt(15._defReal)
+                                SQRT5 = sqrt(5._defReal), &
+                                SQRT15 = sqrt(15._defReal), & 
+                                !SQRT3_8 = sqrt(3._defReal/8._defReal), &
+                                !SQRT5_8 = sqrt(5._defReal/8._defReal), &
+                                SQRT70_4 = sqrt(70._defReal)/4._defReal, &
+                                SQRT105 = sqrt(105._defReal), &
+                                SQRT42_4 = sqrt(42._defReal)/4._defReal, &
+                                SQRT7_2 = sqrt(7._defReal)/2._defReal
+
 
   ! Convenient arithmetic parameters
   real(defFlt), parameter :: one_two = real(HALF,defFlt), &
@@ -289,7 +295,7 @@ contains
     call dict % getOrDefault(self % SHOrder, 'SHOrder', 0)
 
     ! Number of spherical harmonic terms for given SHOrder
-    self % SHLength = ( self % SHOrder + 1 )**2
+    self % SHLength = (self % SHOrder + 1 )**2
 
     ! Print fluxes?
     call dict % getOrDefault(self % printFlux, 'printFlux', .false.)
@@ -482,6 +488,7 @@ contains
         end do
       end do
     end do
+
 
   end subroutine init
 
@@ -721,9 +728,9 @@ contains
     real(defFlt)                                          :: lenFlt
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
     real(defFlt), dimension(self % nG)                    :: currentSource
-    real(defFlt), pointer, dimension(:)                   :: scalarVec, totVec
+    real(defFlt), pointer, dimension(:)                   :: totVec
     real(defReal), dimension(3)                           :: r0, mu0
-    real(defFlt), dimension(self % SHLength)              :: RCoeffs   
+    real(defReal), dimension(self % SHLength)             :: RCoeffs   
     real(defFlt), pointer, dimension(:,:)                 :: sourceVec, angularMomVec
 
     ! Set initial angular flux to angle average of cell source
@@ -741,10 +748,18 @@ contains
 
     do while (totalLength < self % termination)
 
-      !always caluclate r0 and mu0, mu0 used in SHarmonics
+      ! Get material and cell the ray is moving through
+      matIdx  = r % coords % matIdx
+      cIdx    = r % coords % uniqueID
+
+      ! Caluclate r0 and mu0, mu0 used in SHarmonics
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
 
+      if (newRay .or. event == BOUNDARY_EV) then
+        call self % sphericalHarmonicCalculator(mu0, RCoeffs) !- seems to work 
+        newRay = .false.
+      end if
           
       ! Set maximum flight distance and ensure ray is active
       if (totalLength >= self % dead) then
@@ -778,35 +793,23 @@ contains
       end if
 
       ints = ints + 1
-      matIdx  = r % coords % matIdx
-      cIdx    = r % coords % uniqueID
-      
-      if (matIdx < VOID_MAT - 1) then
-      !if (matIdx <= self % nMat) then
-        !Get material and cell the ray is moving through
+      lenFlt = real(length,defFlt)
+      baseIdx = (cIdx - 1) * self % nG
+      sourceVec => self % source(baseIdx + 1 : baseIdx + self % nG, :)
 
-        if (matIdx0 /= matIdx) then
+      if (matIdx < VOID_MAT - 1) then
+
+        if (matIdx0 /= matIdx) then !moved inside loop, seems to work. 
           matIdx0 = matIdx
           ! Cache total cross section
-          totVec => self % sigmaT((matIdx - 1) * self % nG + (1):(self % nG))
-        end if
-
-        lenFlt = real(length,defFlt)
-        baseIdx = (cIdx - 1) * self % nG
-        sourceVec => self % source(baseIdx + (1):(self % nG), :)
-
-        !calculate source along track if boundary hit
-        if (newRay .OR. event == BOUNDARY_EV) then 
-          newRay = .false. 
-          !call subroutine for RCoeffs
-          call self % sphericalHarmonicCalculator(mu0, RCoeffs)
+          totVec => self % sigmaT((matIdx - 1) * self % nG + 1:self % nG)
         end if
 
         !$omp simd
         do g = 1, self % nG
-          currentSource(g) = ZERO
+          currentSource(g) = 0.0_defFlt
           do SH = 1, self % SHLength
-            currentSource(g) = currentSource(g) + sourceVec(g,SH) * RCoeffs(SH)
+            currentSource(g) = currentSource(g) + sourceVec(g,SH) * real(RCoeffs(SH),defFlt)
           end do 
         end do
 
@@ -822,121 +825,98 @@ contains
         do g = 1, self % nG
           delta(g) = 0.0_defFlt   
         end do
-        
+
       end if
 
-        ! Accumulate to scalar flux
-        if (activeRay) then
+      ! Accumulate to scalar flux
+      if (activeRay) then
 
-          angularMomVec => self % moments(baseIdx + (1):(self % nG), :)
-        
-          call OMP_set_lock(self % locks(cIdx))
-          !$omp simd aligned(angularMomVec)
-          do g = 1, self % nG
-            do SH = 1, self % SHLength
-              angularMomVec(g,SH) = angularMomVec(g,SH) + RCoeffs(SH) * delta(g) 
-            end do  
-          end do
-          self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
-          call OMP_unset_lock(self % locks(cIdx))
+        angularMomVec => self % moments(baseIdx + 1 : baseIdx + self % nG, :)
+      
+        call OMP_set_lock(self % locks(cIdx))
+        !$omp simd aligned(angularMomVec)
+        do g = 1, self % nG
+          do SH = 1, self % SHLength
+            angularMomVec(g,SH)  = angularMomVec(g,SH) + delta(g) * real(RCoeffs(SH),defFlt)
+          end do  
+        end do
+        self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
+        call OMP_unset_lock(self % locks(cIdx))
 
-          if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
-        
-        end if
+        if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
+      
+      end if
 
-        ! Check for a vacuum hit
-        if (hitVacuum) then
-          !$omp simd
-          do g = 1, self % nG
-            fluxVec(g) = 0.0_defFlt
-          end do
-        end if
+      ! Check for a vacuum hit
+      if (hitVacuum) then
+        !$omp simd
+        do g = 1, self % nG
+          fluxVec(g) = 0.0_defFlt
+        end do
+      end if
 
-    end do
+  end do
 
   end subroutine transportSweep
 
   subroutine SphericalHarmonicCalculator(self, mu, RCoeffs)
     ! angle: x = r sin θ cos φ, y = r sin θ sin φ, and z = r cos θ
     class(anisotropicRRPhysicsPackage), intent(inout)       :: self
-    real(defFlt), dimension(self % SHLength), intent(out)   :: RCoeffs ! Array to store harmonic coefficients
+    real(defReal), dimension(self % SHLength), intent(out)  :: RCoeffs ! Array to store harmonic coefficients
     real(defReal)                                           :: dirX,dirY,dirZ
     real(defReal), dimension(3), intent(in)                 :: mu
+
 
     dirX = mu(1)
     dirY = mu(2)
     dirZ = mu(3)
 
-    ! Assign coefficients based on SHOrder/SHLength -- change to order? 
+    ! Assign coefficients based on SHOrder
     select case(self % SHLength)
     case(1)  
         RCoeffs(1) = 1  
 
     case(4)  
-        RCoeffs(1) = 1
-        RCoeffs(2) = dirZ
-        RCoeffs(3) = dirX
-        RCoeffs(4) = dirY
-        !RCoeffs(2) = dirX 
-        !RCoeffs(3) = dirY
-        !RCoeffs(4) = dirZ
+        RCoeffs(1) = 1  
 
+        RCoeffs(2) = SQRT3 * dirY
+        RCoeffs(3) = SQRT3 * dirZ
+        RCoeffs(4) = SQRT3 * dirX    
 
     case(9) 
         RCoeffs(1) = 1
-        RCoeffs(2) = dirZ
-        RCoeffs(3) = dirX
-        RCoeffs(4) = dirY
-        RCoeffs(5) = SQRT3 * dirY * dirZ
-        RCoeffs(6) = SQRT3 * dirX * dirZ
-        RCoeffs(7) = HALF * (3 * dirX**2 - 1)
-        RCoeffs(8) = SQRT3 * dirY * dirZ
-        RCoeffs(9) = (dirY**2 - dirZ**2) * SQRT3 * HALF
-        !RCoeffs(1) = 1
-        !RCoeffs(2) = dirX
-        !RCoeffs(3) = dirY
-        !RCoeffs(4) = dirZ
-        !RCoeffs(5) = SQRT3 * dirZ * dirX
-        !RCoeffs(6) = SQRT3 * dirY * dirX
-        !RCoeffs(7) = HALF * (3 * dirY**2 - 1)
-        !RCoeffs(8) = SQRT3 * dirZ * dirY
-        !RCoeffs(9) = (dirZ**2 - dirX**2) * SQRT3 * HALF
+
+        RCoeffs(2) = SQRT3 * dirY
+        RCoeffs(3) = SQRT3 * dirZ
+        RCoeffs(4) = SQRT3 * dirX  
+        RCoeffs(5) = SQRT15 * HALF * dirX * dirY 
+        RCoeffs(6) = SQRT15 * HALF * dirZ * dirY 
+        RCoeffs(7) = SQRT5 * HALF * (3 * dirZ**2 - 1)
+        RCoeffs(8) = SQRT15 * HALF * dirX * dirZ 
+        RCoeffs(9) = SQRT15 * HALF * (dirX**2 - dirY**2) 
 
     case(16) 
-        !RCoeffs(1) = 1
-        !RCoeffs(2) = dirX
-        !RCoeffs(3) = dirY
-        !RCoeffs(4) = dirZ
-        !RCoeffs(5) = SQRT3 * dirZ * dirX
-        !RCoeffs(6) = SQRT3 * dirY * dirX
-        !RCoeffs(7) = HALF * (3 * dirY**2 - 1)
-        !RCoeffs(8) = SQRT3 * dirZ * dirY
-        !RCoeffs(9) = (dirZ**2 - dirX**2) * SQRT3 * HALF
-        !RCoeffs(10) = SQRT5_8 * dirX * (3 * dirZ**2 - dirX**2)
-        !RCoeffs(11) = SQRT15 * dirY * dirZ * dirX
-        !RCoeffs(12) = SQRT3_8 * dirX * (5 * dirY**2 - 1)
-        !RCoeffs(13) = HALF * dirY * (5 * dirY**2 - 3)
-        !RCoeffs(14) = SQRT3_8 * dirZ * (5 * dirY**2 - 1)
-        !RCoeffs(15) = dirY * (dirZ**2 - dirX**2) * SQRT15 * HALF
-        !RCoeffs(16) = SQRT5_8 * dirZ * (dirZ**2 - 3 * dirX**2)
         RCoeffs(1) = 1
-        RCoeffs(2) = dirZ
-        RCoeffs(3) = dirX
-        RCoeffs(4) = dirY
-        RCoeffs(5) = SQRT3 * dirY * dirZ
-        RCoeffs(6) = SQRT3 * dirX * dirZ
-        RCoeffs(7) = HALF * (3 * dirX**2 - 1)
-        RCoeffs(8) = SQRT3 * dirY * dirZ
-        RCoeffs(9) = (dirY**2 - dirZ**2) * SQRT3 * HALF
-        RCoeffs(10) = SQRT5_8 * dirZ * (3 * dirY**2 - dirZ**2)
-        RCoeffs(11) = SQRT15 * dirX * dirY * dirZ
-        RCoeffs(12) = SQRT3_8 * dirZ * (5 * dirX**2 - 1)
-        RCoeffs(13) = HALF * dirX * (5 * dirX**2 - 3)
-        RCoeffs(14) = SQRT3_8 * dirY * (5 * dirX**2 - 1)
-        RCoeffs(15) = dirX * (dirY**2 - dirZ**2) * SQRT15 * HALF
-        RCoeffs(16) = SQRT5_8 * dirY * (dirY**2 - 3 * dirZ**2)
+
+        RCoeffs(2) = SQRT3 * dirY
+        RCoeffs(3) = SQRT3 * dirZ
+        RCoeffs(4) = SQRT3 * dirX  
+        RCoeffs(5) = SQRT15 * HALF * dirX * dirY 
+        RCoeffs(6) = SQRT15 * HALF * dirZ * dirY 
+        RCoeffs(7) = SQRT5 * HALF * (3 * dirZ**2 - 1)
+        RCoeffs(8) = SQRT15 * HALF * dirX * dirZ 
+        RCoeffs(9) = SQRT15 * HALF * (dirX**2 - dirY**2) 
+
+        RCoeffs(10) = SQRT70_4 * dirY * (3 * dirX**2 - dirY**2)
+        RCoeffs(11) = SQRT105 * dirZ * dirX * dirY
+        RCoeffs(12) = SQRT42_4 * dirY * (5 * dirZ**2 - 1)
+        RCoeffs(13) = SQRT7_2 * dirZ * (5 * dirZ**2 - 3)
+        RCoeffs(14) = SQRT42_4 * dirX * (5 * dirZ**2 - 1)
+        RCoeffs(15) = SQRT105 * dirZ * (dirX**2 - dirY**2) 
+        RCoeffs(16) = SQRT70_4 * dirX * (dirX**2 - 3 * dirY**2)
     end select
   end subroutine SphericalHarmonicCalculator
+
 
   !!
   !! Normalise flux and volume by total track length and increments
@@ -960,7 +940,6 @@ contains
       matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
 
       if (matIdx < VOID_MAT - 1) then
-      !if (matIdx <= self % nMat) then
         
         ! Update volume due to additional rays
         self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
@@ -979,10 +958,10 @@ contains
 
             self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
 
-          end do
+          end do  
 
           if (self % moments(idx,1) < 0.0_defFlt) then
-            self % moments(idx,1) = 0.0_defFlt
+              self % moments(idx,1) = 0.0_defFlt
           end if
 
         end do
@@ -1003,22 +982,20 @@ contains
     real(defFlt), intent(in)                              :: ONE_KEFF
     real(defFlt)                                          :: scatter, fission
     real(defFlt), dimension(:), pointer                   :: nuFission, total, chi
-    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, SH, SHidx, i , j
+    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, SH, SHidx
     real(defFlt), pointer, dimension(:,:)                 :: scatterVec, scatterXS
-    real(defFlt), pointer, dimension(:,:)                 :: angularMomVec
+    real(defFlt), pointer, dimension(:,:)                :: angularMomVec
 
     ! Identify material
     matIdx  =  self % geom % geom % graph % getMatFromUID(cIdx) 
-
+    
     ! Guard against void cells
-
     if (matIdx >= VOID_MAT - 1) then
-    !if (matIdx > self % nMat ) then
-      baseIdx = self % ng * (cIdx - 1)
+      baseIdx = self % nG * (cIdx - 1)
       do g = 1, self % nG
         idx = baseIdx + g
         do SH = 1, self % SHLength
-          self % source(idx,SH) = ZERO
+          self % source(idx,SH) = 0.0_defFlt
         end do
       end do
       return
@@ -1026,13 +1003,13 @@ contains
 
     ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
-
     total => self % sigmaT(matIdx + (1):(self % nG))
     scatterXS => self % sigmaS(matIdx * self % nG + (1):(self % nG*self % nG), :)
     nuFission => self % nuSigmaF(matIdx + (1):(self % nG))
     chi => self % chi(matIdx + (1):(self % nG))
 
     baseIdx = self % nG * (cIdx - 1)
+
     angularMomVec => self % prevMoments(baseIdx+(1):(self % nG), :)
 
     ! Calculate fission source
@@ -1046,12 +1023,13 @@ contains
     do g = 1, self % nG
 
       scatterVec => scatterXS(self % nG * (g - 1) + (1):self % nG, :)
+
       idx = baseIdx + g
 
-      ! Calculate scattering source for higher order scattering
       do SH = 1, self % SHLength
-
+        ! Calculate scattering source for higher order scattering
         SHidx = ceiling(sqrt(real(SH, defReal)) - 1) + 1
+
         scatter = 0.0_defFlt
 
         ! Sum contributions from all energies
@@ -1092,13 +1070,10 @@ contains
 
       ! Identify material
       matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
-
       if (matIdx >= VOID_MAT - 1) cycle
-      !if (matIdx > self % nMat) cycle
 
       matPtr => self % mgData % getMaterial(matIdx)
       mat    => baseMgNeutronMaterial_CptrCast(matPtr)
-
       if (.not. mat % isFissile()) cycle
 
       vol = real(self % volume(cIdx), defFlt)
@@ -1140,8 +1115,8 @@ contains
       !$omp simd
       do SH = 1, self % SHLength
         self % prevMoments(idx,SH) = self % moments(idx,SH) 
-        self % moments(idx,SH) = ZERO
-        self % source(idx,SH) = ZERO
+        self % moments(idx,SH) = 0.0_defFlt
+        self % source(idx,SH) = 0.0_defFlt
       end do
 
     end do
@@ -1517,8 +1492,8 @@ contains
     self % inactive    = 0
     self % active      = 0
     self % cache       = .false.
-    self % SHLength  = 1
-    self % SHOrder   = 0
+    self % SHLength    = 1
+    self % SHOrder     = 0
     self % mapFission  = .false.
     self % mapFlux     = .false.
     self % plotResults = .false.
@@ -1548,3 +1523,4 @@ contains
   end subroutine kill
 
 end module anisotropicRRPhysicsPackage_class
+
