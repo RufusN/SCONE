@@ -522,7 +522,7 @@ contains
           if (self % SHOrder > 0) then
             do SH = 1, self % SHOrder
               self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, SH + 1)  = &
-                    real(mat % scatter % getPnScatter(g1, g, SH ) * mat % scatter % prod(g1, g) , defFlt)
+                    real(mat % scatter % getPnScatter(g1, g, SH) * mat % scatter % prod(g1, g) , defFlt)
             end do
           end if
         end do
@@ -632,7 +632,6 @@ contains
         call self % sourceUpdateKernel(i, ONE_KEFF)
       end do
       !$omp end parallel do
-      print *, 'yes'
 
       ! Reset and start transport timer
       call timerReset(self % timerTransport)
@@ -656,7 +655,6 @@ contains
 
       end do
       !$omp end parallel do
-      print *, 'yes 2'
 
       self % intersectionsTotal = self % intersectionsTotal + intersections
       
@@ -667,7 +665,6 @@ contains
 
       ! Normalise flux estimate and combines with source
       call self % normaliseFluxAndVolume(it)
-      print *, 'yes 3'
 
       ! Calculate new k
       call self % calculateKeff()
@@ -777,19 +774,7 @@ contains
   !!
   subroutine transportSweep(self, r, ints)
     class(linearP0RRPhysicsPackage), target, intent(inout) :: self
-    type(ray), intent(inout)                              :: r
-    !integer(longInt), intent(out)                         :: ints
-    !integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
-    !                                                         SH
-    !real(defReal)                                         :: totalLength, length
-    !logical(defBool)                                      :: activeRay, hitVacuum, newRay
-    !type(distCache)                                       :: cache
-    !real(defFlt)                                          :: lenFlt
-    !real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, fluxVecLS, deltaLS
-    !real(defFlt), dimension(self % nG)                    :: currentSource
-    !real(defFlt), pointer, dimension(:)                   :: scalarVec, totVec
-    !real(defReal), dimension(3)                           :: r0, mu0
-    !real(defFlt), dimension(self % SHLength)              :: RCoeffs   
+    type(ray), intent(inout)                              :: r  
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, &
                                                              matIdx0, baseIdx, centIdx, momIdx, SH
@@ -914,7 +899,8 @@ contains
         end do
 
         ! Calculate linear source terms
-        !$omp simd aligned(xGradVec, yGradVec, zGradVec)
+        !aligned(xGradVec, yGradVec, zGradVec)
+        !$omp simd 
         do g = 1, self % nG
           flatQ(g) = rNormFlt(x) * xGradVec(g)
           flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
@@ -941,18 +927,12 @@ contains
         do g = 1, self % nG
           F2(g)  = 2 * (tau(g) - F1(g)) - tau(g) * F1(g)
         end do
-    
-        !$omp simd
-          do g = 1, self % nG
-            attenuate(g) = exponential(tau(g)) !* lenFlt
-            delta(g) = (fluxVec(g) - currentSource(g)) * attenuate(g)     
-            fluxVec(g) = fluxVec(g) - delta(g) !* totVec(g)
-          end do
 
         !$omp simd aligned(totVec)
         do g = 1, self % nG
           deltaLS(g) = (fluxVecLS(g) - flatQ(g)) * F1(g) - &
                   one_two * gradQ(g) * F2(g) / totVec(g)
+          delta(g) = (fluxVec(g) - currentSource(g)) * F1(g)  
         end do
 
         ! Create an intermediate flux variable for use in LS scores
@@ -964,6 +944,7 @@ contains
         !$omp simd
         do g = 1, self % nG
           fluxVecLS(g) = fluxVecLS(g) - deltaLS(g)
+          fluxVec(g)   = fluxVec(g) - delta(g)
         end do
 
       else
@@ -1046,7 +1027,6 @@ contains
         
         call OMP_set_lock(self % locks(cIdx))
 
-        baseIdx = (cIdx - 1) * self % nG
         angularMomVec => self % moments((baseIdx + 1):(baseIdx + self % nG), :)
         xMomVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG))
         yMomVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
@@ -1057,12 +1037,14 @@ contains
         do g = 1, self % nG
           xMomVec(g) = xMomVec(g) + xInc(g) 
           yMomVec(g) = yMomVec(g) + yInc(g)
-          zMomVec(g) = zMomVec(g) + zInc(g) 
+          zMomVec(g) = zMomVec(g) + zInc(g)
+
           if (self % SHLength > 1) then
             do SH = 2, self % SHLength
                 angularMomVec(g, SH) = angularMomVec(g, SH) + delta(g) * real(RCoeffs(SH),defFlt)
             end do
           end if
+          
           angularMomVec(g, 1) = angularMomVec(g, 1) + deltaLS(g)
         end do
         
@@ -1240,21 +1222,9 @@ contains
             self % scalarZ(idx)    = self % scalarZ(idx) * NTV
           end if
 
-          if (self % moments(idx,1) < 0.0_defFlt) then
-            self % moments(idx,1) = 0.0_defFlt
-          end if
-
-          if (self % scalarX(idx) < 0.0_defFlt) then
-            self % scalarX(idx) = 0.0_defFlt
-          end if
-
-          if (self % scalarY(idx) < 0.0_defFlt) then
-            self % scalarY(idx) = 0.0_defFlt
-          end if
-
-          if (self % scalarZ(idx) < 0.0_defFlt) then
-            self % scalarZ(idx) = 0.0_defFlt
-          end if
+          !if (self % moments(idx,1) < 0.0_defFlt) then
+            !self % moments(idx,1) = 0.0_defFlt
+          !end if
 
         end do
 
@@ -1298,9 +1268,9 @@ contains
         do SH = 1, self % SHLength
           self % source(idx,SH) = 0.0_defFlt
         end do
-        self % sourceX(idx) = 0.0_defFlt
-        self % sourceY(idx) = 0.0_defFlt
-        self % sourceZ(idx) = 0.0_defFlt
+        !self % sourceX(idx) = 0.0_defFlt
+        !self % sourceY(idx) = 0.0_defFlt
+        !self % sourceZ(idx) = 0.0_defFlt
       end do
       return
     end if
@@ -1418,7 +1388,6 @@ contains
     chi => self % chi((matIdx + 1):(matIdx + self % nG))
 
     baseIdx = self % nG * (cIdx - 1)
-
     angularMomVec => self % prevMoments((baseIdx + 1):(baseIdx + self % nG), :)
     xFluxVec => self % prevX((baseIdx + 1):(baseIdx + self % nG))
     yFluxVec => self % prevY((baseIdx + 1):(baseIdx + self % nG))
@@ -1431,7 +1400,8 @@ contains
     yFission = 0.0_defFlt
     zFission = 0.0_defFlt
 
-    !$omp simd reduction(+:fission) aligned(angularMomVec)
+    !reduction(+:fission) aligned(angularMomVec)
+    !$omp simd 
     do gIn = 1, self % nG
       fission  = fission + angularMomVec(gIn,1) * nuFission(gIn)
       xFission = xFission + xFluxVec(gIn) * nuFission(gIn)
@@ -1478,7 +1448,7 @@ contains
       end do
       ! Calculate scattering source for isotropic scattering / flat source
 
-      self % source(idx,1) = self % source(idx,1) + chi(g) * fission / total(g)
+      self % source(idx,1) = self % source(idx,1) + (chi(g) * fission) / total(g)
       
       xSource = chi(g) * xFission + xScatter
       xSource = xSource / total(g)
