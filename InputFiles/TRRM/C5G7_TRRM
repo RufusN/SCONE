@@ -1,6 +1,7 @@
-type anisotropicRRPhysicsPackage; 
+//type anisotropicRRPhysicsPackage; 
 //type randomRayPhysicsPackage; 
-//type linearP0RRPhysicsPackage;
+type linearP0RRPhysicsPackage;
+//type linearSourceRRPhysicsPackage;
 
 pop      1750; 
 active   2600;  
@@ -10,7 +11,7 @@ termination 220;
 plot 0;
 cache 1;
 XSdata   mg; 
-//SHOrder 0; //scattering order
+SHOrder 0; //scattering order
 dataType mg;
 outputFile C5G7_TRRM ;
 
