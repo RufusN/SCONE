@@ -812,9 +812,9 @@ contains
       ! Get material and cell the ray is moving through
       matIdx  = r % coords % matIdx
       cIdx    = r % coords % uniqueID
+      
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
-        
         ! Cache total cross section
         totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
       end if
