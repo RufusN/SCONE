@@ -1,4 +1,4 @@
-module anisotropicRRPhysicsPackage_class
+module testPackage_class
 
   use numPrecision
   use universalVariables
@@ -92,7 +92,7 @@ module anisotropicRRPhysicsPackage_class
   !!
   !! Sample Input Dictionary:
   !!   PP {
-  !!     type anisotropicRRPhysicsPackage;
+  !!     type testPackage;
   !!     dead 10;              // Dead length where rays do not score to scalar fluxes
   !!     termination 100;      // Length a ray travels before it is terminated
   !!     rays 1000;            // Number of rays to sample per iteration
@@ -104,6 +104,7 @@ module anisotropicRRPhysicsPackage_class
   !!     #fluxMap {<map>}#     // Optionally output one-group fluxes according to a given map
   !!     #plot 1;#             // Optionally make VTK viewable plot of fluxes and uncertainties
   !!     #SHOrder 0;#    // Optional spherical harmonic order for higher order scattering.
+  !!     #rho 0;#              // Optional stabilisation for negative in-group scattering XSs
   !!
   !!     geometry {<Geometry Definition>}
   !!     nuclearData {<Nuclear data definition>}
@@ -130,6 +131,7 @@ module anisotropicRRPhysicsPackage_class
   !!   cache       -> Logical check whether to use distance caching
   !!   SHOrder     -> Order of higher order scattering, isotropic 0 by default, maximum P3 / 3rd order
   !!   SHLength    -> Number of spherical harmonics for given SHOrder.
+  !!   rho         -> Stabilisation factor: 0 is no stabilisation, 1 is aggressive stabilisation
   !!   outputFile  -> Output file name
   !!   outputFormat-> Output file format
   !!   plotResults -> Plot results?
@@ -164,7 +166,7 @@ module anisotropicRRPhysicsPackage_class
   !! Interface:
   !!   physicsPackage interface
   !!
-  type, public, extends(physicsPackage) :: anisotropicRRPhysicsPackage
+  type, public, extends(physicsPackage) :: testPackage
     private
     ! Components
     class(geometryStd), pointer           :: geom
@@ -176,6 +178,7 @@ module anisotropicRRPhysicsPackage_class
     integer(shortInt)                     :: nG          = 0
     integer(shortInt)                     :: nCells      = 0
     integer(shortInt)                     :: nMat        = 0
+    integer(shortInt)                     :: nMatVOID    = 0
     real(defReal)                         :: lengthPerIt = ZERO
 
     ! Settings
@@ -187,6 +190,7 @@ module anisotropicRRPhysicsPackage_class
     logical(defBool)   :: cache       = .false.
     integer(shortInt)  :: SHOrder  = 0
     integer(shortInt)  :: SHLength = 1
+    real(defReal)      :: rho         = ZERO
     character(pathLen) :: outputFile
     character(nameLen) :: outputFormat
     logical(defBool)   :: plotResults = .false.
@@ -252,7 +256,7 @@ module anisotropicRRPhysicsPackage_class
     procedure, private :: printSettings
 
 
-  end type anisotropicRRPhysicsPackage
+  end type testPackage
 
 contains
 
@@ -262,7 +266,7 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine init(self,dict)
-    class(anisotropicRRPhysicsPackage), intent(inout) :: self
+    class(testPackage), intent(inout) :: self
     class(dictionary), intent(inout)              :: dict
     integer(shortInt)                             :: seed_temp, i, g, g1, m, SH
     integer(longInt)                              :: seed
@@ -276,7 +280,7 @@ contains
     type(outputFile)                              :: test_out
     class(baseMgNeutronMaterial), pointer         :: mat
     class(materialHandle), pointer                :: matPtr
-    character(100), parameter :: Here = 'init (anisotropicRRPhysicsPackage_class.f90)'
+    character(100), parameter :: Here = 'init (testPackage_class.f90)'
 
     call cpu_time(self % CPU_time_start)
     
@@ -296,6 +300,9 @@ contains
 
     ! Number of spherical harmonic terms for given SHOrder
     self % SHLength = (self % SHOrder + 1 )**2
+
+    ! Stabilisation factor for negative in-group scattering for P0
+    call dict % getOrDefault(self % rho, 'rho', ZERO)
 
     ! Print fluxes?
     call dict % getOrDefault(self % printFlux, 'printFlux', .false.)
@@ -463,10 +470,11 @@ contains
     ! TODO: clean nuclear database afterwards! It is no longer used
     !       and takes up memory.
     self % nMat = mm_nMat()
-    allocate(self % sigmaT(self % nMat * self % nG))
-    allocate(self % nuSigmaF(self % nMat * self % nG))
-    allocate(self % chi(self % nMat * self % nG))
-    allocate(self % sigmaS(self % nMat * self % nG * self % nG, self % SHOrder + 1 ))
+    self % nMatVOID = self % nMat + 1
+    allocate(self % sigmaT(self % nMatVOID * self % nG))
+    allocate(self % nuSigmaF(self % nMatVOID * self % nG))
+    allocate(self % chi(self % nMatVOID * self % nG))
+    allocate(self % sigmaS(self % nMatVOID * self % nG * self % nG, self % SHOrder + 1 ))
 
     do m = 1, self % nMat
       matPtr  => self % mgData % getMaterial(m)
@@ -489,6 +497,19 @@ contains
       end do
     end do
 
+    do g = 1, self % nG
+        self % sigmaT(self % nG * (self % nMatVOID - 1) + g)   = 0.0_defFlt
+        self % nuSigmaF(self % nG * (self % nMatVOID - 1) + g) = 0.0_defFlt
+        self % chi(self % nG * (self % nMatVOID - 1) + g)      = 0.0_defFlt
+        
+        do g1 = 1, self % nG
+            do SH = 1, self % SHOrder
+                self % sigmaS(self % nG * self % nG * (self % nMatVOID - 1) &
+                + self % nG * (g - 1) + g1, SH)  = 0.0_defFlt
+            end do
+        end do
+    end do
+
 
   end subroutine init
 
@@ -498,7 +519,7 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine run(self)
-    class(anisotropicRRPhysicsPackage), intent(inout) :: self
+    class(testPackage), intent(inout) :: self
 
     call self % printSettings()
     call self % cycles()
@@ -519,7 +540,7 @@ contains
   !! given criteria or when a fixed number of iterations has been passed.
   !!
   subroutine cycles(self)
-    class(anisotropicRRPhysicsPackage), intent(inout) :: self
+    class(testPackage), intent(inout) :: self
     type(ray), save                               :: r
     type(RNG), target, save                       :: pRNG
     real(defFlt)                                  :: hitRate, ONE_KEFF
@@ -670,12 +691,12 @@ contains
   !! and performs the build operation
   !!
   subroutine initialiseRay(self, r)
-    class(anisotropicRRPhysicsPackage), intent(inout) :: self
+    class(testPackage), intent(inout) :: self
     type(ray), intent(inout)                      :: r
     real(defReal)                                 :: mu, phi
     real(defReal), dimension(3)                   :: u, rand3, x
     integer(shortInt)                             :: i, matIdx, cIdx
-    character(100), parameter :: Here = 'initialiseRay (anisotropicRRPhysicsPackage_class.f90)'
+    character(100), parameter :: Here = 'initialiseRay (testPackage_class.f90)'
 
     i = 0
     mu = TWO * r % pRNG % get() - ONE
@@ -717,7 +738,7 @@ contains
   !! Records the number of integrations/ray movements.
   !!
   subroutine transportSweep(self, r, ints)
-    class(anisotropicRRPhysicsPackage), target, intent(inout) :: self
+    class(testPackage), target, intent(inout) :: self
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
@@ -748,90 +769,85 @@ contains
 
     do while (totalLength < self % termination)
 
-      ! Get material and cell the ray is moving through
-      matIdx  = r % coords % matIdx
-      cIdx    = r % coords % uniqueID
+        ! Get material and cell the ray is moving through
+        matIdx  = r % coords % matIdx
+        cIdx    = r % coords % uniqueID
 
-      ! Caluclate r0 and mu0, mu0 used in SHarmonics
-      r0 = r % rGlobal()
-      mu0 = r % dirGlobal()
+        ! Caluclate r0 and mu0, mu0 used in SHarmonics
+        r0 = r % rGlobal()
+        mu0 = r % dirGlobal()
 
-      if (newRay .or. event == BOUNDARY_EV) then
-        call self % sphericalHarmonicCalculator(mu0, RCoeffs) !- seems to work 
-        newRay = .false.
-      end if
-          
-      ! Set maximum flight distance and ensure ray is active
-      if (totalLength >= self % dead) then
-        length = self % termination - totalLength 
-        activeRay = .true.
-      else
-        length = self % dead - totalLength
-      end if
+        if (matIdx >= VOID_MAT) then
+            matIdx = self % nMatVOID
+        end if
 
-      ! Move ray
-      ! Use distance caching or standard ray tracing
-      ! Distance caching seems a little bit more unstable
-      ! due to FP error accumulation, but is faster.
-      ! This can be fixed by resetting the cache after X number
-      ! of distance calculations.
-      if (self % cache) then
-        if (mod(ints,100_longInt) == 0)  cache % lvl = 0
-        call self % geom % moveRay_withCache(r % coords, length, event, cache, hitVacuum)
-      else
-        call self % geom % moveRay_noCache(r % coords, length, event, hitVacuum)
-      end if
-      totalLength = totalLength + length
-      
-      ! Set new cell's position. Use half distance across cell
-      ! to try and avoid FP error
-      if (.not. self % cellFound(cIdx)) then
-        !$omp critical 
-        self % cellFound(cIdx) = .true.
-        self % cellPos(cIdx,:) = r0 + length * HALF * mu0
-        !$omp end critical
-      end if
+        if (newRay .or. event == BOUNDARY_EV) then
+            call self % sphericalHarmonicCalculator(mu0, RCoeffs) !- seems to work 
+            newRay = .false.
+        end if
+            
+        ! Set maximum flight distance and ensure ray is active
+        if (totalLength >= self % dead) then
+            length = self % termination - totalLength 
+            activeRay = .true.
+        else
+            length = self % dead - totalLength
+        end if
 
-      ints = ints + 1
-      lenFlt = real(length,defFlt)
-      baseIdx = (cIdx - 1) * self % nG
-      sourceVec => self % source(baseIdx + 1 : baseIdx + self % nG, :)
+        ! Move ray
+        ! Use distance caching or standard ray tracing
+        ! Distance caching seems a little bit more unstable
+        ! due to FP error accumulation, but is faster.
+        ! This can be fixed by resetting the cache after X number
+        ! of distance calculations.
+        if (self % cache) then
+            if (mod(ints,100_longInt) == 0)  cache % lvl = 0
+            call self % geom % moveRay_withCache(r % coords, length, event, cache, hitVacuum)
+        else
+            call self % geom % moveRay_noCache(r % coords, length, event, hitVacuum)
+        end if
+        totalLength = totalLength + length
+        
+        ! Set new cell's position. Use half distance across cell
+        ! to try and avoid FP error
+        if (.not. self % cellFound(cIdx)) then
+            !$omp critical 
+            self % cellFound(cIdx) = .true.
+            self % cellPos(cIdx,:) = r0 + length * HALF * mu0
+            !$omp end critical
+        end if
 
-      if (matIdx < VOID_MAT - 1) then
+        ints = ints + 1
+        lenFlt = real(length,defFlt)
+        baseIdx = (cIdx - 1) * self % nG
+        sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG), :)
 
         if (matIdx0 /= matIdx) then 
-          matIdx0 = matIdx
-          ! Cache total cross section
-          totVec => self % sigmaT((matIdx - 1) * self % nG + 1:self % nG)
+            matIdx0 = matIdx
+            ! Cache total cross section
+            totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
         end if
 
         !$omp simd
         do g = 1, self % nG
-          currentSource(g) = 0.0_defFlt
-          do SH = 1, self % SHLength
+            currentSource(g) = 0.0_defFlt
+            do SH = 1, self % SHLength
             currentSource(g) = currentSource(g) + sourceVec(g,SH) * real(RCoeffs(SH),defFlt)
-          end do 
+            end do 
         end do
 
         !$omp simd aligned(totVec)
         do g = 1, self % nG
-          attenuate(g) = expTau(totVec(g) * lenFlt) * lenFlt
-          delta(g) = (fluxVec(g) - currentSource(g)) * attenuate(g)     
-          fluxVec(g) = fluxVec(g) - delta(g) * totVec(g)
+            attenuate(g) = expTau(totVec(g) * lenFlt) * lenFlt
+            delta(g) = (fluxVec(g) - currentSource(g)) * attenuate(g)     
+            fluxVec(g) = fluxVec(g) - delta(g) * totVec(g)
         end do
 
-      else 
-        !$omp simd
-        do g = 1, self % nG
-          delta(g) = 0.0_defFlt   
-        end do
-
-      end if
 
       ! Accumulate to scalar flux
       if (activeRay) then
 
-        angularMomVec => self % moments(baseIdx + 1 : baseIdx + self % nG, :)
+        angularMomVec => self % moments((baseIdx + 1):(baseIdx + self % nG), :)
       
         call OMP_set_lock(self % locks(cIdx))
         !$omp simd aligned(angularMomVec)
@@ -861,7 +877,7 @@ contains
 
   subroutine SphericalHarmonicCalculator(self, mu, RCoeffs)
     ! angle: x = r sin θ cos φ, y = r sin θ sin φ, and z = r cos θ
-    class(anisotropicRRPhysicsPackage), intent(inout)       :: self
+    class(testPackage), intent(inout)       :: self
     real(defReal), dimension(self % SHLength), intent(out)  :: RCoeffs ! Array to store harmonic coefficients
     real(defReal)                                           :: dirX,dirY,dirZ
     real(defReal), dimension(3), intent(in)                 :: mu
@@ -923,50 +939,78 @@ contains
   !! the flux by the neutron source
   !!
   subroutine normaliseFluxAndVolume(self, it)
-    class(anisotropicRRPhysicsPackage), intent(inout) :: self
+    class(testPackage), intent(inout) :: self
     integer(shortInt), intent(in)                 :: it
     real(defFlt)                                  :: norm
     real(defReal)                                 :: normVol
-    real(defFlt), save                            :: total, vol
+    real(defFlt), save                            :: total, vol, D, SigGG
     integer(shortInt), save                       :: g, idx, SH, matIdx
     integer(shortInt)                             :: cIdx
-    !$omp threadprivate(total, vol, idx, g, SH, matIdx)
+    !$omp threadprivate(total, vol, idx, g, SH, matIdx, sigGG, D)
 
     norm = real(ONE / self % lengthPerIt, defFlt)
     normVol = ONE / (self % lengthPerIt * it)
 
     !$omp parallel do schedule(static)
     do cIdx = 1, self % nCells
-      matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
+        matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
 
-      if (matIdx < VOID_MAT - 1) then
-        
+        if (matIdx >= VOID_MAT - 1) then
+            matIdx = self % nMatVOID
+        end if
+
         ! Update volume due to additional rays
         self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
         vol = real(self % volume(cIdx),defFlt)
 
         do g = 1, self % nG
 
-          total = self % sigmaT((matIdx - 1) * self % nG + g)
-          idx   = self % nG * (cIdx - 1) + g
+            total = self % sigmaT((matIdx - 1) * self % nG + g)
+            idx   = self % nG * (cIdx - 1) + g
 
-          do SH = 1, self % SHLength
+            if (self % SHOrder > 0) then
 
-            if (vol > volume_tolerance) then
-                self % moments(idx,SH) =  self % moments(idx,SH) * norm / vol
+              do SH = 1, self % SHLength
+
+                if (vol > volume_tolerance) then
+                    self % moments(idx,SH) =  self % moments(idx,SH) * norm / vol
+                end if
+
+                self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
+
+              end do 
+
+            else 
+
+              if (vol > volume_tolerance) then
+                self % moments(idx,1) =  self % moments(idx,1) * norm / vol
+              end if
+
+              if (matIdx < self % nMatVOID) then
+
+                sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g, 1)
+      
+                ! Presumes non-zero total XS
+                if ((sigGG < 0) .and. (total > 0)) then
+                  D = -real(self % rho, defFlt) * sigGG / total
+                else
+                  D = 0.0_defFlt
+                end if
+
+              else
+                D = 0.0_defFlt
+              end if
+
+              self % moments(idx,1) =  (self % moments(idx,1) + self % source(idx,1) + D * self % prevMoments(idx,1) ) / (1 + D)
+            
             end if
 
-            self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
-
-          end do  
-
-          if (self % moments(idx,1) < 0.0_defFlt) then
-              self % moments(idx,1) = 0.0_defFlt
-          end if
+            !if (self % moments(idx,1) < 0.0_defFlt) then
+                !self % moments(idx,1) = 0.0_defFlt
+            !end if
 
         end do
 
-      end if
 
     end do
     !$omp end parallel do
@@ -977,7 +1021,7 @@ contains
   !! Kernel to update sources given a cell index
   !!
   subroutine sourceUpdateKernel(self, cIdx, ONE_KEFF)
-    class(anisotropicRRPhysicsPackage), target, intent(inout) :: self
+    class(testPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
     real(defFlt), intent(in)                              :: ONE_KEFF
     real(defFlt)                                          :: scatter, fission
@@ -1003,14 +1047,14 @@ contains
 
     ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
-    total => self % sigmaT(matIdx + (1):(self % nG))
-    scatterXS => self % sigmaS(matIdx * self % nG + (1):(self % nG*self % nG), :)
-    nuFission => self % nuSigmaF(matIdx + (1):(self % nG))
-    chi => self % chi(matIdx + (1):(self % nG))
+    total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
+    scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG), :)
+    nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
+    chi => self % chi((matIdx + 1):(matIdx + self % nG))
 
     baseIdx = self % nG * (cIdx - 1)
 
-    angularMomVec => self % prevMoments(baseIdx+(1):(self % nG), :)
+    angularMomVec => self % prevMoments((baseIdx + 1):(baseIdx + self % nG), :)
 
     ! Calculate fission source
     fission = 0.0_defFlt
@@ -1022,8 +1066,7 @@ contains
 
     do g = 1, self % nG
 
-      scatterVec => scatterXS(self % nG * (g - 1) + (1):self % nG, :)
-
+      scatterVec => scatterXS((self % nG * (g - 1) + 1):(self % nG * self % nG), :)
       idx = baseIdx + g
 
       do SH = 1, self % SHLength
@@ -1054,7 +1097,7 @@ contains
   !! Calculate keff
   !!
   subroutine calculateKeff(self)
-    class(anisotropicRRPhysicsPackage), intent(inout) :: self
+    class(testPackage), intent(inout) :: self
     real(defFlt)                                  :: fissionRate, prevFissionRate
     real(defFlt), save                            :: fissLocal, prevFissLocal, vol
     integer(shortInt), save                       :: matIdx, g, idx, mIdx
@@ -1107,7 +1150,7 @@ contains
   !! Sets prevFlux to scalarFlux and zero's scalarFlux
   !!
   subroutine resetFluxes(self)
-    class(anisotropicRRPhysicsPackage), intent(inout) :: self
+    class(testPackage), intent(inout) :: self
     integer(shortInt)                                 :: idx, SH
 
    !$omp parallel do schedule(static)
@@ -1116,7 +1159,6 @@ contains
       do SH = 1, self % SHLength
         self % prevMoments(idx,SH) = self % moments(idx,SH) 
         self % moments(idx,SH) = 0.0_defFlt
-        self % source(idx,SH) = 0.0_defFlt
       end do
 
     end do
@@ -1128,7 +1170,7 @@ contains
   !! Accumulate flux scores for stats
   !!
   subroutine accumulateFluxAndKeffScores(self)
-    class(anisotropicRRPhysicsPackage), intent(inout) :: self
+    class(testPackage), intent(inout) :: self
     real(defReal), save                            :: flux
     integer(shortInt)                              :: idx
     !$omp threadprivate(flux)
@@ -1150,7 +1192,7 @@ contains
   !! Finalise flux scores for stats
   !!
   subroutine finaliseFluxAndKeffScores(self,it)
-    class(anisotropicRRPhysicsPackage), intent(inout) :: self
+    class(testPackage), intent(inout) :: self
     integer(shortInt), intent(in)                 :: it
     integer(shortInt)                             :: idx
     real(defReal)                                 :: N1, Nm1
@@ -1190,7 +1232,7 @@ contains
   !!   None
   !!
   subroutine printResults(self)
-    class(anisotropicRRPhysicsPackage), intent(inout) :: self
+    class(testPackage), intent(inout) :: self
     type(outputFile)                              :: out
     character(nameLen)                            :: name
     integer(shortInt)                             :: cIdx, g1
@@ -1295,6 +1337,7 @@ contains
         ! Identify material
         matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
         matPtr => self % mgData % getMaterial(matIdx)
+        if (matIdx >= VOID_MAT - 1) cycle
         mat    => baseMgNeutronMaterial_CptrCast(matPtr)
         vol    =  self % volume(cIdx)
 
@@ -1430,7 +1473,7 @@ contains
   !!   None
   !!
   subroutine printSettings(self)
-    class(anisotropicRRPhysicsPackage), intent(in) :: self
+    class(testPackage), intent(in) :: self
 
     print *, repeat("<>", MAX_COL/2)
     print *, "/\/\ RANDOM RAY EIGENVALUE CALCULATION /\/\"
@@ -1455,7 +1498,7 @@ contains
   !! Return to uninitialised state
   !!
   subroutine kill(self)
-    class(anisotropicRRPhysicsPackage), intent(inout) :: self
+    class(testPackage), intent(inout) :: self
     integer(shortInt) :: i
 
     ! Clean Nuclear Data, Geometry and visualisation
@@ -1481,6 +1524,7 @@ contains
     end if
     self % nCells    = 0
     self % nMat      = 0
+    self % nMatVOID  = 0
     if(allocated(self % sigmaT)) deallocate(self % sigmaT)
     if(allocated(self % sigmaS)) deallocate(self % sigmaS)
     if(allocated(self % nusigmaF)) deallocate(self % nuSigmaF)
@@ -1494,6 +1538,7 @@ contains
     self % cache       = .false.
     self % SHLength    = 1
     self % SHOrder     = 0
+    self % rho         = ZERO
     self % mapFission  = .false.
     self % mapFlux     = .false.
     self % plotResults = .false.
@@ -1522,5 +1567,5 @@ contains
 
   end subroutine kill
 
-end module anisotropicRRPhysicsPackage_class
+end module testPackage_class
 
