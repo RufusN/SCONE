@@ -1005,10 +1005,6 @@ contains
             
             end if
 
-            !if (self % moments(idx,1) < 0.0_defFlt) then
-                !self % moments(idx,1) = 0.0_defFlt
-            !end if
-
         end do
 
 
