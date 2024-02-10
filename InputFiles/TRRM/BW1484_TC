@@ -10,6 +10,7 @@ plot 1;
 cache 1;
 XSdata mg;
 //SHOrder 0; //scattering order
+rho 1;
 dataType mg;
 outputFile BW1484_2_TRRM_TC ;
 
@@ -383,13 +384,13 @@ nuclearData {
       xsFile ../XS_BW/fuel1_tc.txt;
     }
 
-    //voidMat {
-      //temp 87476;
-      //composition {}
-      //xsFile ../XS_BW/void_P1.txt;
+    voidMat {
+      temp 87476;
+      composition {}
+      xsFile ../XS_BW/void_P1.txt;
       //xsFile ./XS_BW_noTC/mat6.txt;
 
-    //}
+    }
 
    }
 }
