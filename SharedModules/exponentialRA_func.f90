@@ -116,7 +116,7 @@ elemental function expTau2(tau) result(x)
 
   x = num / den
 
-end function expTau
+end function expTau2
 
     
 end module exponentialRA_func
