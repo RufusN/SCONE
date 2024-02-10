@@ -1,5 +1,6 @@
 //type anisotropicRRPhysicsPackage;
-type randomRayPhysicsPackage;
+//type randomRayPhysicsPackage;
+type testPackage;
 
 pop      8000; 
 active   2500;  
