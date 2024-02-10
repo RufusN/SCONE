@@ -13,7 +13,7 @@ module exponentialRA_func
   implicit none
   private
   
-  public :: exponential, expTau
+  public :: exponential, expTau, expTau2
 
   ! Numerator coefficients in rational approximation
   real(defFlt), parameter :: c1n = -1.0000013559236386308, c2n = 0.23151368626911062025,&
@@ -87,6 +87,32 @@ contains
   num = num * x + c2n
   num = num * x + c1n
   num = -num 
+
+  x = num / den
+
+end function expTau
+
+elemental function expTau2(tau) result(x)
+  real(defFlt), intent(in)    :: tau
+  real(defFlt)                :: x
+  real(defFlt)                :: den, num
+
+  x = -tau
+  den = c7d
+  den = den * x + c6d
+  den = den * x + c5d
+  den = den * x + c4d
+  den = den * x + c3d
+  den = den * x + c2d
+  den = den * x + c1d
+  den = den * x + c0d
+
+  num = c7n
+  num = num * x + c6n
+  num = num * x + c5n
+  num = num * x + c4n
+  num = num * x + c3n
+  num = num * x + c2n
 
   x = num / den
 
