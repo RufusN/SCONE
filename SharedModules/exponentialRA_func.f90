@@ -35,6 +35,16 @@ module exponentialRA_func
         d2d = 0.02263358514260129, d3d = 0.04721469893686252, d4d = 0.006883236664917246, &
         d5d = 0.0007036272419147752 , d6d = 0.00006064409107557148 
       
+  ! Coefficients for numerator in rational approximation
+        real(defFlt), parameter :: h0n = 0.5, h1n = 0.05599412483229184, &
+        h2n = 0.01294939509305754, h3n = 0.002341166644220405, &
+        h4n = 0.00003686858969421769, h5n = 0.00004220477028150503
+
+        ! Coefficients for denominator in rational approximation
+        real(defFlt), parameter :: h0d = 1.0, h1d = 0.7787274561075199, &
+        h2d = 0.2945145030273455, h3d = 0.07440380752801196, &
+        h4d = 0.01220791761275212, h5d = 0.002354181374425252, &
+        h6d = 0.00003679462493221416, h7d = 0.00004220477028150503
 
 contains
 
@@ -107,9 +117,9 @@ end function expTau
 !FROM: OpenMoC https://github.com/mit-crpg/OpenMOC/blob/7c8c9460c1c95f68dae102a402a39afa233a0b8c/src/exponentials.h#L9
 
 elemental function expG(tau) result(x)
-real(defFlt), intent(in)    :: tau
-real(defFlt)                :: x
-real(defFlt)                :: den, num
+  real(defFlt), intent(in)    :: tau
+  real(defFlt)                :: x
+  real(defFlt)                :: den, num
 
   x = tau
 
@@ -119,7 +129,7 @@ real(defFlt)                :: den, num
   den = den * x + d2d
   den = den * x + d1d
   den = den * x + d0d
-  den = 1/den
+  !den = 1/den
 
   num = d5n * x + d4n
   num = num * x + d3n
@@ -127,9 +137,37 @@ real(defFlt)                :: den, num
   num = num * x + d1n
   num = num * x + d0n
 
-  x = num * den
+  x = num / den
 
 end function expG
+
+! Computes H exponential term using a rational approximation (1-exp(-x)*(1+x))/x**2 
+! using a 5/7th order rational approximation. 
+! FROM: OpenMoC https://github.com/mit-crpg/OpenMOC/blob/7c8c9460c1c95f68dae102a402a39afa233a0b8c/src/exponentials.h#L9
+
+elemental subroutine expH_fractional(x)
+  real(defFlt), intent(in)    :: tau
+  real(defFlt)                :: x
+  real(defFlt)                :: den, num
+
+  x = tau
+
+  num = h5n*x + h4n
+  num = num*x + h3n
+  num = num*x + h2n
+  num = num*x + h1n
+  num = num*x + h0n
+
+  den = h7d*x + h6d
+  den = den*x + h5d
+  den = den*x + h4d
+  den = den*x + h3d
+  den = den*x + h2d
+  den = den*x + h1d
+  den = den*x + h0d
+
+  x = num / den
+end subroutine expH_fractional
 
 
 
