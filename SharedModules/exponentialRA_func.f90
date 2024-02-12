@@ -33,7 +33,7 @@ module exponentialRA_func
   ! Denominator coefficients in rational approximation for 1/x-(1-exp(-x))/x**2
         real(defFlt), parameter :: d0d = 1.0, d1d = 0.6864462055546078,&
         d2d = 0.02263358514260129, d3d = 0.04721469893686252, d4d = 0.006883236664917246, &
-        d5d = 0.0007036272419147752 , d6d = 0.00006064409107557148, 
+        d5d = 0.0007036272419147752 , d6d = 0.00006064409107557148 
       
 
 contains
@@ -111,7 +111,7 @@ real(defFlt), intent(in)    :: tau
 real(defFlt)                :: x
 real(defFlt)                :: den, num
 
-  x = -tau
+  x = tau
 
   den = d6d * x + d5d
   den = den * x + d4d
