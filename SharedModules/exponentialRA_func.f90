@@ -13,7 +13,7 @@ module exponentialRA_func
   implicit none
   private
   
-  public :: exponential, expTau, expG
+  public :: exponential, expTau, expG, expH
 
   ! Numerator coefficients in rational approximation for 1 - exp(-tau)
   real(defFlt), parameter :: c1n = -1.0000013559236386308, c2n = 0.23151368626911062025,&
@@ -145,7 +145,7 @@ end function expG
 ! using a 5/7th order rational approximation. 
 ! FROM: OpenMoC https://github.com/mit-crpg/OpenMOC/blob/7c8c9460c1c95f68dae102a402a39afa233a0b8c/src/exponentials.h#L9
 
-elemental subroutine expH_fractional(x)
+elemental subroutine expH(x)
   real(defFlt), intent(in)    :: tau
   real(defFlt)                :: x
   real(defFlt)                :: den, num
@@ -167,7 +167,7 @@ elemental subroutine expH_fractional(x)
   den = den*x + h0d
 
   x = num / den
-end subroutine expH_fractional
+end subroutine expH
 
 
 
