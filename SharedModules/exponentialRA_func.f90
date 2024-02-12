@@ -153,7 +153,7 @@ end function expG
 ! using a 5/7th order rational approximation. 
 ! FROM: OpenMoC https://github.com/mit-crpg/OpenMOC/blob/7c8c9460c1c95f68dae102a402a39afa233a0b8c/src/exponentials.h#L9
 
-elemental subroutine expH(x)
+elemental function expH(tau) result(x)
   real(defFlt), intent(in)    :: tau
   real(defFlt)                :: x
   real(defFlt)                :: den, num
@@ -175,12 +175,13 @@ elemental subroutine expH(x)
   den = den*x + h0d
 
   x = num / den
-end subroutine expH
+end function expH
 
 ! Computes G2 : y = 2/3 - (1 + 2/x) * (1/x + 0.5 - (1 + 1/x) * (1-exp(-x)) / x) 
 ! using a 5/5th order rational approximation,
 ! FROM: OpenMoC https://github.com/mit-crpg/OpenMOC/blob/7c8c9460c1c95f68dae102a402a39afa233a0b8c/src/exponentials.h#L9
-elemental subroutine expG2(x)
+
+elemental function expG2(tau) result(x)
   real(defFlt), intent(in)    :: tau
   real(defFlt)                :: x
   real(defFlt)                :: den, num
@@ -202,8 +203,8 @@ elemental subroutine expG2(x)
 
   ! Compute final value
   x = num / den
-  
-end subroutine expG2
+
+end function expG2
 
 
 
