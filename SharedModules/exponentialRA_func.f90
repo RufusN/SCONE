@@ -13,7 +13,7 @@ module exponentialRA_func
   implicit none
   private
   
-  public :: exponential, expTau, expG, expH
+  public :: exponential, expTau, expG, expH, expG2
 
   ! Numerator coefficients in rational approximation for 1 - exp(-tau)
   real(defFlt), parameter :: c1n = -1.0000013559236386308, c2n = 0.23151368626911062025,&
@@ -45,6 +45,14 @@ module exponentialRA_func
         h2d = 0.2945145030273455, h3d = 0.07440380752801196, &
         h4d = 0.01220791761275212, h5d = 0.002354181374425252, &
         h6d = 0.00003679462493221416, h7d = 0.00004220477028150503
+
+    ! Coefficients for numerator in rational approximation
+        real(defFlt), parameter :: g1n = -0.08335775885589858, g2n = -0.003603942303847604, &
+        g3n = 0.0037673183263550827, g4n = 1.124183494990467E-5, g5n = 0.00016837426505799449
+
+        ! Coefficients for denominator in rational approximation
+        real(defFlt), parameter :: g1d = 0.7454048371823628, g2d = 0.23794300531408347, &
+        g3d = 0.05367250964303789, g4d = 0.006125197988351906, g5d = 0.0010102514456857377
 
 contains
 
@@ -113,7 +121,7 @@ real(defFlt)                :: den, num
 
 end function expTau
 
-!This method computes 1/x-(1-exp(-x))/x**2 using a 5/6th order rational approximation.
+! Computes y = 1/x-(1-exp(-x))/x**2 using a 5/6th order rational approximation.
 !FROM: OpenMoC https://github.com/mit-crpg/OpenMOC/blob/7c8c9460c1c95f68dae102a402a39afa233a0b8c/src/exponentials.h#L9
 
 elemental function expG(tau) result(x)
@@ -141,7 +149,7 @@ elemental function expG(tau) result(x)
 
 end function expG
 
-! Computes H exponential term using a rational approximation (1-exp(-x)*(1+x))/x**2 
+! Computes H : y = (1-exp(-x)*(1+x))/x**2 
 ! using a 5/7th order rational approximation. 
 ! FROM: OpenMoC https://github.com/mit-crpg/OpenMOC/blob/7c8c9460c1c95f68dae102a402a39afa233a0b8c/src/exponentials.h#L9
 
@@ -168,6 +176,34 @@ elemental subroutine expH(x)
 
   x = num / den
 end subroutine expH
+
+! Computes G2 : y = 2/3 - (1 + 2/x) * (1/x + 0.5 - (1 + 1/x) * (1-exp(-x)) / x) 
+! using a 5/5th order rational approximation,
+! FROM: OpenMoC https://github.com/mit-crpg/OpenMOC/blob/7c8c9460c1c95f68dae102a402a39afa233a0b8c/src/exponentials.h#L9
+elemental subroutine expG2(x)
+  real(defFlt), intent(in)    :: tau
+  real(defFlt)                :: x
+  real(defFlt)                :: den, num
+
+  x = tau 
+  ! Calculate numerator
+  num = g5n*x + g4n
+  num = num*x + g3n
+  num = num*x + g2n
+  num = num*x + g1n
+  num = num*x
+
+  ! Calculate denominator
+  den = g5d*x + g4d
+  den = den*x + g3d
+  den = den*x + g2d
+  den = den*x + g1d
+  den = den*x + 1.0
+
+  ! Compute final value
+  x = num / den
+  
+end subroutine expG2
 
 
 
