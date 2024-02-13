@@ -48,7 +48,7 @@ module exponentialRA_func
 
     ! Coefficients for numerator in rational approximation
         real(defFlt), parameter :: g1n = -0.08335775885589858, g2n = -0.003603942303847604, &
-        g3n = 0.0037673183263550827, g4n = 1.124183494990467E-5, g5n = 0.00016837426505799449
+        g3n = 0.0037673183263550827, g4n = 0.00001124183494990467, g5n = 0.00016837426505799449
 
         ! Coefficients for denominator in rational approximation
         real(defFlt), parameter :: g1d = 0.7454048371823628, g2d = 0.23794300531408347, &
