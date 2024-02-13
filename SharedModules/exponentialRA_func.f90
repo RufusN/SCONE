@@ -32,21 +32,26 @@ module exponentialRA_func
 
   ! Denominator coefficients in rational approximation for 1/x-(1-exp(-x))/x**2
         real(defFlt), parameter :: d0d = 1.0, d1d = 0.6864462055546078,&
-        d2d = 0.02263358514260129, d3d = 0.04721469893686252, d4d = 0.006883236664917246, &
+        d2d = 0.2263358514260129, d3d = 0.04721469893686252, d4d = 0.006883236664917246, &
         d5d = 0.0007036272419147752 , d6d = 0.00006064409107557148 
+
+
       
   ! Coefficients for numerator in rational approximation
         real(defFlt), parameter :: h0n = 0.5, h1n = 0.05599412483229184, &
         h2n = 0.01294939509305754, h3n = 0.002341166644220405, &
         h4n = 0.00003686858969421769, h5n = 0.00004220477028150503
 
-        ! Coefficients for denominator in rational approximation
+  ! Coefficients for denominator in rational approximation
         real(defFlt), parameter :: h0d = 1.0, h1d = 0.7787274561075199, &
         h2d = 0.2945145030273455, h3d = 0.07440380752801196, &
         h4d = 0.01220791761275212, h5d = 0.002354181374425252, &
         h6d = 0.00003679462493221416, h7d = 0.00004220477028150503
 
-    ! Coefficients for numerator in rational approximation
+
+
+
+  ! Coefficients for numerator in rational approximation
         real(defFlt), parameter :: g1n = -0.08335775885589858, g2n = -0.003603942303847604, &
         g3n = 0.0037673183263550827, g4n = 0.00001124183494990467, g5n = 0.00016837426505799449
 
