@@ -61,7 +61,7 @@ geometry {
             radii ( 0.515 0.522 0.603 0.0 ); 
             fills ( fuel1 void alClad water);}
 
-    water1 { id 20; type pinUniverse; radii (0.0 ); fills (water1);}
+    water1 { id 20; type pinUniverse; radii (0.0); fills (water1);}
 
     // Lattices
 
