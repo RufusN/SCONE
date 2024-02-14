@@ -1265,12 +1265,12 @@ contains
       baseIdx = self % ng * (cIdx - 1)
       do g = 1, self % nG
         idx = baseIdx + g
-        do SH = 1, self % SHLength
-          self % source(idx,SH) = 0.0_defFlt
-        end do
-        self % sourceX(idx) = 0.0_defFlt
-        self % sourceY(idx) = 0.0_defFlt
-        self % sourceZ(idx) = 0.0_defFlt
+        !do SH = 1, self % SHLength
+          self % source(idx,1) = 0.0_defFlt
+        !end do
+        !self % sourceX(idx) = 0.0_defFlt
+        !self % sourceY(idx) = 0.0_defFlt
+        !self % sourceZ(idx) = 0.0_defFlt
       end do
       return
     end if
