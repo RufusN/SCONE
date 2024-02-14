@@ -1,5 +1,5 @@
-type anisotropicRRPhysicsPackage;
-//type linearP0RRPhysicsPackage;
+//type anisotropicRRPhysicsPackage;
+type linearP0RRPhysicsPackage;
 
 pop      8000; 
 active   2500;  
@@ -54,10 +54,10 @@ geometry {
     !        radii ( 0.297335 0.42045 0.515 0.522 0.603 0.72862 0.83557 0.9303 1.01623 0.0 ); 
     !        fills (fuel1 fuel1 fuel1 void alClad water water water water water);}
 
-    pin10 { id 10; type azimPinUniverse; nazR (4 4 8); rotation (0.0 0.0 0.0);
+    pin10 { id 10; type azimPinUniverse; nazR (4 4 8 8); rotation (0.0 0.0 0.0);
             radii ( 0.515 0.522 0.603 0.0 ); 
             fills (fuel void alClad water);}
-    pin15 { id 15; type azimPinUniverse; nazR (4 4 8); rotation (0.0 0.0 0.0);
+    pin15 { id 15; type azimPinUniverse; nazR (4 4 8 8); rotation (0.0 0.0 0.0);
             radii ( 0.515 0.522 0.603 0.0 ); 
             fills ( fuel1 void alClad water);}
 
