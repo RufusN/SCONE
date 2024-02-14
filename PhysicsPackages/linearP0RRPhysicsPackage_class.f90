@@ -814,7 +814,7 @@ contains
     cIdx = r % coords % uniqueID
     do g = 1, self % nG
       idx = (cIdx - 1) * self % nG + g
-      fluxVec(g) = self % source(idx,1)
+      !fluxVec(g) = self % source(idx,1)
       fluxVecLS(g) = self % source(idx,1)
     end do
 
@@ -952,7 +952,7 @@ contains
         deltaLS(g) = ( fluxVecLS(g) - flatQ(g)) * F1(g) - &
                 one_two * gradQ(g) * F2(g) 
 
-        delta(g) = (fluxVec(g) - currentSource(g)) * F1(g)
+        !delta(g) = (fluxVec(g) - currentSource(g)) * F1(g)
       end do
 
       ! Create an intermediate flux variable for use in LS scores
@@ -964,7 +964,7 @@ contains
       !$omp simd
       do g = 1, self % nG
         fluxVecLS(g) = fluxVecLS(g) - deltaLS(g) * totVec(g) 
-        fluxVec(g) = fluxVec(g) - delta(g) * totVec(g)
+        !fluxVec(g) = fluxVec(g) - delta(g) * totVec(g)
       end do
 
       ! Accumulate to scalar flux
@@ -1036,7 +1036,7 @@ contains
           if (self % SHLength > 1) then
 
             do SH = 2, self % SHLength
-                angularMomVec(g, SH) = angularMomVec(g, SH) + delta(g) * real(RCoeffs(SH),defFlt)
+                angularMomVec(g, SH) = angularMomVec(g, SH) + deltaLS(g) * real(RCoeffs(SH),defFlt)
             end do
 
           end if
@@ -1072,7 +1072,7 @@ contains
       if (hitVacuum) then
         !$omp simd
         do g = 1, self % nG
-          fluxVec(g) = 0.0_defFlt
+          !fluxVec(g) = 0.0_defFlt
           fluxVecLS(g) = 0.0_defFlt
         end do
       end if
