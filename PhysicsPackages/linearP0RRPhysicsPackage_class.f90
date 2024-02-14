@@ -1716,11 +1716,11 @@ contains
       !$omp parallel do reduction(+: fiss, fissSTD)
       do cIdx = 1, self % nCells
 
-        if (matIdx >= VOID_MAT - 1) cycle
-        
         ! Identify material
         matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
         matPtr => self % mgData % getMaterial(matIdx)
+        if (matIdx >= VOID_MAT - 1) cycle
+        
         mat    => baseMgNeutronMaterial_CptrCast(matPtr)
         vol    =  self % volume(cIdx)
 
