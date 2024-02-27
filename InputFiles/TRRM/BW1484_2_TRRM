@@ -1,5 +1,6 @@
 //type anisotropicRRPhysicsPackage;
-type linearP0RRPhysicsPackage;
+//type linearP0RRPhysicsPackage;
+type linearRhoRRPhysicsPackage
 //type testPackage;
 
 pop      8000; 
@@ -11,6 +12,7 @@ plot 1;
 cache 1;
 XSdata mg;
 SHOrder 1; //scattering order
+rho 0.0; //rho stabilisation factor
 dataType mg;
 outputFile BW1484_2_TRRM_TC ;
 
