@@ -13,7 +13,7 @@ module exponentialRA_func
   implicit none
   private
   
-  public :: exponential, expTau, expG, expH, expG2
+  public :: exponential, expTau, expG, expH, expG2, expF2
 
   ! Numerator coefficients in rational approximation for 1 - exp(-tau)
   real(defFlt), parameter :: c1n = -1.0000013559236386308, c2n = 0.23151368626911062025,&
@@ -58,6 +58,17 @@ module exponentialRA_func
         ! Coefficients for denominator in rational approximation
         real(defFlt), parameter :: g1d = 0.7454048371823628, g2d = 0.23794300531408347, &
         g3d = 0.05367250964303789, g4d = 0.006125197988351906, g5d = 0.0010102514456857377
+
+  ! Coefficients for numerator
+        real(defFlt), parameter :: f1n5 = 0.000136757570702, &
+        f1n4 = 0.000640849175509, f1n3 = 0.007675127136944, &
+        f1n2 = 0.035904163235632, f1n1 = 0.166666147003676
+
+  ! Coefficients for denominator
+          real(defFlt), parameter :: f1d0 = 1.000000000000000, &
+          f1d1 = 0.715333312893290, f1d2 = 0.254155566312370, &
+          f1d3 = 0.056133925714270, f1d4 = 0.009476002327853, &
+          f1d5 = 0.000914563747782, f1d6 = 0.000136757570702
 
 contains
 
@@ -210,6 +221,35 @@ elemental function expG2(tau) result(x)
   x = num / den
 
 end function expG2
+
+! Computes F2 : y = (x-2+exp(-x)*(2+x))/x**2
+! using a 5/6th order rational approximation,
+! FROM: OpenMoC https://github.com/mit-crpg/OpenMOC/blob/7c8c9460c1c95f68dae102a402a39afa233a0b8c/src/exponentials.h#L9
+
+elemental function expF2(tau) result(x)
+  real(defFlt), intent(in)    :: tau
+  real(defFlt)                :: x
+  real(defFlt)                :: den, num
+
+  x = tau
+
+  ! Compute numerator
+  num = f1n5*x + f1n4
+  num = num*x + f1n3
+  num = num*x + f1n2
+  num = num*x + f1n1
+  num = num*x
+
+  ! Compute denominator
+  den = f1d6*x + f1d5
+  den = den*x + f1d4
+  den = den*x + f1d3
+  den = den*x + f1d2
+  den = den*x + f1d1
+  den = den*x + f1d0
+
+  x = num / den
+end function expF2
 
 
 
