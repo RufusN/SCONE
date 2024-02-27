@@ -1018,6 +1018,32 @@ contains
           zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g)
         end do
 
+        ! !$omp simd
+        ! do g = 1, self % nG
+        !   H(g) = expH(tau(g)) * lenFlt
+        ! end do
+
+        ! !$omp simd
+        ! do g = 1, self % nG
+        !   G2(g) = expG2(tau(g)) * lenFlt
+        ! end do
+
+        ! !$omp simd 
+        ! do g = 1, self % nG
+        !   G2(g) = G2(g) * gradQ(g) * lenFlt2_2 
+        !   H(g)  = H(g) * fluxVec0(g) * lenFlt 
+        ! end do
+
+        ! !$omp simd
+        ! do g = 1, self % nG
+        !   xInc(g) = r0NormFlt(x) * deltaLS(g) + muFlt(x) * (H(g) + G2(g)) + (flatQ(g) - currentSource(g)) * rNormFlt(x) &
+        !                         * lenFlt
+        !   yInc(g) = r0NormFlt(y) * deltaLS(g) + muFlt(y) * (H(g) + G2(g)) + (flatQ(g) - currentSource(g)) * rNormFlt(y) &
+        !                         * lenFlt 
+        !   zInc(g) = r0NormFlt(z) * deltaLS(g) + muFlt(z) * (H(g) + G2(g)) + (flatQ(g) - currentSource(g)) * rNormFlt(z) &
+        !                         * lenFlt 
+        ! end do
+
         
         call OMP_set_lock(self % locks(cIdx))
 
@@ -1211,7 +1237,7 @@ contains
                 self % moments(idx,SH) = self % moments(idx,SH) * NTV
             end if
 
-            self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
+            self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) * FOUR_PI
 
           end do
 
@@ -1219,9 +1245,9 @@ contains
 
         if (vol > volume_tolerance) then
           self % moments(idx,1) = self % moments(idx,1) * NTV 
-          self % scalarX(idx)   = self % scalarX(idx) * NTV 
-          self % scalarY(idx)   = self % scalarY(idx) * NTV 
-          self % scalarZ(idx)   = self % scalarZ(idx) * NTV 
+          self % scalarX(idx)   = self % scalarX(idx)   * NTV 
+          self % scalarY(idx)   = self % scalarY(idx)   * NTV 
+          self % scalarZ(idx)   = self % scalarZ(idx)   * NTV 
         end if
 
         self % moments(idx,1) =  self % moments(idx,1) + self % source(idx,1)
@@ -1265,12 +1291,12 @@ contains
       baseIdx = self % ng * (cIdx - 1)
       do g = 1, self % nG
         idx = baseIdx + g
-        !do SH = 1, self % SHLength
+        do SH = 1, self % SHLength
           self % source(idx,1) = 0.0_defFlt
-        !end do
-        !self % sourceX(idx) = 0.0_defFlt
-        !self % sourceY(idx) = 0.0_defFlt
-        !self % sourceZ(idx) = 0.0_defFlt
+        end do
+        self % sourceX(idx) = 0.0_defFlt
+        self % sourceY(idx) = 0.0_defFlt
+        self % sourceZ(idx) = 0.0_defFlt
       end do
       return
     end if
