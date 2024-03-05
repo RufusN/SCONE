@@ -1,5 +1,6 @@
 //type anisotropicRRPhysicsPackage;
-type linearP0RRPhysicsPackage;
+//type linearP0RRPhysicsPackage;
+type testPackage;
 
 pop      8000; 
 active   2500;  
@@ -339,7 +340,7 @@ viz {
 
 nuclearData {
   handles {
-    mg { type baseMgNeutronDatabase; PN P3;} 
+    mg { type baseMgNeutronDatabase; PN P1;} 
   }
   materials {
 

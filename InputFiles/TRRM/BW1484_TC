@@ -13,7 +13,7 @@ XSdata mg;
 //SHOrder 0; //scattering order
 rho 1;
 dataType mg;
-outputFile BW1484_2_TRRM_TC ;
+outputFile BW1484_TC ;
 
 // Specify output format default asciiMATLAB
 fissionMap {type multiMap;
