@@ -798,8 +798,7 @@ contains
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt, lenFlt2_2
     real(defFlt), dimension(self % nG)                    :: F1, F2, G1, G2, Gn, H, tau, delta, fluxVec, &
-                                                             flatQ, gradQ, xInc, yInc, zInc, fluxVec0, deltaLS, &
-                                                             fluxVecLS, currentSource
+                                                             flatQ, gradQ, xInc, yInc, zInc, fluxVec0, currentSource
     real(defReal), dimension(matSize)                     :: matScore
     real(defFlt), pointer, dimension(:)                   :: totVec, xGradVec, yGradVec, zGradVec, &
                                                              xMomVec, yMomVec, zMomVec
@@ -807,15 +806,14 @@ contains
     real(defReal), pointer, dimension(:)                  :: mid, momVec, centVec
     real(defReal), pointer                                :: volTrack
     real(defReal), dimension(3)                           :: r0, mu0, rC, r0Norm, rNorm
-    real(defReal), dimension(self % SHLength)             :: RCoeffs   
+    real(defFlt), dimension(self % SHLength)              :: RCoeffs   
     real(defFlt), dimension(3)                            :: muFlt, rNormFlt, r0NormFlt
 
     ! Set initial angular flux to angle average of cell source
     cIdx = r % coords % uniqueID
     do g = 1, self % nG
       idx = (cIdx - 1) * self % nG + g
-      !fluxVec(g) = self % source(idx,1)
-      fluxVecLS(g) = self % source(idx,1)
+      fluxVec(g) = self % source(idx,1)
     end do
 
     ints = 0
@@ -831,6 +829,13 @@ contains
 
       if (matIdx >= VOID_MAT - 1) then
         matIdx = self % nMatVOID
+      end if
+
+      ! Get material and cell the ray is moving through
+      if (matIdx0 /= matIdx) then
+        matIdx0 = matIdx
+        ! Cache total cross section (if not void)
+        totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
       end if
 
       !always caluclate r0 and mu0, mu0 used in SHarmonics
@@ -896,19 +901,12 @@ contains
       muFlt = real(mu0,defFlt)
       lenFlt  = real(length,defFlt)
 
-      ! Get material and cell the ray is moving through
-      if (matIdx0 /= matIdx) then
-        matIdx0 = matIdx
-        ! Cache total cross section (if not void)
-        totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
-      end if
-
       ! Calculates source for higher order moments.
       !$omp simd
       do g = 1, self % nG
         currentSource(g) = 0.0_defFlt
         do SH = 1, self % SHLength
-          currentSource(g) = currentSource(g) + sourceVec(g,SH) * real(RCoeffs(SH),defFlt)
+          currentSource(g) = currentSource(g) + sourceVec(g,SH) * RCoeffs(SH)
         end do 
       end do
 
@@ -934,12 +932,12 @@ contains
       ! Compute exponentials necessary for angular flux update
       !$omp simd
       do g = 1, self % nG
-        Gn(g)  = expG(tau(g))
+        Gn(g) = expG(tau(g))
       end do
 
       !$omp simd
         do g = 1, self % nG
-        F1(g)  = expTau(tau(g)) * lenFlt !could use: (1 - tau(g) * Gn(g)) * lenFlt - check speed
+        F1(g) = expTau(tau(g)) * lenFlt !could use: (1 - tau(g) * Gn(g)) * lenFlt - check speed
       end do
 
       !$omp simd
@@ -949,7 +947,7 @@ contains
       
       !$omp simd
       do g = 1, self % nG
-        deltaLS(g) = ( fluxVecLS(g) - flatQ(g)) * F1(g) - &
+        delta(g) = ( fluxVec(g) - flatQ(g)) * F1(g) - &
                 one_two * gradQ(g) * F2(g) 
 
         !delta(g) = (fluxVec(g) - currentSource(g)) * F1(g)
@@ -958,13 +956,12 @@ contains
       ! Create an intermediate flux variable for use in LS scores
       !$omp simd
       do g = 1, self % nG
-        fluxVec0(g) = fluxVecLS(g)
+        fluxVec0(g) = fluxVec(g)
       end do
 
       !$omp simd
       do g = 1, self % nG
-        fluxVecLS(g) = fluxVecLS(g) - deltaLS(g) * totVec(g) 
-        !fluxVec(g) = fluxVec(g) - delta(g) * totVec(g)
+        fluxVec(g) = fluxVec(g) - delta(g) * totVec(g) 
       end do
 
       ! Accumulate to scalar flux
@@ -1000,6 +997,19 @@ contains
           G2(g) = expG2(tau(g))
         end do
 
+        ! !$omp simd
+        ! do g = 1, self % nG
+        !   if (tau(g) > 1E-12) then
+        !     if (length > 1E-6) then
+        !       G2(g) = (two_three - (1 + 2.0_defFlt/tau(g)) * G1(g) )
+        !     else
+        !       G2(g) = -tau(g)/12
+        !     end if
+        !   else
+        !     G2(g) = -tau(g)/12
+        !   end if
+        ! end do
+
         ! Make some more condensed variables to help vectorisation
         !$omp simd 
         do g = 1, self % nG
@@ -1008,7 +1018,7 @@ contains
           H(g)  = H(g) * fluxVec0(g) * lenFlt
           H(g) = G1(g) + G2(g) + H(g)
           H(g) = H(g) * lenFlt
-          flatQ(g) = flatQ(g) * lenFlt + deltaLS(g)
+          flatQ(g) = flatQ(g) * lenFlt + delta(g)
         end do
 
         !$omp simd
@@ -1053,21 +1063,23 @@ contains
         zMomVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))
 
         ! Update flux moments !aligned(angularMomVec, xMomVec, yMomVec, zMomVec)
+
         !$omp simd 
         do g = 1, self % nG
-          xMomVec(g) = xMomVec(g) + xInc(g) 
-          yMomVec(g) = yMomVec(g) + yInc(g)
-          zMomVec(g) = zMomVec(g) + zInc(g)
+          ! if (tau(g) < 1E-12) then
+            ! xMomVec(g) = xMomVec(g) + 0.0_defFlt 
+            ! yMomVec(g) = yMomVec(g) + 0.0_defFlt 
+            ! zMomVec(g) = zMomVec(g) + 0.0_defFlt 
+          ! else
+            xMomVec(g) = xMomVec(g) + xInc(g) 
+            yMomVec(g) = yMomVec(g) + yInc(g)
+            zMomVec(g) = zMomVec(g) + zInc(g)
+          !end if
 
-          if (self % SHLength > 1) then
-
-            do SH = 2, self % SHLength
-                angularMomVec(g, SH) = angularMomVec(g, SH) + deltaLS(g) * real(RCoeffs(SH),defFlt)
-            end do
-
-          end if
-
-          angularMomVec(g, 1) = angularMomVec(g, 1) + deltaLS(g)
+          !$omp simd
+          do SH = 1, self % SHLength
+              angularMomVec(g, SH) = angularMomVec(g, SH) + delta(g) * RCoeffs(SH)
+          end do
 
         end do
         
@@ -1082,7 +1094,6 @@ contains
           centVec(g) = centVec(g) + rC(g)
         end do
 
-        ! Update spatial moment scores
         !$omp simd aligned(momVec)
         do g = 1, matSize
           momVec(g) = momVec(g) + matScore(g)
@@ -1098,8 +1109,7 @@ contains
       if (hitVacuum) then
         !$omp simd
         do g = 1, self % nG
-          !fluxVec(g) = 0.0_defFlt
-          fluxVecLS(g) = 0.0_defFlt
+          fluxVec(g) = 0.0_defFlt
         end do
       end if
 
@@ -1110,7 +1120,7 @@ contains
   subroutine SphericalHarmonicCalculator(self, mu, RCoeffs)
     ! angle: x = sin θ cos φ, y = sin θ sin φ, and z = cos θ
     class(linearP0RRPhysicsPackage), intent(inout)          :: self
-    real(defReal), dimension(self % SHLength), intent(out)  :: RCoeffs ! Array to store harmonic coefficients
+    real(defFlt), dimension(self % SHLength), intent(out)  :: RCoeffs ! Array to store harmonic coefficients
     real(defReal)                                           :: dirX,dirY,dirZ
     real(defReal), dimension(3), intent(in)                 :: mu
 
@@ -1120,46 +1130,46 @@ contains
 
     select case(self % SHLength)
     case(1)  
-        RCoeffs(1) = 1  
+        RCoeffs(1) = 1.0_defFlt
 
     case(4)  
-        RCoeffs(1) = 1  
+        RCoeffs(1) = 1.0_defFlt 
 
-        RCoeffs(2) = SQRT3 * dirY
-        RCoeffs(3) = SQRT3 * dirZ
-        RCoeffs(4) = SQRT3 * dirX    
+        RCoeffs(2) = real(SQRT3 * dirY,defFlt)
+        RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
+        RCoeffs(4) = real(SQRT3 * dirX,defFlt)    
 
-    case(9) 
-        RCoeffs(1) = 1
+    ! case(9) 
+    !     RCoeffs(1) = 1
 
-        RCoeffs(2) = SQRT3 * dirY
-        RCoeffs(3) = SQRT3 * dirZ
-        RCoeffs(4) = SQRT3 * dirX  
-        RCoeffs(5) = SQRT15 * HALF * dirX * dirY 
-        RCoeffs(6) = SQRT15 * HALF * dirZ * dirY 
-        RCoeffs(7) = SQRT5 * HALF * (3 * dirZ**2 - 1)
-        RCoeffs(8) = SQRT15 * HALF * dirX * dirZ 
-        RCoeffs(9) = SQRT15 * HALF * (dirX**2 - dirY**2) 
+    !     RCoeffs(2) = SQRT3 * dirY
+    !     RCoeffs(3) = SQRT3 * dirZ
+    !     RCoeffs(4) = SQRT3 * dirX  
+    !     RCoeffs(5) = SQRT15 * HALF * dirX * dirY 
+    !     RCoeffs(6) = SQRT15 * HALF * dirZ * dirY 
+    !     RCoeffs(7) = SQRT5 * HALF * (3 * dirZ**2 - 1)
+    !     RCoeffs(8) = SQRT15 * HALF * dirX * dirZ 
+    !     RCoeffs(9) = SQRT15 * HALF * (dirX**2 - dirY**2) 
 
-    case(16) 
-        RCoeffs(1) = 1
+    ! case(16) 
+    !     RCoeffs(1) = 1
 
-        RCoeffs(2) = SQRT3 * dirY
-        RCoeffs(3) = SQRT3 * dirZ
-        RCoeffs(4) = SQRT3 * dirX  
-        RCoeffs(5) = SQRT15 * HALF * dirX * dirY 
-        RCoeffs(6) = SQRT15 * HALF * dirZ * dirY 
-        RCoeffs(7) = SQRT5 * HALF * (3 * dirZ**2 - 1)
-        RCoeffs(8) = SQRT15 * HALF * dirX * dirZ 
-        RCoeffs(9) = SQRT15 * HALF * (dirX**2 - dirY**2) 
+    !     RCoeffs(2) = SQRT3 * dirY
+    !     RCoeffs(3) = SQRT3 * dirZ
+    !     RCoeffs(4) = SQRT3 * dirX  
+    !     RCoeffs(5) = SQRT15 * HALF * dirX * dirY 
+    !     RCoeffs(6) = SQRT15 * HALF * dirZ * dirY 
+    !     RCoeffs(7) = SQRT5 * HALF * (3 * dirZ**2 - 1)
+    !     RCoeffs(8) = SQRT15 * HALF * dirX * dirZ 
+    !     RCoeffs(9) = SQRT15 * HALF * (dirX**2 - dirY**2) 
 
-        RCoeffs(10) = SQRT70_4 * dirY * (3 * dirX**2 - dirY**2)
-        RCoeffs(11) = SQRT105 * dirZ * dirX * dirY
-        RCoeffs(12) = SQRT42_4 * dirY * (5 * dirZ**2 - 1)
-        RCoeffs(13) = SQRT7_2 * dirZ * (5 * dirZ**2 - 3)
-        RCoeffs(14) = SQRT42_4 * dirX * (5 * dirZ**2 - 1)
-        RCoeffs(15) = SQRT105 * dirZ * (dirX**2 - dirY**2) 
-        RCoeffs(16) = SQRT70_4 * dirX * (dirX**2 - 3 * dirY**2)
+    !     RCoeffs(10) = SQRT70_4 * dirY * (3 * dirX**2 - dirY**2)
+    !     RCoeffs(11) = SQRT105 * dirZ * dirX * dirY
+    !     RCoeffs(12) = SQRT42_4 * dirY * (5 * dirZ**2 - 1)
+    !     RCoeffs(13) = SQRT7_2 * dirZ * (5 * dirZ**2 - 3)
+    !     RCoeffs(14) = SQRT42_4 * dirX * (5 * dirZ**2 - 1)
+    !     RCoeffs(15) = SQRT105 * dirZ * (dirX**2 - dirY**2) 
+    !     RCoeffs(16) = SQRT70_4 * dirX * (dirX**2 - 3 * dirY**2)
     end select
   end subroutine SphericalHarmonicCalculator
 
@@ -1183,10 +1193,13 @@ contains
 
     !$omp parallel do schedule(static)
     do cIdx = 1, self % nCells
+
       matIdx =  self % geom % geom % graph % getMatFromUID(cIdx)
+
       if (matIdx >= VOID_MAT - 1) then
         matIdx = self % nMatVOID
       end if 
+
       dIdx = (cIdx - 1) * nDim
       mIdx = (cIdx - 1) * matSize
 
@@ -1228,30 +1241,21 @@ contains
         idx   = self % nG * (cIdx - 1) + g
         NTV = norm / vol
 
-       
-        if (self % SHLength > 1) then
+        do SH = 1, self % SHLength
 
-          do SH = 2, self % SHLength
+          if (vol > volume_tolerance) then
+              self % moments(idx,SH) = self % moments(idx,SH) * NTV
+          end if
 
-            if (vol > volume_tolerance) then
-                self % moments(idx,SH) = self % moments(idx,SH) * NTV
-            end if
+          self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
 
-            self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) * FOUR_PI
-
-          end do
-
-        end if      
+        end do    
 
         if (vol > volume_tolerance) then
-          self % moments(idx,1) = self % moments(idx,1) * NTV 
-          self % scalarX(idx)   = self % scalarX(idx)   * NTV 
-          self % scalarY(idx)   = self % scalarY(idx)   * NTV 
-          self % scalarZ(idx)   = self % scalarZ(idx)   * NTV 
+          self % scalarX(idx) = self % scalarX(idx)   * NTV 
+          self % scalarY(idx) = self % scalarY(idx)   * NTV 
+          self % scalarZ(idx) = self % scalarZ(idx)   * NTV 
         end if
-
-        self % moments(idx,1) =  self % moments(idx,1) + self % source(idx,1)
-
 
       end do
 
@@ -1292,7 +1296,7 @@ contains
       do g = 1, self % nG
         idx = baseIdx + g
         do SH = 1, self % SHLength
-          self % source(idx,1) = 0.0_defFlt
+          self % source(idx,SH) = 0.0_defFlt
         end do
         self % sourceX(idx) = 0.0_defFlt
         self % sourceY(idx) = 0.0_defFlt
@@ -1307,9 +1311,9 @@ contains
 
     momVec => self % momMat(((cIdx - 1) * matSize + 1):(cIdx * matSize))
 
-    if (momVec(xx) > 1.0E-6_defReal) condX = 1
-    if (momVec(yy) > 1.0E-6_defReal) condY = 1
-    if (momVec(zz) > 1.0E-6_defReal) condZ = 1
+    if (momVec(xx) > 1.0E-4_defReal) condX = 1
+    if (momVec(yy) > 1.0E-4_defReal) condY = 1
+    if (momVec(zz) > 1.0E-4_defReal) condZ = 1
 
     inversionTest = condX * 4 + condY * 2 + condZ
     
@@ -1439,7 +1443,8 @@ contains
     xFission = xFission * ONE_KEFF
     yFission = yFission * ONE_KEFF
     zFission = zFission * ONE_KEFF
-
+    
+    !$omp simd
     do g = 1, self % nG
 
       scatterVec => scatterXS((self % nG * (g - 1) + 1):(self % nG * self % nG), :)
@@ -1459,6 +1464,7 @@ contains
         zScatter = zScatter + zFluxVec(gIn) * scatterVec(gIn,1)
       end do
     
+      !$omp simd
       do SH = 1, self % SHLength
 
         SHidx = ceiling(sqrt(real(SH, defReal)) - 1) + 1

@@ -751,7 +751,7 @@ contains
     real(defFlt), dimension(self % nG)                    :: currentSource
     real(defFlt), pointer, dimension(:)                   :: totVec
     real(defReal), dimension(3)                           :: r0, mu0
-    real(defFlt), dimension(self % SHLength)             :: RCoeffs   
+    real(defFlt), dimension(self % SHLength)              :: RCoeffs   
     real(defFlt), pointer, dimension(:,:)                 :: sourceVec, angularMomVec
 
     ! Set initial angular flux to angle average of cell source
@@ -779,6 +779,13 @@ contains
 
         if (matIdx >= VOID_MAT) then
             matIdx = self % nMatVOID
+        end if
+
+
+        if (matIdx0 /= matIdx) then 
+          matIdx0 = matIdx
+          ! Cache total cross section
+          totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
         end if
 
         if (newRay .or. event == BOUNDARY_EV) then
@@ -821,12 +828,6 @@ contains
         lenFlt = real(length,defFlt)
         baseIdx = (cIdx - 1) * self % nG
         sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG), :)
-
-        if (matIdx0 /= matIdx) then 
-            matIdx0 = matIdx
-            ! Cache total cross section
-            totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
-        end if
 
         !$omp simd
         do g = 1, self % nG
