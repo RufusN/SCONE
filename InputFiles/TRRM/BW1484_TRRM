@@ -1,8 +1,8 @@
 //type anisotropicRRPhysicsPackage;
-//type linearP0RRPhysicsPackage;
+type linearP0RRPhysicsPackage;
 //type linearRhoRRPhysicsPackage
 //type testPackage;
-type randomRayPhysicsPackage;
+//type randomRayPhysicsPackage;
 
 pop      8000; 
 active   2500;  
@@ -13,9 +13,9 @@ plot 1;
 cache 1;
 XSdata mg;
 SHOrder 0; //scattering order
-rho 0.0; //rho stabilisation factor
+//rho 0.0; //rho stabilisation factor
 dataType mg;
-outputFile BW1484_2_TRRM_TC ;
+outputFile BW1484_2_TRRM ;
 
 // Specify output format default asciiMATLAB
 fissionMap {type multiMap;

@@ -1,6 +1,7 @@
-!type randomRayPhysicsPackage; 
-type linearSourceRRPhysicsPackage;
- 
+//type randomRayPhysicsPackage; 
+//type linearSourceRRPhysicsPackage;
+type linearP0RRPhysicsPackage;
+
 pop      1750; 
 active   2600;  
 inactive 1000; 

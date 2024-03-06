@@ -12,7 +12,7 @@ cache 1;
 XSdata mg;
 SHOrder 1; //scattering order
 dataType mg;
-outputFile BW1484_2_TRRM_TC ;
+outputFile BW_coarse;
 
 // Specify output format default asciiMATLAB
 fissionMap {type multiMap;
@@ -319,7 +319,7 @@ viz {
   }
   bmp1 {
     type bmp;
-    output core;
+    output core_coarse;
     what uniqueID;
     centre (0.0 0.0 0.0);
     //width (25.0 25.0);
@@ -328,7 +328,7 @@ viz {
   }
   bmp2 {
     type bmp;
-    output zoom;
+    output zoom_coarse;
     what uniqueID;
     centre (0.0 0.0 0.0);
     width (10.0 10.0);

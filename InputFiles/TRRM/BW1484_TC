@@ -1,10 +1,10 @@
-//type anisotropicRRPhysicsPackage;
+type anisotropicRRPhysicsPackage;
 //type randomRayPhysicsPackage;
-type testPackage;
+//type testPackage;
 
 pop      8000; 
 active   2500;  
-inactive 1200; 
+inactive 2000; 
 dead     20;  
 termination 220;  
 plot 1;
@@ -49,18 +49,18 @@ geometry {
     everything {id 500; type cellUniverse; cells (1 2); origin (0.0 0.0 0.0 ); }
 
     // Pin universes
-    !pin10 { id 10; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
-    !        radii ( 0.297335 0.42045 0.515 0.522 0.603 0.72862 0.83557 0.9303 1.01623 0.0 ); 
-    !        fills (fuel fuel fuel void alClad water water water water water);}
-    !pin15 { id 15; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
-    !        radii ( 0.297335 0.42045 0.515 0.522 0.603 0.72862 0.83557 0.9303 1.01623 0.0 ); 
-    !        fills (fuel1 fuel1 fuel1 void alClad water water water water water);}
     pin10 { id 10; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
-            radii ( 0.297335 0.42045 0.515 0.522 0.603 0.8 0.0 ); 
-            fills (fuel fuel fuel void alClad water water);}
+            radii ( 0.297335 0.42045 0.515 0.522 0.603 0.72862 0.83557 0.9303 1.01623 0.0 ); 
+            fills (fuel fuel fuel void alClad water water water water water);}
     pin15 { id 15; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
-            radii ( 0.297335 0.42045 0.515 0.522 0.603 0.8 0.0 ); 
-            fills (fuel1 fuel1 fuel1 void alClad water water);}
+            radii ( 0.297335 0.42045 0.515 0.522 0.603 0.72862 0.83557 0.9303 1.01623 0.0 ); 
+            fills (fuel1 fuel1 fuel1 void alClad water water water water water);}
+    // pin10 { id 10; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
+    //         radii ( 0.297335 0.42045 0.515 0.522 0.603 0.8 0.0 ); 
+    //         fills (fuel fuel fuel void alClad water water);}
+    // pin15 { id 15; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
+    //         radii ( 0.297335 0.42045 0.515 0.522 0.603 0.8 0.0 ); 
+    //         fills (fuel1 fuel1 fuel1 void alClad water water);}
     water1 { id 20; type pinUniverse; radii (0.0 ); fills (water1);}
 
     // Lattices
