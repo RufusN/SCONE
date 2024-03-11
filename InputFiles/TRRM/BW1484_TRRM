@@ -12,7 +12,7 @@ termination 220;
 plot 1;
 cache 1;
 XSdata mg;
-SHOrder 0; //scattering order
+SHOrder 1; //scattering order
 //rho 0.0; //rho stabilisation factor
 dataType mg;
 outputFile BW1484_2_TRRM ;
@@ -348,7 +348,7 @@ viz {
 
 nuclearData {
   handles {
-    mg { type baseMgNeutronDatabase; PN P0;} 
+    mg { type baseMgNeutronDatabase; PN P1;} 
   }
   materials {
 
