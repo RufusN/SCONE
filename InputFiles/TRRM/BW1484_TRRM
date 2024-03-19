@@ -1,7 +1,7 @@
 //type anisotropicRRPhysicsPackage;
-type linearP0RRPhysicsPackage;
+//type linearP0RRPhysicsPackage;
 //type linearRhoRRPhysicsPackage
-//type testPackage;
+type testPackage;
 //type randomRayPhysicsPackage;
 
 pop      8000; 
