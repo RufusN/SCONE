@@ -815,7 +815,7 @@ contains
     real(defFlt)                                          :: lenFlt, lenFlt2_2, maxtot, vol, norm
     real(defFlt), dimension(self % nG)                    :: F1, F2, G2, Gn, H, tau, delta, fluxVec, &
                                                              flatQ, flatQBase, gradQ, xInc, yInc, zInc, &
-                                                             fluxVec0, currentSource
+                                                             fluxVec0, currentSource, G1
     real(defReal), dimension(matSize)                     :: matScore
     real(defFlt),  pointer, dimension(:)                  :: totVec, xGradVec, yGradVec, zGradVec, &
                                                              xMomVec, yMomVec, zMomVec
@@ -872,17 +872,17 @@ contains
         length = self % dead - totalLength
       end if
 
-      maxtot = 0.0_defFlt
-      !$omp simd
-      do g = 1, self % nG
-        if (maxtot < totVec(g)) then
-          maxtot = totVec(g)
-        end if
-      end do
+      ! maxtot = 0.0_defFlt
+      ! !$omp simd
+      ! do g = 1, self % nG
+      !   if (maxtot < totVec(g)) then
+      !     maxtot = totVec(g)
+      !   end if
+      ! end do
 
-      if ((30.0_defFlt/maxtot) < length) then
-        length = real(30.0_defFlt/maxtot)
-      end if
+      ! if ((30.0_defFlt/maxtot) < length) then
+      !   length = real(30.0_defFlt/maxtot)
+      ! end if
       
       ! Move ray
       if (self % cache) then
@@ -915,7 +915,7 @@ contains
       mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
 
       ! Check cell has been visited 
-      if (self % volume(cIdx) > volume_tolerance) then
+      if (self % volumeTracks(cIdx) > 1E-24) then
         ! Compute the track centroid in local co-ordinates
         rNorm = rC - mid(1:nDim)
         ! Compute the entry point in local co-ordinates
@@ -957,33 +957,44 @@ contains
       !$omp simd
       do g = 1, self % nG
         tau(g) = totVec(g) * lenFlt
-        if (tau(g) < 1E-8) then 
-          tau(g) = 0.0_defFlt
-        end if
+        ! if (tau(g) < 1E-7) then 
+        !   tau(g) = 0.0_defFlt
+        ! end if
       end do
 
       ! Compute exponentials necessary for angular flux update
       !$omp simd
       do g = 1, self % nG
-        Gn(g) = expG(tau(g))
+        if (tau(g) > 1E-7) then
+          Gn(g) = expG(tau(g))
+        else 
+          Gn(g) = 0.5_defFlt
+        end if
       end do
-
 
      !$omp simd
       do g = 1, self % nG
-        F1(g)  = expTau(tau(g)) * lenFlt
+        if (tau(g) > 1E-7) then
+          F1(g) = 1.0_defFlt - tau(g) * Gn(g) !expTau(tau(g)) * lenFlt
+        else
+          F1(g) = 1.0_defFlt
+        end if
       end do
 
 
       !$omp simd
       do g = 1, self % nG
-        F2(g) = (2 * Gn(g) * lenFlt * lenFlt - F1(g) * lenFlt )  
+        F2(g) = (2.0_defFlt * Gn(g)  - F1(g) )  * lenFlt * lenFlt
       end do
 
       !$omp simd
       do g = 1, self % nG
-        delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) - &
-                   one_two * gradQ(g) * F2(g) 
+        if (tau(g) > 1E-7) then
+          delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) * lenFlt &
+                     - one_two * gradQ(g) * F2(g)
+        else 
+          delta(g) = 0.0_defFlt
+        end if
       end do
 
       ! Intermediate flux variable creation or update
@@ -1018,12 +1029,22 @@ contains
 
         !$omp simd
         do g = 1, self % nG
-          H(g) = expH(tau(g)) !( F1(g) - Gn(g) )
-       end do
+          H(g) = ( F1(g) - Gn(g) )
+        end do
+
+      !   !$omp simd
+      !   do g = 1, self % nG
+      !     G2(g) = expG2(tau(g)) 
+      !   end do
 
         !$omp simd
         do g = 1, self % nG
-          G2(g) = expG2(tau(g)) 
+            G1(g) = one_two - H(g)
+        end do
+
+        !$omp simd
+        do g = 1, self % nG
+            G2(g) = ((two_three) - (1 + 2.0_defFlt/tau(g)) * G1(g) )
         end do
 
         !$omp simd 
@@ -1185,7 +1206,7 @@ contains
       self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
       vol = real(self % volume(cIdx),defFlt)
 
-      if (self % volume(cIdx) > volume_tolerance) then
+      if (self % volumeTracks(cIdx) > 1E-24) then
         invVol = ONE / self % volumeTracks(cIdx)
         
         ! Update centroids
@@ -1287,7 +1308,7 @@ contains
     - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
     + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-    if ((abs(det) > 1E-10) .and. (self % volume(cIdx) > 1E-5)) then !vary volume check depending on cell size.
+    if ((abs(det) > 1E-10) .and. (self % volume(cIdx) > 1E-6)) then !vary volume check depending on cell size.
       one_det = ONE/det
       invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
       invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
