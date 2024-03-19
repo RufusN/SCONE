@@ -215,7 +215,7 @@ elemental function expG2(tau) result(x)
   den = den*x + g3d
   den = den*x + g2d
   den = den*x + g1d
-  den = den*x + 1.0
+  den = den*x + 1.0_defFlt
 
   ! Compute final value
   x = num / den
