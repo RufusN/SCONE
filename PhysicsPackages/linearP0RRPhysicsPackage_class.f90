@@ -813,14 +813,13 @@ contains
     logical(defBool)                                      :: activeRay, hitVacuum, newRay
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt, lenFlt2_2, maxtot, vol, norm
-    real(defFlt), dimension(self % nG)                    :: F1, F2, G1, G2, Gn, H, tau, delta, fluxVec, &
-                                                             flatQ, gradQ, xInc, yInc, zInc, fluxVec0, &
-                                                             currentSource, H1
+    real(defFlt), dimension(self % nG)                    :: F1, F2, G2, Gn, H, tau, delta, fluxVec, &
+                                                             flatQ, flatQBase, gradQ, xInc, yInc, zInc, &
+                                                             fluxVec0, currentSource
     real(defReal), dimension(matSize)                     :: matScore
     real(defFlt),  pointer, dimension(:)                  :: totVec, xGradVec, yGradVec, zGradVec, &
                                                              xMomVec, yMomVec, zMomVec
-    real(defFlt),  pointer, dimension(:,:)                :: sourceVec
-    real(defFlt),  pointer, dimension(:,:)                :: angularMomVec
+    real(defFlt),  pointer, dimension(:,:)                :: sourceVec, angularMomVec
     real(defReal), pointer, dimension(:)                  :: mid, momVec, centVec
     real(defReal), pointer                                :: volTrack
     real(defReal), dimension(3)                           :: r0, mu0, rC, r0Norm, rNorm
@@ -860,10 +859,10 @@ contains
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
 
-      ! if (newRay .or. event == BOUNDARY_EV) then
+       if (newRay .or. event == BOUNDARY_EV) then
         call self % sphericalHarmonicCalculator(mu0, RCoeffs) !- seems to work 
-      !   newRay = .false.
-      ! end if
+         newRay = .false.
+       end if
           
       ! Set maximum flight distance and ensure ray is active
       if (totalLength >= self % dead) then
@@ -945,10 +944,10 @@ contains
       ! aligned(xGradVec, yGradVec, zGradVec)
       !$omp simd
       do g = 1, self % nG
-        flatQ(g) = rNormFlt(x) * xGradVec(g)
-        flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
-        flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
-        flatQ(g) = flatQ(g) + currentSource(g)
+        flatQBase(g) = rNormFlt(x) * xGradVec(g)
+        flatQBase(g) = flatQBase(g) + rNormFlt(y) * yGradVec(g)
+        flatQBase(g) = flatQBase(g) + rNormFlt(z) * zGradVec(g)
+        flatQ(g) = flatQBase(g) + currentSource(g)
 
         gradQ(g) = muFlt(x) * xGradVec(g)
         gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
@@ -968,16 +967,6 @@ contains
       do g = 1, self % nG
         Gn(g) = expG(tau(g))
       end do
-
-      ! !$omp simd
-      ! do g = 1, self % nG
-      !   F1(g) = expTau(tau(g)) !* lenFlt !(1 - tau(g) * Gn(g)) * lenFlt ! (1.0_defFlt - tau(g) * Gn(g)) !* lenFlt !
-      ! end do
-
-      ! !$omp simd
-      ! do g = 1, self % nG
-      !   F2(g) = (2.0_defFlt * Gn(g) - F1(g))
-      ! end do
 
 
      !$omp simd
@@ -1027,81 +1016,30 @@ contains
         ! Compute necessary exponential quantities
         lenFlt2_2 = lenFlt * lenFlt * one_two
 
-
         !$omp simd
         do g = 1, self % nG
-          H(g) = expH(tau(g)) !* lenFlt!( F1(g) - Gn(g) ) * lenFlt !expH(tau(g)) * lenFlt !
-          !G1(g) = ( one_two - H(g) ) !expH(tau(g)) * lenFlt !
+          H(g) = expH(tau(g)) !( F1(g) - Gn(g) )
        end do
 
         !$omp simd
         do g = 1, self % nG
-          G2(g) = expG2(tau(g)) !* lenFlt
+          G2(g) = expG2(tau(g)) 
         end do
-        
-
-        !for LS-PN
-        ! !$omp simd 
-        ! do g = 1, self % nG
-        !       G1(g) = G1(g) * flatQ(g) * lenFlt
-        !       G2(g) = G2(g) * gradQ(g) * lenFlt2_2
-        !       H(g)  = H(g) * fluxVec0(g) * lenFlt
-        !       H(g)  = (G1(g) + G2(g) + H(g)) * lenFlt
-        !       flatQ(g) = flatQ(g) * lenFlt + delta(g)
-        ! end do
-
-        ! !$omp simd
-        ! do g = 1, self % nG
-        !       xInc(g) = r0NormFlt(x) * flatQ(g) + muFlt(x) * H(g) 
-        !       yInc(g) = r0NormFlt(y) * flatQ(g) + muFlt(y) * H(g) 
-        !       zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g)
-        ! end do
 
         !$omp simd 
         do g = 1, self % nG
-          G2(g) = G2(g) * gradQ(g) * lenFlt2_2 !* lenFlt
-          H1(g) = H(g) 
-          H(g)  = H(g) * fluxVec0(g) * lenFlt !* lenFlt !* FOUR_PI
+          G2(g) = G2(g) * gradQ(g) * lenFlt2_2 
+          H(g)  = G2(g) + (fluxVec0(g) * lenFlt - currentSource(g) * lenFlt) * H(g)
+          H(g)  = H(g) * lenFlt 
+          flatQbase(g) =  flatQbase(g) * lenFlt
         end do
 
         !$omp simd
         do g = 1, self % nG
-          xInc(g) = r0NormFlt(x) * delta(g) + muFlt(x) * lenFlt * (H(g) + G2(g)) + (flatQ(g) - currentSource(g)) &
-                                * rNormFlt(x) * lenFlt - H1(g) * muFlt(x) * lenFlt * currentSource(g)
-
-          yInc(g) = r0NormFlt(y) * delta(g) + muFlt(y) * lenFlt  * (H(g) + G2(g)) + (flatQ(g) - currentSource(g)) &
-                                * rNormFlt(y) * lenFlt - H1(g) * lenFlt * muFlt(y) * lenFlt * currentSource(g)
-
-          zInc(g) = r0NormFlt(z) * delta(g) + muFlt(z) * lenFlt  * (H(g) + G2(g)) + (flatQ(g) - currentSource(g)) &
-                                * rNormFlt(z) * lenFlt -  H1(g) * lenFlt * muFlt(z) * lenFlt * currentSource(g)
+          xInc(g) = r0NormFlt(x) * delta(g) + muFlt(x) * H(g) + (flatQbase(g)) * rNormFlt(x) 
+          yInc(g) = r0NormFlt(y) * delta(g) + muFlt(y) * H(g) + (flatQbase(g)) * rNormFlt(y) 
+          zInc(g) = r0NormFlt(z) * delta(g) + muFlt(z) * H(g) + (flatQbase(g)) * rNormFlt(z) 
         end do
-
-
-        !for LS-P0, no higher order scattering
-        !!$omp simd 
-        ! do g = 1, self % nG
-        ! !   !G1(g) = G1(g) * flatQ(g) * lenFlt
-        ! !   !G2(g) = G2(g) * gradQ(g) * lenFlt2_2
-        ! !   !H(g)  = H(g) * fluxVec0(g) * lenFlt
-        ! !   !H(g) = G1(g) + G2(g) + H(g)
-        ! !   !flatQ(g) = flatQ(g) * lenFlt + delta(g)
-        ! !flatQ(g) = flatQ(g) - currentSource(g) + sourceVec(g,1)
-        !   G2(g) = G2(g) * gradQ(g) * lenFlt2_2 * lenFlt
-        !   H(g)  = H(g) * fluxVec0(g) * lenFlt * lenFlt
-        ! end do
-
-        ! !$omp simd
-        ! do g = 1, self % nG
-        !   !xInc(g) = r0NormFlt(x) * flatQ(g) + muFlt(x) * H(g) * lenFlt
-        !   !yInc(g) = r0NormFlt(y) * flatQ(g) + muFlt(y) * H(g) * lenFlt
-        !   !zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g) * lenFlt
-        !   xInc(g) = r0NormFlt(x) * delta(g) + muFlt(x) * (H(g) + G2(g)) + (flatQ(g) - currentSource(g)) * rNormFlt(x) &
-        !                         * lenFlt !* totVec(g)
-        !   yInc(g) = r0NormFlt(y) * delta(g) + muFlt(y) * (H(g) + G2(g)) + (flatQ(g) - currentSource(g)) * rNormFlt(y) &
-        !                         * lenFlt !* totVec(g)
-        !   zInc(g) = r0NormFlt(z) * delta(g) + muFlt(z) * (H(g) + G2(g)) + (flatQ(g) - currentSource(g)) * rNormFlt(z) &
-        !                         * lenFlt !* totVec(g)
-        ! end do
                 
         call OMP_set_lock(self % locks(cIdx))
 
@@ -1110,10 +1048,8 @@ contains
         yMomVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
         zMomVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))
 
-        
-
-        ! Update flux moments !aligned(angularMomVec, xMomVec, yMomVec, zMomVec)
-        !$omp simd 
+        ! Update flux moments 
+        !$omp simd aligned(angularMomVec, xMomVec, yMomVec, zMomVec)
         do g = 1, self % nG
           xMomVec(g) = xMomVec(g) + xInc(g) 
           yMomVec(g) = yMomVec(g) + yInc(g) 
@@ -1170,21 +1106,48 @@ contains
     dirX = mu(1)
     dirY = mu(2)
     dirZ = mu(3)
-
     select case(self % SHLength)
     case(1)  
-        RCoeffs(1) = 1.0_defFlt !* SQRT1_PI
+        RCoeffs(1) = 1.0_defFlt 
 
     case(4)  
-        RCoeffs(1) = 1.0_defFlt !* SQRT1_PI
+        RCoeffs(1) = 1.0_defFlt 
 
-        RCoeffs(2) = real(SQRT3 * dirY,defFlt) !* SQRT1_PI
-        RCoeffs(3) = real(SQRT3 * dirZ,defFlt) !* SQRT1_PI
-        RCoeffs(4) = real(SQRT3 * dirX,defFlt) !* SQRT1_PI 
-        ! RCoeffs(2) = real(dirY,defFlt) !* SQRT1_PI
-        ! RCoeffs(3) = real(dirZ,defFlt) !* SQRT1_PI
-        ! RCoeffs(4) = real(dirX,defFlt) !* SQRT1_PI 
+        RCoeffs(2) = real(SQRT3 * dirY,defFlt)
+        RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
+        RCoeffs(4) = real(SQRT3 * dirX,defFlt)    
 
+    case(9) 
+        RCoeffs(1) = 1.0_defFlt 
+
+        RCoeffs(2) = real(SQRT3 * dirY,defFlt)
+        RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
+        RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
+        RCoeffs(5) = real(SQRT15 * HALF * dirX * dirY,defFlt) 
+        RCoeffs(6) = real(SQRT15 * HALF * dirZ * dirY,defFlt) 
+        RCoeffs(7) = real(SQRT5 * HALF * (3 * dirZ**2 - 1),defFlt)
+        RCoeffs(8) = real(SQRT15 * HALF * dirX * dirZ,defFlt) 
+        RCoeffs(9) = real(SQRT15 * HALF * (dirX**2 - dirY**2),defFlt) 
+
+    case(16) 
+        RCoeffs(1) = 1.0_defFlt 
+
+        RCoeffs(2) = real(SQRT3 * dirY,defFlt)
+        RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
+        RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
+        RCoeffs(5) = real(SQRT15 * HALF * dirX * dirY,defFlt)
+        RCoeffs(6) = real(SQRT15 * HALF * dirZ * dirY,defFlt) 
+        RCoeffs(7) = real(SQRT5 * HALF * (3 * dirZ**2 - 1),defFlt)
+        RCoeffs(8) = real(SQRT15 * HALF * dirX * dirZ,defFlt) 
+        RCoeffs(9) = real(SQRT15 * HALF * (dirX**2 - dirY**2),defFlt) 
+
+        RCoeffs(10) = real(SQRT70_4 * dirY * (3 * dirX**2 - dirY**2),defFlt)
+        RCoeffs(11) = real(SQRT105 * dirZ * dirX * dirY,defFlt)
+        RCoeffs(12) = real(SQRT42_4 * dirY * (5 * dirZ**2 - 1),defFlt)
+        RCoeffs(13) = real(SQRT7_2 * dirZ * (5 * dirZ**2 - 3),defFlt)
+        RCoeffs(14) = real(SQRT42_4 * dirX * (5 * dirZ**2 - 1),defFlt)
+        RCoeffs(15) = real(SQRT105 * dirZ * (dirX**2 - dirY**2),defFlt)
+        RCoeffs(16) = real(SQRT70_4 * dirX * (dirX**2 - 3 * dirY**2),defFlt)
     end select
 
   end subroutine SphericalHarmonicCalculator
@@ -1273,22 +1236,6 @@ contains
 
       end do
 
-      ! if (self % moments(idx,1) < 0.0_defFlt) then
-      !   !self % moments(idx,1) = 0.0_defFlt
-      !   do SH = 1, self % SHLength
-      !     self % moments(idx,SH) = 0.0_defFlt
-      !   end do
-      ! end if
-      ! if (self % scalarX(idx) < 0.0_defFlt) then 
-      !   self % scalarX(idx) = 0.0_defFlt
-      ! end if
-      ! if (self % scalarY(idx) < 0.0_defFlt) then 
-      !   self % scalarY(idx) = 0.0_defFlt
-      ! end if
-      ! if (self % scalarZ(idx) < 0.0_defFlt) then 
-      !   self % scalarZ(idx) = 0.0_defFlt
-      ! end if
-
     end do
     !$omp end parallel do
 
@@ -1334,117 +1281,13 @@ contains
       return
     end if
 
-    ! condX = 0
-    ! condY = 0
-    ! condZ = 0
-
     momVec => self % momMat(((cIdx - 1) * matSize + 1):(cIdx * matSize))
-
-    ! if (momVec(xx) > 1.0E-6_defReal) condX = 1
-    ! if (momVec(yy) > 1.0E-6_defReal) condY = 1
-    ! if (momVec(zz) > 1.0E-6_defReal) condZ = 1
-
-    ! inversionTest = condX * 4 + condY * 2 + condZ
-    
-    ! select case(inversionTest)
-    ! case(invertXYZ)
-    !   det = momVec(xx) * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)) &
-    !         - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
-    !         + 2 * momVec(xy) * momVec(xz) * momVec(yz)
-    !   one_det = ONE/det
-    !   invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
-    !   invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
-    !   invMxz = real(one_det * (momVec(xy) * momVec(yz) - momVec(yy) * momVec(xz)),defFlt)
-    !   invMyy = real(one_det * (momVec(xx) * momVec(zz) - momVec(xz) * momVec(xz)),defFlt)
-    !   invMyz = real(one_det * (momVec(xy) * momVec(xz) - momVec(xx) * momVec(yz)),defFlt)
-    !   invMzz = real(one_det * (momVec(xx) * momVec(yy) - momVec(xy) * momVec(xy)),defFlt)
-
-    ! case(invertYZ)
-    !   det = momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)
-    !   one_det = ONE/det
-    !   invMxx = 0.0_defFlt
-    !   invMxy = 0.0_defFlt
-    !   invMxz = 0.0_defFlt
-    !   invMyy = real(one_det * momVec(zz),defFlt)
-    !   invMyz = real(-one_det * momVec(yz),defFlt)
-    !   invMzz = real(one_det * momVec(yy),defFlt)
-
-    ! case(invertXY)
-    !   det = momVec(xx) * momVec(yy) - momVec(xy) * momVec(xy)
-    !   one_det = ONE/det
-    !   invMxx = real(one_det * momVec(yy),defFlt)
-    !   invMxy = real(-one_det * momVec(xy),defFlt)
-    !   invMxz = 0.0_defFlt
-    !   invMyy = real(one_det * momVec(xx),defFlt)
-    !   invMyz = 0.0_defFlt
-    !   invMzz = 0.0_defFlt
-
-    ! case(invertXZ)
-    !   det = momVec(xx) * momVec(zz) - momVec(xz) * momVec(xz)
-    !   one_det = ONE/det
-    !   invMxx = real(one_det * momVec(zz),defFlt)
-    !   invMxy = 0.0_defFlt
-    !   invMxz = real(-one_det * momVec(xz),defFlt)
-    !   invMyy = 0.0_defFlt
-    !   invMyz = 0.0_defFlt
-    !   invMzz = real(one_det * momVec(xx),defFlt)
-
-    ! case(invertX)
-    !   det = momVec(xx)
-    !   one_det = ONE/det
-    !   invMxx = real(one_det,defFlt)
-    !   invMxy = 0.0_defFlt
-    !   invMxz = 0.0_defFlt
-    !   invMyy = 0.0_defFlt
-    !   invMyz = 0.0_defFlt
-    !   invMzz = 0.0_defFLt
-
-    ! case(invertY)
-    !   det = momVec(yy)
-    !   one_det = ONE/det
-    !   invMxx = 0.0_defFlt
-    !   invMxy = 0.0_defFlt
-    !   invMxz = 0.0_defFlt
-    !   invMyy = real(one_det,defFlt)
-    !   invMyz = 0.0_defFlt
-    !   invMzz = 0.0_defFlt
-
-    ! case(invertZ)
-    !   det = momVec(zz)
-    !   one_det = ONE/det
-    !   invMxx = 0.0_defFlt
-    !   invMxy = 0.0_defFlt
-    !   invMxz = 0.0_defFlt
-    !   invMyy = 0.0_defFlt
-    !   invMyz = 0.0_defFlt
-    !   invMzz = real(one_det,defFlt)
-
-    ! case default
-    !   invMxx = 0.0_defFlt
-    !   invMxy = 0.0_defFlt
-    !   invMxz = 0.0_defFlt
-    !   invMyy = 0.0_defFlt
-    !   invMyz = 0.0_defFlt
-    !   invMzz = 0.0_defFlt
-    !   det = ONE
-    ! end select
-
-    ! ! ! Check for zero determinant
-    ! if (abs(det) < 1E-6) then !was 1E-6
-    ! !if (one_det /= one_det) then !was 1E-6
-    !   invMxx = 0.0_defFlt
-    !   invMxy = 0.0_defFlt
-    !   invMxz = 0.0_defFlt
-    !   invMyy = 0.0_defFlt
-    !   invMyz = 0.0_defFlt
-    !   invMzz = 0.0_defFlt
-    ! end if
 
     det = momVec(xx) * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)) &
     - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
     + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-    if ((abs(det) < 1E-10) .and. (self % volume(cIdx) > 1E-6)) then
+    if ((abs(det) > 1E-10) .and. (self % volume(cIdx) > 1E-5)) then !vary volume check depending on cell size.
       one_det = ONE/det
       invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
       invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
@@ -1454,6 +1297,7 @@ contains
       invMzz = real(one_det * (momVec(xx) * momVec(yy) - momVec(xy) * momVec(xy)),defFlt)
 
     else
+
       invMxx = 0.0_defFlt
       invMxy = 0.0_defFlt
       invMxz = 0.0_defFlt
@@ -1461,6 +1305,7 @@ contains
       invMyz = 0.0_defFlt
       invMzz = 0.0_defFlt
       det = ONE
+      
     end if
 
 
@@ -1526,14 +1371,14 @@ contains
           scatter = scatter + angularMomVec(gIn, SH) * scatterVec(gIn, SHidx)
         end do
 
-        self % source(idx,SH) = scatter / total(g) !* ONE_FOUR_PI
+        self % source(idx,SH) = scatter / total(g) 
 
       end do
 
       ! Calculate scattering source for isotropic scattering / flat source
-      self % source(idx,1) = self % source(idx,1) + (chi(g) * fission) / total(g) !* ONE_FOUR_PI
+      self % source(idx,1) = self % source(idx,1) + (chi(g) * fission) / total(g) 
 
-      !if (it > 29) then !.and. self % source(idx,1) > 1E-25
+      if ((it > 29) .and. self % source(idx,1) > 1E-24) then
         xSource = chi(g) * xFission + xScatter
         xSource = xSource / total(g) !* ONE_FOUR_PI
         ySource = chi(g) * yFission + yScatter
@@ -1548,11 +1393,13 @@ contains
                 invMyy * ySource + invMyz * zSource 
         self % sourceZ(idx) = invMxz * xSource + &
                 invMyz * ySource + invMzz * zSource 
-      ! else
-      !   self % sourceX(idx) = 0.0_defFlt
-      !   self % sourceY(idx) = 0.0_defFlt
-      !   self % sourceZ(idx) = 0.0_defFlt
-      ! end if
+      else
+
+        self % sourceX(idx) = 0.0_defFlt
+        self % sourceY(idx) = 0.0_defFlt
+        self % sourceZ(idx) = 0.0_defFlt
+        
+      end if
 
   end do
 
