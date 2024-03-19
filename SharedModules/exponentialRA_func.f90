@@ -226,6 +226,8 @@ end function expG2
 ! using a 5/6th order rational approximation,
 ! FROM: OpenMoC https://github.com/mit-crpg/OpenMOC/blob/7c8c9460c1c95f68dae102a402a39afa233a0b8c/src/exponentials.h#L9
 
+!!!!not current correct form we use.
+
 elemental function expF2(tau) result(x)
   real(defFlt), intent(in)    :: tau
   real(defFlt)                :: x
