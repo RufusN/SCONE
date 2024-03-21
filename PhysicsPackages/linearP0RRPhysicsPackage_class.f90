@@ -114,7 +114,8 @@ module linearP0RRPhysicsPackage_class
   !!     #fissionMap {<map>}#  // Optionally output fission rates according to a given map
   !!     #fluxMap {<map>}#     // Optionally output one-group fluxes according to a given map
   !!     #plot 1;#             // Optionally make VTK viewable plot of fluxes and uncertainties
-  !!     #SHOrder 0;#    // Optional spherical harmonic order for higher order scattering.
+  !!     #SHOrder 0;#          // Optional spherical harmonic order for higher order scattering.
+  !!     #rho  0.6;#           // Optional stabilisation factor - default is 0, no stabilisation
   !!
   !!     geometry {<Geometry Definition>}
   !!     nuclearData {<Nuclear data definition>}
@@ -139,6 +140,7 @@ module linearP0RRPhysicsPackage_class
   !!   inactive    -> Number of inactive cycles to perform
   !!   active      -> Number of active cycles to perform
   !!   cache       -> Logical check whether to use distance caching
+  !!   rho         -> Diagonal stabilisation factor, following Gunow
   !!   SHOrder     -> Order of higher order scattering, isotropic 0 by default, maximum P3 / 3rd order
   !!   SHLength    -> Number of spherical harmonics for given SHOrder.
   !!   outputFile  -> Output file name
@@ -195,13 +197,12 @@ module linearP0RRPhysicsPackage_class
     real(defReal)      :: dead        = ZERO
     integer(shortInt)  :: pop         = 0
 
-    real(shortInt)     :: count       = 0 
-
     integer(shortInt)  :: inactive    = 0
     integer(shortInt)  :: active      = 0
     logical(defBool)   :: cache       = .false.
-    integer(shortInt)  :: SHOrder  = 0
-    integer(shortInt)  :: SHLength = 1
+    real(defReal)      :: rho         = ZERO
+    integer(shortInt)  :: SHOrder     = 0
+    integer(shortInt)  :: SHLength    = 1
     character(pathLen) :: outputFile
     character(nameLen) :: outputFormat
     logical(defBool)   :: plotResults = .false.
@@ -245,8 +246,6 @@ module linearP0RRPhysicsPackage_class
     real(defReal), dimension(:), allocatable   :: centroid
     real(defReal), dimension(:), allocatable   :: centroidTracks
 
-    real(defReal), dimension(:), allocatable :: tauVec
-    real(defReal), dimension(:), allocatable :: errorVec 
 
     ! Tracking cell properites
     integer(shortInt), dimension(:), allocatable :: cellHit
@@ -326,6 +325,9 @@ contains
 
     ! Higher order scattering order
     call dict % getOrDefault(self % SHOrder, 'SHOrder', 0)
+
+    ! Stabilisation factor for negative in-group scattering
+    call dict % getOrDefault(self % rho, 'rho', ZERO)
 
     ! Number of spherical harmonic terms for given SHOrder
     self % SHLength = ( self % SHOrder + 1 )**2
@@ -497,10 +499,6 @@ contains
     allocate(self % momTracks(self % nCells * matSize))
     allocate(self % centroid(self % nCells * nDim))
     allocate(self % centroidTracks(self % nCells * nDim))
-
-
-    allocate(self % tauVec(1000))
-    allocate(self % errorVec(1000))
     
     ! Set active length traveled per iteration
     self % lengthPerIt = (self % termination - self % dead) * self % pop
@@ -603,11 +601,6 @@ contains
     self % keff        = 1.0_defFlt
     self % moments     = 0.0_defFlt
     self % prevMoments = 1.0_defFlt
-
-    self % tauVec = 0.0_defReal
-    self % errorVec = 0.0_defReal
-
-    self % count = 0_shortInt
       
     self % scalarX  = 0.0_defFlt
     self % scalarY  = 0.0_defFlt
@@ -812,10 +805,10 @@ contains
     real(defReal)                                         :: totalLength, length, len2_12
     logical(defBool)                                      :: activeRay, hitVacuum, newRay
     type(distCache)                                       :: cache
-    real(defFlt)                                          :: lenFlt, lenFlt2_2, maxtot, vol, norm
-    real(defFlt), dimension(self % nG)                    :: F1, F2, G2, Gn, H, tau, delta, fluxVec, &
-                                                             flatQ, flatQBase, gradQ, xInc, yInc, zInc, &
-                                                             fluxVec0, currentSource, G1
+    real(defFlt)                                          :: lenFlt, lenFlt2_2
+    real(defFlt), dimension(self % nG)                    :: F1, F2, G2, Gn, H, G1, tau, delta, fluxVec, &
+                                                             flatQ, gradQ, xInc, yInc, zInc, &
+                                                             fluxVec0, currentSource
     real(defReal), dimension(matSize)                     :: matScore
     real(defFlt),  pointer, dimension(:)                  :: totVec, xGradVec, yGradVec, zGradVec, &
                                                              xMomVec, yMomVec, zMomVec
@@ -830,7 +823,7 @@ contains
     cIdx = r % coords % uniqueID
     do g = 1, self % nG
       idx = (cIdx - 1) * self % nG + g
-      fluxVec(g) = self % source(idx,1) 
+      fluxVec(g) = self % source(idx,1)
     end do
 
     ints = 0
@@ -859,10 +852,11 @@ contains
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
 
-       if (newRay .or. event == BOUNDARY_EV) then
-        call self % sphericalHarmonicCalculator(mu0, RCoeffs) !- seems to work 
-         newRay = .false.
-       end if
+      !calculates new scattering coefficients 
+      if (newRay .or. event == BOUNDARY_EV) then
+        call self % sphericalHarmonicCalculator(mu0, RCoeffs)
+        newRay = .false.
+      end if
           
       ! Set maximum flight distance and ensure ray is active
       if (totalLength >= self % dead) then
@@ -871,18 +865,6 @@ contains
       else
         length = self % dead - totalLength
       end if
-
-      ! maxtot = 0.0_defFlt
-      ! !$omp simd
-      ! do g = 1, self % nG
-      !   if (maxtot < totVec(g)) then
-      !     maxtot = totVec(g)
-      !   end if
-      ! end do
-
-      ! if ((30.0_defFlt/maxtot) < length) then
-      !   length = real(30.0_defFlt/maxtot)
-      ! end if
       
       ! Move ray
       if (self % cache) then
@@ -915,7 +897,7 @@ contains
       mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
 
       ! Check cell has been visited 
-      if (self % volumeTracks(cIdx) > 1E-24) then
+      if (self % volumeTracks(cIdx) > 1E-24_defFlt) then
         ! Compute the track centroid in local co-ordinates
         rNorm = rC - mid(1:nDim)
         ! Compute the entry point in local co-ordinates
@@ -944,10 +926,10 @@ contains
       ! aligned(xGradVec, yGradVec, zGradVec)
       !$omp simd
       do g = 1, self % nG
-        flatQBase(g) = rNormFlt(x) * xGradVec(g)
-        flatQBase(g) = flatQBase(g) + rNormFlt(y) * yGradVec(g)
-        flatQBase(g) = flatQBase(g) + rNormFlt(z) * zGradVec(g)
-        flatQ(g) = flatQBase(g) + currentSource(g)
+        flatQ(g) = rNormFlt(x) * xGradVec(g)
+        flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
+        flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
+        flatQ(g) = flatQ(g) + currentSource(g)
 
         gradQ(g) = muFlt(x) * xGradVec(g)
         gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
@@ -957,44 +939,31 @@ contains
       !$omp simd
       do g = 1, self % nG
         tau(g) = totVec(g) * lenFlt
-        ! if (tau(g) < 1E-7) then 
-        !   tau(g) = 0.0_defFlt
-        ! end if
+        if (tau(g) < 1E-8_defFlt) then 
+          tau(g) = 0.0_defFlt
+        end if
       end do
 
       ! Compute exponentials necessary for angular flux update
       !$omp simd
       do g = 1, self % nG
-        if (tau(g) > 1E-7) then
-          Gn(g) = expG(tau(g))
-        else 
-          Gn(g) = 0.5_defFlt
-        end if
+        Gn(g) = expG(tau(g))
       end do
 
      !$omp simd
       do g = 1, self % nG
-        if (tau(g) > 1E-7) then
-          F1(g) = 1.0_defFlt - tau(g) * Gn(g) !expTau(tau(g)) * lenFlt
-        else
-          F1(g) = 1.0_defFlt
-        end if
-      end do
-
-
-      !$omp simd
-      do g = 1, self % nG
-        F2(g) = (2.0_defFlt * Gn(g)  - F1(g) )  * lenFlt * lenFlt
+        F1(g)  = 1.0_defFlt - tau(g) * Gn(g) !expTau(tau(g)) * lenFlt
       end do
 
       !$omp simd
       do g = 1, self % nG
-        if (tau(g) > 1E-7) then
-          delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) * lenFlt &
-                     - one_two * gradQ(g) * F2(g)
-        else 
-          delta(g) = 0.0_defFlt
-        end if
+        F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt * lenFlt
+      end do
+
+      !$omp simd
+      do g = 1, self % nG
+        delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) * lenFlt & 
+                    - one_two * gradQ(g) * F2(g) 
       end do
 
       ! Intermediate flux variable creation or update
@@ -1029,14 +998,9 @@ contains
 
         !$omp simd
         do g = 1, self % nG
-          H(g) = ( F1(g) - Gn(g) )
+          H(g) = ( F1(g) - Gn(g) ) !expH(tau(g))
         end do
-
-      !   !$omp simd
-      !   do g = 1, self % nG
-      !     G2(g) = expG2(tau(g)) 
-      !   end do
-
+      
         !$omp simd
         do g = 1, self % nG
             G1(g) = one_two - H(g)
@@ -1047,21 +1011,28 @@ contains
             G2(g) = ((two_three) - (1 + 2.0_defFlt/tau(g)) * G1(g) )
         end do
 
+        ! !$omp simd !!!alternative calculation of G2
+        ! do g = 1, self % nG
+        !   G2(g) = expG2(tau(g)) 
+        ! end do
+
+        ! Make some more condensed variables to help vectorisation
         !$omp simd 
         do g = 1, self % nG
-          G2(g) = G2(g) * gradQ(g) * lenFlt2_2 
-          H(g)  = G2(g) + (fluxVec0(g) * lenFlt - currentSource(g) * lenFlt) * H(g)
-          H(g)  = H(g) * lenFlt 
-          flatQbase(g) =  flatQbase(g) * lenFlt
+          G1(g) = G1(g) * flatQ(g) * lenFlt
+          G2(g) = G2(g) * gradQ(g) * lenFlt2_2
+          H(g)  = H(g) * fluxVec0(g) * lenFlt
+          H(g) = (G1(g) + G2(g) + H(g)) * lenFlt
+          flatQ(g) = flatQ(g) * lenFlt + delta(g)
         end do
 
         !$omp simd
         do g = 1, self % nG
-          xInc(g) = r0NormFlt(x) * delta(g) + muFlt(x) * H(g) + (flatQbase(g)) * rNormFlt(x) 
-          yInc(g) = r0NormFlt(y) * delta(g) + muFlt(y) * H(g) + (flatQbase(g)) * rNormFlt(y) 
-          zInc(g) = r0NormFlt(z) * delta(g) + muFlt(z) * H(g) + (flatQbase(g)) * rNormFlt(z) 
+          xInc(g) = r0NormFlt(x) * flatQ(g) + muFlt(x) * H(g) 
+          yInc(g) = r0NormFlt(y) * flatQ(g) + muFlt(y) * H(g) 
+          zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g)
         end do
-                
+
         call OMP_set_lock(self % locks(cIdx))
 
         angularMomVec => self % moments((baseIdx + 1):(baseIdx + self % nG), :)
@@ -1134,9 +1105,9 @@ contains
     case(4)  
         RCoeffs(1) = 1.0_defFlt 
 
-        RCoeffs(2) = real(SQRT3 * dirY,defFlt)
-        RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
-        RCoeffs(4) = real(SQRT3 * dirX,defFlt)    
+        RCoeffs(2) = real(SQRT3 * dirY,defFlt) 
+        RCoeffs(3) = real(SQRT3 * dirZ,defFlt) 
+        RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
 
     case(9) 
         RCoeffs(1) = 1.0_defFlt 
@@ -1183,10 +1154,10 @@ contains
     real(defFlt)                                  :: norm
     real(defReal)                                 :: normVol
     real(defReal), save                           :: invVol
-    real(defFlt), save                            :: vol, NTV
+    real(defFlt), save                            :: vol, NTV, D, SigGG, total
     integer(shortInt), save                       :: g, idx, SH, matIdx,  dIdx, mIdx
     integer(shortInt)                             :: cIdx
-    !$omp threadprivate(vol, idx, g, SH, matIdx, mIdx, dIdx, invVol, NTV)
+    !$omp threadprivate(vol, idx, g, SH, matIdx, mIdx, dIdx, invVol, NTV, D, SigGG, total)
 
     norm = real(ONE / self % lengthPerIt, defFlt)
     normVol = ONE / (self % lengthPerIt * it)
@@ -1206,7 +1177,8 @@ contains
       self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
       vol = real(self % volume(cIdx),defFlt)
 
-      if (self % volumeTracks(cIdx) > 1E-24) then
+      ! Check if cell has been visited
+      if (self % volumeTracks(cIdx) > 1E-24_defFlt) then 
         invVol = ONE / self % volumeTracks(cIdx)
         
         ! Update centroids
@@ -1223,6 +1195,7 @@ contains
         self % momMat(mIdx + zz) = self % momTracks(mIdx + zz) * invVol
 
       else
+
         self % centroid(dIdx + x) =  ZERO
         self % centroid(dIdx + y) =  ZERO
         self % centroid(dIdx + z) =  ZERO
@@ -1240,19 +1213,53 @@ contains
         idx   = self % nG * (cIdx - 1) + g 
         NTV = norm / vol
 
-        do SH = 1, self % SHLength
+        if (self % SHOrder > 0) then
+
+          do SH = 1, self % SHLength
+
+            if (vol > volume_tolerance) then
+                self % moments(idx,SH) = self % moments(idx,SH) * NTV
+            end if
+            self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
+
+          end do
 
           if (vol > volume_tolerance) then
-              self % moments(idx,SH) = self % moments(idx,SH) * NTV
+            self % scalarX(idx) = self % scalarX(idx) * NTV 
+            self % scalarY(idx) = self % scalarY(idx) * NTV 
+            self % scalarZ(idx) = self % scalarZ(idx) * NTV 
           end if
-          self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
 
-        end do
+        else !!!P0 rho stabilisation
+          total = self % sigmaT((matIdx - 1) * self % nG + g)
+          sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g, 1)
 
-        if (vol > volume_tolerance) then
-          self % scalarX(idx) = self % scalarX(idx) * NTV 
-          self % scalarY(idx) = self % scalarY(idx) * NTV 
-          self % scalarZ(idx) = self % scalarZ(idx) * NTV 
+          do SH = 2, self % SHLength
+
+            if (vol > volume_tolerance) then
+                self % moments(idx,SH) = self % moments(idx,SH) * NTV
+            end if
+
+            self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
+          end do 
+
+          if (vol > volume_tolerance) then
+            self % moments(idx,1) =  self % moments(idx,1) * NTV
+          end if
+
+          ! Presumes non-zero total XS
+          if ((sigGG < 0.0_defFlt) .and. (total > 0.0_defFlt)) then
+            D = -real(self % rho, defFlt) * sigGG / total
+          else
+            D = 0.0_defFlt
+          end if
+
+          self % moments(idx,1) =  (self % moments(idx,1) + self % source(idx,1) + D * self % prevMoments(idx,1) ) / (1 + D)
+
+          self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
+          self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
+          self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
+          
         end if
 
       end do
@@ -1279,7 +1286,6 @@ contains
     real(defFlt), pointer, dimension(:,:)                 :: scatterVec, scatterXS
     real(defFlt), pointer, dimension(:,:)                 :: angularMomVec
     real(defFlt)                                          :: invMxx, invMxy, invMxz, invMyy, invMyz, invMzz
-    integer(shortInt)                                     :: condX, condY, condZ, inversionTest
     real(defFlt), pointer, dimension(:)                   :: xFluxVec, yFluxVec, zFluxVec
     real(defReal), pointer, dimension(:)                  :: momVec
     real(defReal)                                         :: det, one_det 
@@ -1308,7 +1314,7 @@ contains
     - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
     + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-    if ((abs(det) > 1E-10) .and. (self % volume(cIdx) > 1E-6)) then !vary volume check depending on cell size.
+    if ((abs(det) > 1E-10) .and. (self % volume(cIdx) > 1E-6)) then ! maybe: vary volume check depending on avg cell size.
       one_det = ONE/det
       invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
       invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
@@ -1316,19 +1322,15 @@ contains
       invMyy = real(one_det * (momVec(xx) * momVec(zz) - momVec(xz) * momVec(xz)),defFlt)
       invMyz = real(one_det * (momVec(xy) * momVec(xz) - momVec(xx) * momVec(yz)),defFlt)
       invMzz = real(one_det * (momVec(xx) * momVec(yy) - momVec(xy) * momVec(xy)),defFlt)
-
     else
-
       invMxx = 0.0_defFlt
       invMxy = 0.0_defFlt
       invMxz = 0.0_defFlt
       invMyy = 0.0_defFlt
       invMyz = 0.0_defFlt
       invMzz = 0.0_defFlt
-      det = ONE
-      
+      det = ONE 
     end if
-
 
     matIdx = (matIdx - 1) * self % nG
     total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
@@ -1342,15 +1344,13 @@ contains
     yFluxVec => self % prevY((baseIdx + 1):(baseIdx + self % nG))
     zFluxVec => self % prevZ((baseIdx + 1):(baseIdx + self % nG))
 
-
     ! Calculate fission source
     fission  = 0.0_defFlt
     xFission = 0.0_defFlt
     yFission = 0.0_defFlt
     zFission = 0.0_defFlt
 
-    !reduction(+:fission) aligned(angularMomVec)
-    !$omp simd 
+    !$omp simd reduction(+:fission, xFission, yFission, zFission) aligned(angularMomVec, xFluxVec, yFluxVec, zFluxVec, nuFission)
     do gIn = 1, self % nG
       fission  = fission  + angularMomVec(gIn,1) * nuFission(gIn)
       xFission = xFission + xFluxVec(gIn) * nuFission(gIn)
@@ -1373,9 +1373,7 @@ contains
       zScatter = 0.0_defFlt 
 
       ! Calculate scattering source for higher order scattering
-
-      !reduction(+:scatter) aligned(angularMomVec)
-      !$omp simd 
+      !$omp simd reduction(+:xScatter, yScatter, zScatter) aligned(xFluxVec, yFluxVec, zFluxVec, scatterVec)
       do gIn = 1, self % nG
         xScatter = xScatter + xFluxVec(gIn) * scatterVec(gIn,1)
         yScatter = yScatter + yFluxVec(gIn) * scatterVec(gIn,1)
@@ -1387,7 +1385,7 @@ contains
         SHidx = ceiling(sqrt(real(SH, defReal)) - 1) + 1
         scatter = 0.0_defFlt
 
-        !$omp simd 
+        !$omp simd reduction(+:scatter) aligned(angularMomVec, scatterVec)
         do gIn = 1, self % nG
           scatter = scatter + angularMomVec(gIn, SH) * scatterVec(gIn, SHidx)
         end do
@@ -1399,13 +1397,13 @@ contains
       ! Calculate scattering source for isotropic scattering / flat source
       self % source(idx,1) = self % source(idx,1) + (chi(g) * fission) / total(g) 
 
-      if ((it > 29) .and. self % source(idx,1) > 1E-24) then
+      if ( it > 29 ) then 
         xSource = chi(g) * xFission + xScatter
-        xSource = xSource / total(g) !* ONE_FOUR_PI
+        xSource = xSource / total(g) 
         ySource = chi(g) * yFission + yScatter
-        ySource = ySource / total(g) !* ONE_FOUR_PI
+        ySource = ySource / total(g) 
         zSource = chi(g) * zFission + zScatter
-        zSource = zSource / total(g) !* ONE_FOUR_PI
+        zSource = zSource / total(g) 
 
         ! Calculate source gradients by inverting the moment matrix
         self % sourceX(idx) = invMxx * xSource + &
@@ -1493,7 +1491,6 @@ contains
       do SH = 1, self % SHLength
         self % prevMoments(idx,SH) = self % moments(idx,SH) 
         self % moments(idx,SH) = 0.0_defFlt
-        ! self % source(idx,SH) = 0.0_defFlt
       end do
       self % prevX(idx) = self % scalarX(idx)
       self % scalarX(idx) = 0.0_defFlt
@@ -1501,10 +1498,6 @@ contains
       self % scalarY(idx) = 0.0_defFlt
       self % prevZ(idx) = self % scalarZ(idx)
       self % scalarZ(idx) = 0.0_defFlt
-      ! self % sourceX(idx) = 0.0_defFlt
-      ! self % sourceY(idx) = 0.0_defFlt
-      ! self % sourceZ(idx) = 0.0_defFlt
-      
     end do
     !$omp end parallel do
 
@@ -1881,6 +1874,7 @@ contains
     self % pop         = 0
     self % inactive    = 0
     self % active      = 0
+    self % rho         = ZERO
     self % cache       = .false.
     self % SHLength  = 1
     self % SHOrder   = 0
