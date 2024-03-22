@@ -11,7 +11,7 @@ plot 1;
 cache 1;
 XSdata mg;
 //SHOrder 0; //scattering order
-rho 1;
+rho 0.4;
 dataType mg;
 outputFile BW1484_TC ;
 
