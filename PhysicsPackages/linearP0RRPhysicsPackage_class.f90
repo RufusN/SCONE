@@ -875,7 +875,6 @@ contains
       end if
       totalLength = totalLength + length
 
-
       ! Calculate the track centre
       rC = r0 + length * HALF * mu0
 
@@ -923,8 +922,7 @@ contains
       end do
       
       ! Calculate source terms
-      ! aligned(xGradVec, yGradVec, zGradVec)
-      !$omp simd
+      !$omp simd aligned(xGradVec, yGradVec, zGradVec)
       do g = 1, self % nG
         flatQ(g) = rNormFlt(x) * xGradVec(g)
         flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
@@ -1006,14 +1004,19 @@ contains
             G1(g) = one_two - H(g)
         end do
 
-        !$omp simd
+        !$omp simd 
         do g = 1, self % nG
-            G2(g) = ((two_three) - (1 + 2.0_defFlt/tau(g)) * G1(g) )
+          G2(g) = expG2(tau(g)) 
         end do
 
-        ! !$omp simd !!!alternative calculation of G2
+        ! Alternative calculation of G2
+        ! !$omp simd 
         ! do g = 1, self % nG
-        !   G2(g) = expG2(tau(g)) 
+        ! if (tau(g) > 1E-8) then
+        !     G2(g) = ((two_three) - (1 + 2.0_defFlt/tau(g)) * G1(g) )
+        ! else
+        !   G2(g) = -tau(g)/12
+        ! end if
         ! end do
 
         ! Make some more condensed variables to help vectorisation
@@ -1230,18 +1233,9 @@ contains
             self % scalarZ(idx) = self % scalarZ(idx) * NTV 
           end if
 
-        else !!!P0 rho stabilisation
+        else ! P0 rho stabilisation
           total = self % sigmaT((matIdx - 1) * self % nG + g)
           sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g, 1)
-
-          do SH = 2, self % SHLength
-
-            if (vol > volume_tolerance) then
-                self % moments(idx,SH) = self % moments(idx,SH) * NTV
-            end if
-
-            self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
-          end do 
 
           if (vol > volume_tolerance) then
             self % moments(idx,1) =  self % moments(idx,1) * NTV
@@ -1255,15 +1249,12 @@ contains
           end if
 
           self % moments(idx,1) =  (self % moments(idx,1) + self % source(idx,1) + D * self % prevMoments(idx,1) ) / (1 + D)
-
           self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
           self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
           self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
           
         end if
-
       end do
-
     end do
     !$omp end parallel do
 
@@ -1876,8 +1867,8 @@ contains
     self % active      = 0
     self % rho         = ZERO
     self % cache       = .false.
-    self % SHLength  = 1
-    self % SHOrder   = 0
+    self % SHLength    = 1
+    self % SHOrder     = 0
     self % mapFission  = .false.
     self % mapFlux     = .false.
     self % plotResults = .false.

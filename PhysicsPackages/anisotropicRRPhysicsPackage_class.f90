@@ -773,20 +773,19 @@ contains
         matIdx  = r % coords % matIdx
         cIdx    = r % coords % uniqueID
 
-        ! Caluclate r0 and mu0, mu0 used in SHarmonics
-        r0 = r % rGlobal()
-        mu0 = r % dirGlobal()
-
         if (matIdx >= VOID_MAT) then
             matIdx = self % nMatVOID
         end if
-
 
         if (matIdx0 /= matIdx) then 
           matIdx0 = matIdx
           ! Cache total cross section
           totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
         end if
+
+        ! Caluclate r0 and mu0, mu0 used in SHarmonics
+        r0 = r % rGlobal()
+        mu0 = r % dirGlobal()
 
         if (newRay .or. event == BOUNDARY_EV) then
             call self % sphericalHarmonicCalculator(mu0, RCoeffs) !- seems to work 
@@ -833,7 +832,7 @@ contains
         do g = 1, self % nG
             currentSource(g) = 0.0_defFlt
             do SH = 1, self % SHLength
-            currentSource(g) = currentSource(g) + sourceVec(g,SH) * RCoeffs(SH)
+              currentSource(g) = currentSource(g) + sourceVec(g,SH) * RCoeffs(SH)
             end do 
         end do
 
@@ -965,41 +964,31 @@ contains
         vol = real(self % volume(cIdx),defFlt)
 
         do g = 1, self % nG
-
-            total = self % sigmaT((matIdx - 1) * self % nG + g)
             idx   = self % nG * (cIdx - 1) + g
 
             if (self % SHOrder > 0) then
-
+              
               do SH = 1, self % SHLength
-
                 if (vol > volume_tolerance) then
                     self % moments(idx,SH) =  self % moments(idx,SH) * norm / vol
                 end if
-
                 self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
-
               end do 
 
             else 
 
-              if (vol > volume_tolerance) then
-                self % moments(idx,1) =  self % moments(idx,1) * norm / vol
-              end if
-
-              if (matIdx < self % nMatVOID) then
-
-                sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g, 1)
-      
-                ! Presumes non-zero total XS
-                if ((sigGG < 0) .and. (total > 0)) then
-                  D = -real(self % rho, defFlt) * sigGG / total
-                else
-                  D = 0.0_defFlt
-                end if
-
+              total = self % sigmaT((matIdx - 1) * self % nG + g)
+              sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g, 1)
+    
+              ! Presumes non-zero total XS
+              if ((sigGG < 0) .and. (total > 0)) then
+                D = -real(self % rho, defFlt) * sigGG / total
               else
                 D = 0.0_defFlt
+              end if
+
+              if (vol > volume_tolerance) then
+                self % moments(idx,1) =  self % moments(idx,1) * norm / vol
               end if
 
               self % moments(idx,1) =  (self % moments(idx,1) + self % source(idx,1) + D * self % prevMoments(idx,1) ) / (1 + D)
