@@ -1,16 +1,18 @@
 //type randomRayPhysicsPackage; 
 //type linearSourceRRPhysicsPackage;
-type linearP0RRPhysicsPackage;
+//type linearP0RRPhysicsPackage;
+type testPackage;
 
 pop      1750; 
 active   2600;  
-inactive 1000; 
+inactive 1500; 
 dead     20;  
 termination 220;  
 plot 0;
 cache 1;
 XSdata mg; 
 dataType mg;
+outputFormat asciiJSON;
 outputFile C5G7_TRRM_coarse;
 
 fissionMap {type multiMap;

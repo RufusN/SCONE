@@ -52,22 +52,22 @@ geometry {
   graph {type shrunk;}
 
   surfaces {
-    !squareBound { id 1; type zSquareCylinder; origin (0.0 0.0 0.0); halfwidth (34.356 34.356 0.0);}
-    squareBound { id 1; type zSquareCylinder; origin (3.744 3.744 0.0); halfwidth (38.1 38.1 0.0);}
-    tank { id 2; type zCylinder; origin (-34.356 -34.356 0.0); radius 76.2;}
+    squareBound { id 1; type zSquareCylinder; origin (0.0 0.0 0.0); halfwidth (34.356 34.356 0.0);}
+    //squareBound { id 1; type zSquareCylinder; origin (3.744 3.744 0.0); halfwidth (38.1 38.1 0.0);}
+    //tank { id 2; type zCylinder; origin (-34.356 -34.356 0.0); radius 76.2;}
   }
 
   cells {
 
-   cell1 { id 1; type simpleCell; surfaces (-2); filltype uni; universe 400; }
-   cell2 { id 2; type simpleCell; surfaces (2); filltype mat; material void; }
+   cell1 { id 1; type simpleCell; surfaces (-1); filltype uni; universe 400; }
+   //cell2 { id 2; type simpleCell; surfaces (2); filltype mat; material void; }
 
   }
 
   universes {
     root { id 1; type rootUniverse; border 1; fill u<500>; }
 
-    everything {id 500; type cellUniverse; cells (1 2); origin (0.0 0.0 0.0 ); }
+    everything {id 500; type cellUniverse; cells (1); origin (0.0 0.0 0.0 ); }
 
     // Pin universes
     pin10 { id 10; type pinUniverse; radii (0.515 0.522 0.603 0.0 ); fills (fuel  void  alClad water);}
@@ -160,7 +160,7 @@ nuclearData {
       8016.03    3.33786E-002;
       5010.03    1.13681E-5;
       5011.03    4.64848E-5; }
-      moder { 1001.03 lwj3.00; }
+      moder { 1001.00 h-h2o-293;}
       }
 
     water1 {
@@ -170,7 +170,7 @@ nuclearData {
       8016.03    3.33786E-002;
       5010.03    1.13681E-5;
       5011.03    4.64848E-5; }
-      moder { 1001.03 lwj3.00; }
+      moder { 1001.00 h-h2o-293; }
       }
 
    ! Neglects other components of the clad - aluminium is dominant
