@@ -788,7 +788,7 @@ contains
         mu0 = r % dirGlobal()
 
         if (newRay .or. event == BOUNDARY_EV) then
-            call self % sphericalHarmonicCalculator(mu0, RCoeffs) !- seems to work 
+            call self % sphericalHarmonicCalculator(mu0, RCoeffs) 
             newRay = .false.
         end if
             
