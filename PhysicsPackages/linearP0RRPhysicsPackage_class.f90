@@ -325,12 +325,11 @@ contains
 
     ! Higher order scattering order
     call dict % getOrDefault(self % SHOrder, 'SHOrder', 0)
+    ! Number of spherical harmonic terms for given SHOrder
+    self % SHLength = ( self % SHOrder + 1 )**2
 
     ! Stabilisation factor for negative in-group scattering
     call dict % getOrDefault(self % rho, 'rho', ZERO)
-
-    ! Number of spherical harmonic terms for given SHOrder
-    self % SHLength = ( self % SHOrder + 1 )**2
 
     ! Print fluxes?
     call dict % getOrDefault(self % printFlux, 'printFlux', .false.)
@@ -852,7 +851,7 @@ contains
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
 
-      !calculates new scattering coefficients 
+      ! Calculates new scattering coefficients 
       if (newRay .or. event == BOUNDARY_EV) then
         call self % sphericalHarmonicCalculator(mu0, RCoeffs)
         newRay = .false.
@@ -896,13 +895,13 @@ contains
       mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
 
       ! Check cell has been visited 
-      if (self % volumeTracks(cIdx) > 1E-24_defFlt) then
+      if (self % volume(cIdx) > volume_tolerance) then
         ! Compute the track centroid in local co-ordinates
         rNorm = rC - mid(1:nDim)
         ! Compute the entry point in local co-ordinates
         r0Norm = r0 - mid(1:nDim)
       else
-        rNorm = 0
+        rNorm = ZERO
         r0Norm = - mu0 * HALF * length
       end if 
 
@@ -1009,14 +1008,37 @@ contains
           G2(g) = expG2(tau(g)) 
         end do
 
-        ! Alternative calculation of G2
+        ! ! Alternative calculation of G1 and G2
+        ! !$omp simd
+        ! do g = 1, self % nG
+        !   if (tau(g) > 1E-8) then
+        !     G1(g) = one_two - H(g)
+        !   else
+        !     G1(g) = tau(g)/3
+        !   end if
+        ! end do
+
+        ! !$omp simd
+        ! do g = 1, self % nG
+        !   if (tau(g) > 1E-8) then
+        !     G1(g) = 1/tau(g) + one_two - (1 + 1.0_defFlt/tau(g)) * F1(g)
+        !   else
+        !     G1(g) = tau(g)/3
+        !   end if
+        ! end do
+
         ! !$omp simd 
         ! do g = 1, self % nG
-        ! if (tau(g) > 1E-8) then
+        !   if (tau(g) > 1E-8) then
         !     G2(g) = ((two_three) - (1 + 2.0_defFlt/tau(g)) * G1(g) )
-        ! else
-        !   G2(g) = -tau(g)/12
-        ! end if
+        !   else
+        !     G2(g) = -tau(g)/12
+        !   end if
+        ! end do
+
+        ! !$omp simd
+        ! do g = 1, self % nG
+        !   H(g) = (one_two - G1(g))
         ! end do
 
         ! Make some more condensed variables to help vectorisation
@@ -1181,7 +1203,7 @@ contains
       vol = real(self % volume(cIdx),defFlt)
 
       ! Check if cell has been visited
-      if (self % volumeTracks(cIdx) > 1E-24_defFlt) then 
+      if (self % volume(cIdx) > volume_tolerance) then 
         invVol = ONE / self % volumeTracks(cIdx)
         
         ! Update centroids
@@ -1234,11 +1256,15 @@ contains
           end if
 
         else ! P0 rho stabilisation
+
           total = self % sigmaT((matIdx - 1) * self % nG + g)
           sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g, 1)
 
           if (vol > volume_tolerance) then
             self % moments(idx,1) =  self % moments(idx,1) * NTV
+            self % scalarX(idx) = self % scalarX(idx) * NTV 
+            self % scalarY(idx) = self % scalarY(idx) * NTV 
+            self % scalarZ(idx) = self % scalarZ(idx) * NTV 
           end if
 
           ! Presumes non-zero total XS
@@ -1305,7 +1331,7 @@ contains
     - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
     + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-    if ((abs(det) > 1E-10) .and. (self % volume(cIdx) > 1E-6)) then ! maybe: vary volume check depending on avg cell size.
+    if ((abs(det) > 1E-10) .and. self % volume(cIdx) > 1E-6 ) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
       one_det = ONE/det
       invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
       invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
