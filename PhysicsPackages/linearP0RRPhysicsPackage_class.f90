@@ -804,7 +804,7 @@ contains
     real(defReal)                                         :: totalLength, length, len2_12
     logical(defBool)                                      :: activeRay, hitVacuum, newRay
     type(distCache)                                       :: cache
-    real(defFlt)                                          :: lenFlt, lenFlt2_2
+    real(defFlt)                                          :: lenFlt, lenFlt2_2, maxtot
     real(defFlt), dimension(self % nG)                    :: F1, F2, G2, Gn, H, G1, tau, delta, fluxVec, &
                                                              flatQ, gradQ, xInc, yInc, zInc, &
                                                              fluxVec0, currentSource
@@ -863,6 +863,18 @@ contains
         activeRay = .true.
       else
         length = self % dead - totalLength
+      end if
+
+      maxtot = 0.0_defFlt
+      !$omp simd
+      do g = 1, self % nG
+        if (maxtot < totVec(g)) then
+          maxtot = totVec(g)
+        end if
+      end do
+
+      if ((30.0_defFlt/maxtot) < length) then
+        length = real(30.0_defFlt/maxtot)
       end if
       
       ! Move ray
