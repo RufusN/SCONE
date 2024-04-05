@@ -5,7 +5,7 @@
 #SBATCH -p icelake
 #SBATCH --nodes=1
 #SBATCH --ntasks=76
-#SBATCH --time=00:01:00
+#SBATCH --time=10:00:00
 #SBATCH --mail-type=ALL
 ##SBATCH --no-requeue
 
@@ -21,18 +21,11 @@ module load rhel7/default-ccl
 application="../../Build/scone.out"
 
 # List of files to run with the application
-#files=(
-#   "C5G7_RoddedB_TRRM_LS_n63"
-#    "C5G7_RoddedB_TRRM_LS_n63_pop35"
-#    "C5G7_RoddedB_TRRM_LS_n90"
-#    "C5G7_RoddedB_TRRM_LS_n90_halfPop"
-#    "C5G7_RoddedB_TRRM_n90"
-#)
 files=(
-    "BW_P0"
-    "BW_P1"
-    "BW_P2"
-    "BW_P3"
+    "BW_fine_P0"
+    "BW_fine_P1"
+    "BW_fine_P2"
+    "BW_fine_P3"
 )
 
 workdir="$SLURM_SUBMIT_DIR"
@@ -64,7 +57,7 @@ echo -e "\nnumtasks=$numtasks, numnodes=$numnodes, mpi_tasks_per_node=$mpi_tasks
 
 # Loop through each file and execute the application twice
 for file in "${files[@]}"; do
-    for run_number in 1 2; do #changeto123
+    for run_number in 1 2 3; do #changeto123
         # Make a backup of the file
         cp "$file" "$file.bak"
 

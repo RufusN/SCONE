@@ -5,7 +5,7 @@
 #SBATCH -p icelake
 #SBATCH --nodes=1
 #SBATCH --ntasks=76
-#SBATCH --time=00:01:00
+#SBATCH --time=10:00:00
 #SBATCH --mail-type=ALL
 ##SBATCH --no-requeue
 
@@ -21,19 +21,19 @@ module load rhel7/default-ccl
 application="../../Build/scone.out"
 
 # List of files to run with the application
-#files=(
-#   "C5G7_RoddedB_TRRM_LS_n63"
-#    "C5G7_RoddedB_TRRM_LS_n63_pop35"
-#    "C5G7_RoddedB_TRRM_LS_n90"
-#    "C5G7_RoddedB_TRRM_LS_n90_halfPop"
-#    "C5G7_RoddedB_TRRM_n90"
-#)
 files=(
-    "BW_P0"
-    "BW_P1"
-    "BW_P2"
-    "BW_P3"
+   "C5G7_RoddedB_TRRM_LS_n63"
+    "C5G7_RoddedB_TRRM_LS_n63_pop35"
+    "C5G7_RoddedB_TRRM_LS_n90"
+    "C5G7_RoddedB_TRRM_LS_n90_halfPop"
+    "C5G7_RoddedB_TRRM_n90"
 )
+#files=(
+#    "BW_P0"
+#    "BW_P1"
+#    "BW_coarse_P2"
+#    "BW_coarse_P3"
+#)
 
 workdir="$SLURM_SUBMIT_DIR"
 export OMP_NUM_THREADS=1 

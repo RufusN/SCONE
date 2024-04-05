@@ -1,6 +1,6 @@
-type linearP0RRPhysicsPackage;
+type anisotropicRRPhysicsPackage;
 
-pop      6500; 
+pop      8000; 
 active   2500;  
 inactive 1200; 
 dead     20;  
@@ -8,10 +8,11 @@ termination 220;
 plot 1;
 cache 1;
 XSdata mg;
-SHOrder 2; //scattering order
+SHOrder 1; //scattering order
+//rho 0.0; //rho stabilisation factor
 dataType mg;
 outputFormat asciiJSON;
-outputFile BW_coarse;
+outputFile Flat_new_fine_P3_1 ;
 
 // Specify output format default asciiMATLAB
 fissionMap {type multiMap;
@@ -47,21 +48,24 @@ geometry {
     everything {id 500; type cellUniverse; cells (1 2); origin (0.0 0.0 0.0 ); }
 
     // Pin universes
+
     !pin10 { id 10; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
-    !        radii ( 0.297335 0.42045 0.515 0.522 0.603 0.72862 0.83557 0.9303 1.01623 0.0 ); 
-    !        fills (fuel fuel fuel void alClad water water water water water);}
+    !        radii ( 0.297335 0.42045 0.515 0.522 0.603 0.8 0.0 ); 
+    !        fills (fuel fuel fuel void alClad water water);}
     !pin15 { id 15; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
-    !        radii ( 0.297335 0.42045 0.515 0.522 0.603 0.72862 0.83557 0.9303 1.01623 0.0 ); 
-    !        fills (fuel1 fuel1 fuel1 void alClad water water water water water);}
-
-    pin10 { id 10; type azimPinUniverse; nazR (4 4 8 8); rotation (0.0 0.0 0.0);
-            radii ( 0.515 0.522 0.603 0.0 ); 
-            fills (fuel void alClad water);}
-    pin15 { id 15; type azimPinUniverse; nazR (4 4 8 8); rotation (0.0 0.0 0.0);
-            radii ( 0.515 0.522 0.603 0.0 ); 
-            fills ( fuel1 void alClad water);}
-
-    water1 { id 20; type pinUniverse; radii (0.0); fills (water1);}
+    !        radii ( 0.297335 0.42045 0.515 0.522 0.603 0.8 0.0 ); 
+    !        fills (fuel1 fuel1 fuel1 void alClad water water);}
+    pin10 { id 10; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
+  	radii (0.15 0.297335 0.3588925 0.42045 0.515 0.522 0.5625 0.603 0.7015 0.8 1.0 0.0); 
+        fills (fuel fuel fuel fuel fuel void alClad alClad water water water water);}
+           ! radii ( 0.297335 0.42045 0.515 0.522 0.603 0.8 0.0 ); 
+           ! fills (fuel fuel fuel void alClad water water);}
+    pin15 { id 15; type azimPinUniverse; naz 8; rotation (22.5 0.0 0.0);
+        radii (0.15 0.297335 0.3588925 0.42045 0.515 0.522 0.5625 0.603 0.7015 0.8 1.0 0.0); 
+        fills (fuel1 fuel1 fuel1 fuel1 fuel1 void alClad alClad water water water water);}
+           ! radii ( 0.297335 0.42045 0.515 0.522 0.603 0.8 0.0 ); 
+           ! fills (fuel1 fuel1 fuel1 void alClad water water);}
+    water1 { id 20; type pinUniverse; radii (0.0 ); fills (water1);}
 
     // Lattices
 
@@ -69,43 +73,43 @@ geometry {
       id 25;
       type latUniverse;
       origin (0.0 0.0 0.0);
-      pitch (1.636 1.636 0.0);
-      shape (1 1 0);
+      pitch (0.1636 0.1636 0.0);
+      shape (10 10 0);
       padMat water1;
       map (
-        20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
       );
     }
-
 
     latFineWater {
       id 26;
       type latUniverse;
       origin (0.0 0.0 0.0);
-      pitch (1.636 1.636 0.0);
-      shape (1 1 0);
+      pitch (0.1636 0.1636 0.0);
+      shape (10 10 0);
       padMat water1;
       map (
-        20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
+        20 20 20 20 20 20 20 20 20 20
       );
     }
-
-    // latFineWater {
-    //   id 26;
-    //   type latUniverse;
-    //   origin (0.0 0.0 0.0);
-    //   pitch (0.3272 0.3272 0.0);
-    //   shape (5 5 0);
-    //   padMat water1;
-    //   map (
-    //     20 20 20 20 20 
-    //     20 20 20 20 20
-    //     20 20 20 20 20
-    //     20 20 20 20 20
-    //     20 20 20 20 20
-    //     20 20 20 20 20
-    //   );
-    // }
 
     latBigWater {
       id 200;
@@ -330,7 +334,7 @@ viz {
   }
   bmp1 {
     type bmp;
-    output core_coarse;
+    output core;
     what uniqueID;
     centre (0.0 0.0 0.0);
     //width (25.0 25.0);
@@ -339,13 +343,20 @@ viz {
   }
   bmp2 {
     type bmp;
-    output zoom_coarse;
+    output zoom;
     what uniqueID;
     centre (0.0 0.0 0.0);
     width (10.0 10.0);
     axis z;
     res (1500 1500);
   }
+  bmp3 { 
+    type bmp; 
+    output BW_geom; 
+    what material; 
+    centre (0.0 0.0 10.0); 
+    axis z; 
+    res (1000 1000);  }
 }
 
 
@@ -358,37 +369,33 @@ nuclearData {
     water {
       temp 75675;
       composition {}
-    //   xsFile ../XS_BW/water_P1.txt;
       xsFile ../XS_BW/water_P3.txt;
       }
 
     water1 {
       temp 75675;
       composition {}
-    //   xsFile ../XS_BW/water1_P1.txt;
       xsFile ../XS_BW/water1_P3.txt;
       }
 
      alClad {
        temp 9876;
        composition {}
-    //    xsFile ../XS_BW/alClad_P1.txt;
        xsFile ../XS_BW/alClad_P3.txt;
     }
 
     fuel {
       temp 87476;
       composition {}
-    //   xsFile ../XS_BW/fuel_P1.txt;
       xsFile ../XS_BW/fuel_P3.txt;
     }
 
     fuel1 {
       temp 87476;
       composition {}
-    //   xsFile ../XS_BW/fuel1_P1.txt;
       xsFile ../XS_BW/fuel1_P3.txt;
     }
+
 
    }
 }
