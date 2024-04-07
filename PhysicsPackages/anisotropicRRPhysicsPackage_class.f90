@@ -800,6 +800,20 @@ contains
             length = self % dead - totalLength
         end if
 
+        ! Include for limited maximum optical length
+
+        ! maxtot = 0.0_defFlt
+        ! !$omp simd
+        ! do g = 1, self % nG
+        !   if (maxtot < totVec(g)) then
+        !     maxtot = totVec(g)
+        !   end if
+        ! end do
+  
+        ! if ((30.0_defFlt/maxtot) < length) then
+        !   length = real(30.0_defFlt/maxtot)
+        ! end if  
+
         ! Move ray
         ! Use distance caching or standard ray tracing
         ! Distance caching seems a little bit more unstable
@@ -838,7 +852,15 @@ contains
 
         !$omp simd aligned(totVec)
         do g = 1, self % nG
-            attenuate(g) = expTau(totVec(g) * lenFlt) * lenFlt
+          tau(g) = totVec(g) * lenFlt
+          if (tau(g) < 1E-8) then
+            tau(g) = 0.0_defFlt
+          end if
+        end do
+
+        !$omp simd 
+        do g = 1, self % nG
+            attenuate(g) = expTau(tau(g)) * lenFlt
             delta(g) = (fluxVec(g) - currentSource(g)) * attenuate(g)     
             fluxVec(g) = fluxVec(g) - delta(g) * totVec(g)
         end do
