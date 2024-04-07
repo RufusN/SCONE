@@ -59,7 +59,7 @@ echo -e "\nnumtasks=$numtasks, numnodes=$numnodes, mpi_tasks_per_node=$mpi_tasks
 for file in "${files[@]}"; do
     for run_number in 1 2 3; do #changeto123
         # Make a backup of the file
-        cp "$file" "$file.bak"
+        #cp "$file" "$file.bak"
 
         # Replace the line starting with "outputFile" with the new desired output line
         sed -i "/^outputFile/c\outputFile ${file}_run${run_number};" "$file"
@@ -71,6 +71,6 @@ for file in "${files[@]}"; do
         eval $CMD
 
         # Restore the original file from backup
-        mv "$file.bak" "$file"
+        #mv "$file.bak" "$file"
     done
 done
