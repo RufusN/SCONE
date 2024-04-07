@@ -54,10 +54,8 @@ module anisotropicRRPhysicsPackage_class
   ! Parameter for when to skip a tiny volume
   real(defReal), parameter :: volume_tolerance = 1.0E-10, &
                                 SQRT3 = sqrt(3._defReal), &
-                                SQRT5 = sqrt(5._defReal), &
-                                SQRT15 = sqrt(15._defReal), & 
-                                !SQRT3_8 = sqrt(3._defReal/8._defReal), &
-                                !SQRT5_8 = sqrt(5._defReal/8._defReal), &
+                                SQRT5_2 = sqrt(5._defReal)/2._defReal, &
+                                SQRT15_2 = sqrt(15._defReal)/2._defReal, & 
                                 SQRT70_4 = sqrt(70._defReal)/4._defReal, &
                                 SQRT105 = sqrt(105._defReal), &
                                 SQRT42_4 = sqrt(42._defReal)/4._defReal, &
@@ -908,7 +906,7 @@ contains
     ! angle: x = r sin θ cos φ, y = r sin θ sin φ, and z = r cos θ
     class(anisotropicRRPhysicsPackage), intent(inout)       :: self
     real(defFlt), dimension(self % SHLength), intent(out)  :: RCoeffs ! Array to store harmonic coefficients
-    real(defReal)                                           :: dirX,dirY,dirZ
+    real(defReal)                                           :: dirX, dirY, dirZ, dirX2, dirY2, dirZ2
     real(defReal), dimension(3), intent(in)                 :: mu
 
     dirX = mu(1)
