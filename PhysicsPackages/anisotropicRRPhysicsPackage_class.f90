@@ -747,8 +747,7 @@ contains
     logical(defBool)                                      :: activeRay, hitVacuum, newRay
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt
-    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
-    real(defFlt), dimension(self % nG)                    :: currentSource
+    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, currentSource, tau
     real(defFlt), pointer, dimension(:)                   :: totVec
     real(defReal), dimension(3)                           :: r0, mu0
     real(defFlt), dimension(self % SHLength)              :: RCoeffs   
