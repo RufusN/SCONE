@@ -1,6 +1,6 @@
 type anisotropicRRPhysicsPackage;
 
-pop      8000; 
+pop      10000; 
 active   2500;  
 inactive 1200; 
 dead     20;  

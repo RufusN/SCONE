@@ -55,7 +55,7 @@ module linearP0RRPhysicsPackage_class
   real(defReal), parameter :: volume_tolerance = 1.0E-10, &
                                 SQRT3 = sqrt(3._defReal), &
                                 SQRT5_2 = sqrt(5._defReal)/2._defReal, &
-                                SQRT15_2 = sqrt(15._defReal)/2._defReal, & 
+                                SQRT15 = sqrt(15._defReal), & 
                                 SQRT70_4 = sqrt(70._defReal)/4._defReal, &
                                 SQRT105 = sqrt(105._defReal), &
                                 SQRT42_4 = sqrt(42._defReal)/4._defReal, &
@@ -864,17 +864,17 @@ contains
         length = self % dead - totalLength
       end if
 
-      maxtot = 0.0_defFlt
-      !$omp simd
-      do g = 1, self % nG
-        if (maxtot < totVec(g)) then
-          maxtot = totVec(g)
-        end if
-      end do
+      ! maxtot = 0.0_defFlt
+      ! !$omp simd
+      ! do g = 1, self % nG
+      !   if (maxtot < totVec(g)) then
+      !     maxtot = totVec(g)
+      !   end if
+      ! end do
 
-      if ((30.0_defFlt/maxtot) < length) then
-        length = real(30.0_defFlt/maxtot)
-      end if
+      ! if ((30.0_defFlt/maxtot) < length) then
+      !   length = real(30.0_defFlt/maxtot)
+      ! end if
       
       ! Move ray
       if (self % cache) then
@@ -1141,6 +1141,7 @@ contains
     dirX = mu(1)
     dirY = mu(2)
     dirZ = mu(3)
+    ! Assign coefficients based on SHOrder
     select case(self % SHLength)
     case(1)  
         RCoeffs(1) = 1.0_defFlt 
@@ -1162,11 +1163,12 @@ contains
         RCoeffs(2) = real(SQRT3 * dirY,defFlt)
         RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
         RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
-        RCoeffs(5) = real(SQRT15_2 * dirX * dirY,defFlt)
-        RCoeffs(6) = real(SQRT15_2 * dirZ * dirY,defFlt) 
+
+        RCoeffs(5) = real(SQRT15 * dirX * dirY,defFlt)
+        RCoeffs(6) = real(SQRT15 * dirZ * dirY,defFlt) 
         RCoeffs(7) = real(SQRT5_2 * (3 * dirZ2 - 1),defFlt)
-        RCoeffs(8) = real(SQRT15_2 * dirX * dirZ,defFlt) 
-        RCoeffs(9) = real(SQRT15_2 * (dirX2 - dirY2),defFlt) 
+        RCoeffs(8) = real(SQRT15 * dirX * dirZ,defFlt) 
+        RCoeffs(9) = real(SQRT15 * HALF * (dirX2 - dirY2),defFlt) 
 
     case(16) 
         dirX2 = dirX*dirX
@@ -1178,18 +1180,20 @@ contains
         RCoeffs(2) = real(SQRT3 * dirY,defFlt)
         RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
         RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
-        RCoeffs(5) = real(SQRT15_2 * dirX * dirY,defFlt)
-        RCoeffs(6) = real(SQRT15_2 * dirZ * dirY,defFlt) 
+
+        RCoeffs(5) = real(SQRT15 * dirX * dirY,defFlt)
+        RCoeffs(6) = real(SQRT15 * dirZ * dirY,defFlt) 
         RCoeffs(7) = real(SQRT5_2 * (3 * dirZ2 - 1),defFlt)
-        RCoeffs(8) = real(SQRT15_2 * dirX * dirZ,defFlt) 
-        RCoeffs(9) = real(SQRT15_2 * (dirX2 - dirY2),defFlt)  
+        RCoeffs(8) = real(SQRT15 * dirX * dirZ,defFlt) 
+        RCoeffs(9) = real(SQRT15 * HALF * (dirX2 - dirY2),defFlt) 
+         
     
         RCoeffs(10) = real(SQRT70_4 * dirY * (3 * dirX2 - dirY2),defFlt)
         RCoeffs(11) = real(SQRT105 * dirZ * dirX * dirY,defFlt)
         RCoeffs(12) = real(SQRT42_4 * dirY * (5 * dirZ2 - 1),defFlt)
         RCoeffs(13) = real(SQRT7_2 * dirZ * (5 * dirZ2 - 3),defFlt)
         RCoeffs(14) = real(SQRT42_4 * dirX * (5 * dirZ2 - 1),defFlt)
-        RCoeffs(15) = real(SQRT105 * dirZ * (dirX2 - dirY2),defFlt)
+        RCoeffs(15) = real(SQRT105 * dirZ * HALF * (dirX2 - dirY2),defFlt)
         RCoeffs(16) = real(SQRT70_4 * dirX * (dirX2 - 3 * dirY2),defFlt)
     end select
 

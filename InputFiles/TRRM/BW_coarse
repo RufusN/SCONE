@@ -9,7 +9,7 @@ termination 220;
 plot 1;
 cache 1;
 XSdata mg;
-SHOrder 1; //scattering order
+SHOrder 2; //scattering order
 dataType mg;
 outputFormat asciiJSON;
 outputFile BW_coarse;
@@ -70,11 +70,12 @@ geometry {
       id 25;
       type latUniverse;
       origin (0.0 0.0 0.0);
-      pitch (1.636 1.636 0.0);
-      shape (1 1 0);
+      pitch (0.818 0.818 0.0);
+      shape (2 2 0);
       padMat water1;
       map (
-        20
+        20 20
+        20 20
       );
     }
 
@@ -83,11 +84,12 @@ geometry {
       id 26;
       type latUniverse;
       origin (0.0 0.0 0.0);
-      pitch (1.636 1.636 0.0);
-      shape (1 1 0);
+      pitch (0.818 0.818 0.0);
+      shape (2 2 0);
       padMat water1;
       map (
-        20
+        20 20
+        20 20
       );
     }
 

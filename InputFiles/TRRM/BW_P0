@@ -1,6 +1,6 @@
 type linearP0RRPhysicsPackage;
 
-pop      6500; 
+pop      8000; 
 active   2500;  
 inactive 1200; 
 dead     20;  

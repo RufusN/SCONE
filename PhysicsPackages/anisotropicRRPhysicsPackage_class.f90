@@ -54,10 +54,8 @@ module anisotropicRRPhysicsPackage_class
   ! Parameter for when to skip a tiny volume
   real(defReal), parameter :: volume_tolerance = 1.0E-10, &
                                 SQRT3 = sqrt(3._defReal), &
-                                SQRT5 = sqrt(5._defReal), &
+                                SQRT5_2 = sqrt(5._defReal)/2._defReal, &
                                 SQRT15 = sqrt(15._defReal), & 
-                                !SQRT3_8 = sqrt(3._defReal/8._defReal), &
-                                !SQRT5_8 = sqrt(5._defReal/8._defReal), &
                                 SQRT70_4 = sqrt(70._defReal)/4._defReal, &
                                 SQRT105 = sqrt(105._defReal), &
                                 SQRT42_4 = sqrt(42._defReal)/4._defReal, &
@@ -746,9 +744,8 @@ contains
     real(defReal)                                         :: totalLength, length
     logical(defBool)                                      :: activeRay, hitVacuum, newRay
     type(distCache)                                       :: cache
-    real(defFlt)                                          :: lenFlt
-    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
-    real(defFlt), dimension(self % nG)                    :: currentSource
+    real(defFlt)                                          :: lenFlt, maxtot
+    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, currentSource, tau
     real(defFlt), pointer, dimension(:)                   :: totVec
     real(defReal), dimension(3)                           :: r0, mu0
     real(defFlt), dimension(self % SHLength)              :: RCoeffs   
@@ -783,7 +780,7 @@ contains
           totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
         end if
 
-        ! Caluclate r0 and mu0, mu0 used in SHarmonics
+        ! Calculate r0 and mu0, mu0 used in SHarmonics
         r0 = r % rGlobal()
         mu0 = r % dirGlobal()
 
@@ -799,6 +796,20 @@ contains
         else
             length = self % dead - totalLength
         end if
+
+        ! Include for limited maximum optical length
+
+        ! maxtot = 0.0_defFlt
+        ! !$omp simd
+        ! do g = 1, self % nG
+        !   if (maxtot < totVec(g)) then
+        !     maxtot = totVec(g)
+        !   end if
+        ! end do
+  
+        ! if ((30.0_defFlt/maxtot) < length) then
+        !   length = real(30.0_defFlt/maxtot)
+        ! end if  
 
         ! Move ray
         ! Use distance caching or standard ray tracing
@@ -830,15 +841,28 @@ contains
 
         !$omp simd
         do g = 1, self % nG
-            currentSource(g) = 0.0_defFlt
-            do SH = 1, self % SHLength
-              currentSource(g) = currentSource(g) + sourceVec(g,SH) * RCoeffs(SH)
-            end do 
+          currentSource(g) = 0.0_defFlt
+        end do 
+  
+        ! Calculates source for higher order moments.
+        do SH = 1, self % SHLength
+          !$omp simd
+          do g = 1, self % nG
+            currentSource(g) = currentSource(g) + sourceVec(g,SH) * RCoeffs(SH) 
+          end do 
         end do
 
         !$omp simd aligned(totVec)
         do g = 1, self % nG
-            attenuate(g) = expTau(totVec(g) * lenFlt) * lenFlt
+          tau(g) = totVec(g) * lenFlt
+          if (tau(g) < 1E-8) then
+            tau(g) = 0.0_defFlt
+          end if
+        end do
+
+        !$omp simd 
+        do g = 1, self % nG
+            attenuate(g) = expTau(tau(g)) * lenFlt
             delta(g) = (fluxVec(g) - currentSource(g)) * attenuate(g)     
             fluxVec(g) = fluxVec(g) - delta(g) * totVec(g)
         end do
@@ -846,17 +870,20 @@ contains
 
       ! Accumulate to scalar flux
       if (activeRay) then
-
-        angularMomVec => self % moments((baseIdx + 1):(baseIdx + self % nG), :)
       
         call OMP_set_lock(self % locks(cIdx))
-        !$omp simd aligned(angularMomVec)
-        do g = 1, self % nG
-          do SH = 1, self % SHLength
-            angularMomVec(g,SH)  = angularMomVec(g,SH) + delta(g) * RCoeffs(SH)
-          end do  
+
+        angularMomVec => self % moments((baseIdx + 1):(baseIdx + self % nG), :)
+
+        do SH = 1, self % SHLength
+          !$omp simd aligned(angularMomVec)
+          do g = 1, self % nG
+            angularMomVec(g, SH) = angularMomVec(g, SH) + delta(g) * RCoeffs(SH) 
+          end do
         end do
+
         self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
+
         call OMP_unset_lock(self % locks(cIdx))
 
         if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
@@ -878,10 +905,9 @@ contains
   subroutine SphericalHarmonicCalculator(self, mu, RCoeffs)
     ! angle: x = r sin θ cos φ, y = r sin θ sin φ, and z = r cos θ
     class(anisotropicRRPhysicsPackage), intent(inout)       :: self
-    real(defFlt), dimension(self % SHLength), intent(out)  :: RCoeffs ! Array to store harmonic coefficients
-    real(defReal)                                           :: dirX,dirY,dirZ
+    real(defFlt), dimension(self % SHLength), intent(out)   :: RCoeffs ! Array to store harmonic coefficients
+    real(defReal)                                           :: dirX, dirY, dirZ, dirX2, dirY2, dirZ2
     real(defReal), dimension(3), intent(in)                 :: mu
-
 
     dirX = mu(1)
     dirY = mu(2)
@@ -895,41 +921,52 @@ contains
     case(4)  
         RCoeffs(1) = 1.0_defFlt 
 
-        RCoeffs(2) = real(SQRT3 * dirY,defFlt)
-        RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
-        RCoeffs(4) = real(SQRT3 * dirX,defFlt)    
+        RCoeffs(2) = real(SQRT3 * dirY,defFlt) 
+        RCoeffs(3) = real(SQRT3 * dirZ,defFlt) 
+        RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
 
     case(9) 
-        RCoeffs(1) = 1.0_defFlt 
+        dirX2 = dirX*dirX
+        dirY2 = dirY*dirY
+        dirZ2 = dirZ*dirZ 
+
+        RCoeffs(1) = 1.0_defFlt
 
         RCoeffs(2) = real(SQRT3 * dirY,defFlt)
         RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
         RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
-        RCoeffs(5) = real(SQRT15 * HALF * dirX * dirY,defFlt) 
-        RCoeffs(6) = real(SQRT15 * HALF * dirZ * dirY,defFlt) 
-        RCoeffs(7) = real(SQRT5 * HALF * (3 * dirZ**2 - 1),defFlt)
-        RCoeffs(8) = real(SQRT15 * HALF * dirX * dirZ,defFlt) 
-        RCoeffs(9) = real(SQRT15 * HALF * (dirX**2 - dirY**2),defFlt) 
+
+        RCoeffs(5) = real(SQRT15 * dirX * dirY,defFlt)
+        RCoeffs(6) = real(SQRT15 * dirZ * dirY,defFlt) 
+        RCoeffs(7) = real(SQRT5_2 * (3 * dirZ2 - 1),defFlt)
+        RCoeffs(8) = real(SQRT15 * dirX * dirZ,defFlt) 
+        RCoeffs(9) = real(SQRT15 * HALF * (dirX2 - dirY2),defFlt) 
 
     case(16) 
+        dirX2 = dirX*dirX
+        dirY2 = dirY*dirY
+        dirZ2 = dirZ*dirZ
+
         RCoeffs(1) = 1.0_defFlt 
 
         RCoeffs(2) = real(SQRT3 * dirY,defFlt)
         RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
         RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
-        RCoeffs(5) = real(SQRT15 * HALF * dirX * dirY,defFlt)
-        RCoeffs(6) = real(SQRT15 * HALF * dirZ * dirY,defFlt) 
-        RCoeffs(7) = real(SQRT5 * HALF * (3 * dirZ**2 - 1),defFlt)
-        RCoeffs(8) = real(SQRT15 * HALF * dirX * dirZ,defFlt) 
-        RCoeffs(9) = real(SQRT15 * HALF * (dirX**2 - dirY**2),defFlt) 
 
-        RCoeffs(10) = real(SQRT70_4 * dirY * (3 * dirX**2 - dirY**2),defFlt)
+        RCoeffs(5) = real(SQRT15 * dirX * dirY,defFlt)
+        RCoeffs(6) = real(SQRT15 * dirZ * dirY,defFlt) 
+        RCoeffs(7) = real(SQRT5_2 * (3 * dirZ2 - 1),defFlt)
+        RCoeffs(8) = real(SQRT15 * dirX * dirZ,defFlt) 
+        RCoeffs(9) = real(SQRT15 * HALF * (dirX2 - dirY2),defFlt) 
+         
+    
+        RCoeffs(10) = real(SQRT70_4 * dirY * (3 * dirX2 - dirY2),defFlt)
         RCoeffs(11) = real(SQRT105 * dirZ * dirX * dirY,defFlt)
-        RCoeffs(12) = real(SQRT42_4 * dirY * (5 * dirZ**2 - 1),defFlt)
-        RCoeffs(13) = real(SQRT7_2 * dirZ * (5 * dirZ**2 - 3),defFlt)
-        RCoeffs(14) = real(SQRT42_4 * dirX * (5 * dirZ**2 - 1),defFlt)
-        RCoeffs(15) = real(SQRT105 * dirZ * (dirX**2 - dirY**2),defFlt)
-        RCoeffs(16) = real(SQRT70_4 * dirX * (dirX**2 - 3 * dirY**2),defFlt)
+        RCoeffs(12) = real(SQRT42_4 * dirY * (5 * dirZ2 - 1),defFlt)
+        RCoeffs(13) = real(SQRT7_2 * dirZ * (5 * dirZ2 - 3),defFlt)
+        RCoeffs(14) = real(SQRT42_4 * dirX * (5 * dirZ2 - 1),defFlt)
+        RCoeffs(15) = real(SQRT105 * dirZ * HALF * (dirX2 - dirY2),defFlt)
+        RCoeffs(16) = real(SQRT70_4 * dirX * (dirX2 - 3 * dirY2),defFlt)
     end select
   end subroutine SphericalHarmonicCalculator
 
@@ -1139,16 +1176,14 @@ contains
     class(anisotropicRRPhysicsPackage), intent(inout) :: self
     integer(shortInt)                                 :: idx, SH
 
-   !$omp parallel do schedule(static)
-    do idx = 1, (self % nG * self % nCells)
-      !$omp simd
-      do SH = 1, self % SHLength
-        self % prevMoments(idx,SH) = self % moments(idx,SH) 
-        self % moments(idx,SH) = 0.0_defFlt
+    do SH = 1, self % SHLength
+      !$omp parallel do schedule(static)
+      do idx = 1, (self % nG * self % nCells)
+          self % prevMoments(idx,SH) = self % moments(idx,SH) 
+          self % moments(idx,SH) = 0.0_defFlt
       end do
-
+      !$omp end parallel do
     end do
-   !$omp end parallel do
 
   end subroutine resetFluxes
 
