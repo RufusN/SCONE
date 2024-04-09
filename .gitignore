@@ -11,6 +11,7 @@ cream.egg-info/
 
 # Ignore vtk files
 *.vtk
+*.bmp
 
 # Used for testing
 PhysicsPackages/testPackage_class.f90
