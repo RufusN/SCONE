@@ -55,7 +55,7 @@ module anisotropicRRPhysicsPackage_class
   real(defReal), parameter :: volume_tolerance = 1.0E-10, &
                                 SQRT3 = sqrt(3._defReal), &
                                 SQRT5_2 = sqrt(5._defReal)/2._defReal, &
-                                SQRT15_2 = sqrt(15._defReal)/2._defReal, & 
+                                SQRT15 = sqrt(15._defReal), & 
                                 SQRT70_4 = sqrt(70._defReal)/4._defReal, &
                                 SQRT105 = sqrt(105._defReal), &
                                 SQRT42_4 = sqrt(42._defReal)/4._defReal, &
@@ -744,7 +744,7 @@ contains
     real(defReal)                                         :: totalLength, length
     logical(defBool)                                      :: activeRay, hitVacuum, newRay
     type(distCache)                                       :: cache
-    real(defFlt)                                          :: lenFlt
+    real(defFlt)                                          :: lenFlt, maxtot
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, currentSource, tau
     real(defFlt), pointer, dimension(:)                   :: totVec
     real(defReal), dimension(3)                           :: r0, mu0
@@ -780,7 +780,7 @@ contains
           totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
         end if
 
-        ! Caluclate r0 and mu0, mu0 used in SHarmonics
+        ! Calculate r0 and mu0, mu0 used in SHarmonics
         r0 = r % rGlobal()
         mu0 = r % dirGlobal()
 
@@ -839,7 +839,7 @@ contains
         baseIdx = (cIdx - 1) * self % nG
         sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG), :)
 
-      !$omp simd
+        !$omp simd
         do g = 1, self % nG
           currentSource(g) = 0.0_defFlt
         end do 
@@ -905,7 +905,7 @@ contains
   subroutine SphericalHarmonicCalculator(self, mu, RCoeffs)
     ! angle: x = r sin θ cos φ, y = r sin θ sin φ, and z = r cos θ
     class(anisotropicRRPhysicsPackage), intent(inout)       :: self
-    real(defFlt), dimension(self % SHLength), intent(out)  :: RCoeffs ! Array to store harmonic coefficients
+    real(defFlt), dimension(self % SHLength), intent(out)   :: RCoeffs ! Array to store harmonic coefficients
     real(defReal)                                           :: dirX, dirY, dirZ, dirX2, dirY2, dirZ2
     real(defReal), dimension(3), intent(in)                 :: mu
 
@@ -935,11 +935,17 @@ contains
         RCoeffs(2) = real(SQRT3 * dirY,defFlt)
         RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
         RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
-        RCoeffs(5) = real(SQRT15_2 * dirX * dirY,defFlt)
-        RCoeffs(6) = real(SQRT15_2 * dirZ * dirY,defFlt) 
+
+        ! RCoeffs(5) = real(SQRT15_2 * dirX * dirY,defFlt)
+        ! RCoeffs(6) = real(SQRT15_2 * dirZ * dirY,defFlt) 
+        ! RCoeffs(7) = real(SQRT5_2 * (3 * dirZ2 - 1),defFlt)
+        ! RCoeffs(8) = real(SQRT15_2 * dirX * dirZ,defFlt) 
+        ! RCoeffs(9) = real(SQRT15_2 * (dirX2 - dirY2),defFlt) 
+        RCoeffs(5) = real(SQRT15 * dirX * dirY,defFlt)
+        RCoeffs(6) = real(SQRT15 * dirZ * dirY,defFlt) 
         RCoeffs(7) = real(SQRT5_2 * (3 * dirZ2 - 1),defFlt)
-        RCoeffs(8) = real(SQRT15_2 * dirX * dirZ,defFlt) 
-        RCoeffs(9) = real(SQRT15_2 * (dirX2 - dirY2),defFlt) 
+        RCoeffs(8) = real(SQRT15 * dirX * dirZ,defFlt) 
+        RCoeffs(9) = real(SQRT15 * HALF * (dirX2 - dirY2),defFlt) 
 
     case(16) 
         dirX2 = dirX*dirX
@@ -951,18 +957,20 @@ contains
         RCoeffs(2) = real(SQRT3 * dirY,defFlt)
         RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
         RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
-        RCoeffs(5) = real(SQRT15_2 * dirX * dirY,defFlt)
-        RCoeffs(6) = real(SQRT15_2 * dirZ * dirY,defFlt) 
+
+        RCoeffs(5) = real(SQRT15 * dirX * dirY,defFlt)
+        RCoeffs(6) = real(SQRT15 * dirZ * dirY,defFlt) 
         RCoeffs(7) = real(SQRT5_2 * (3 * dirZ2 - 1),defFlt)
-        RCoeffs(8) = real(SQRT15_2 * dirX * dirZ,defFlt) 
-        RCoeffs(9) = real(SQRT15_2 * (dirX2 - dirY2),defFlt)  
+        RCoeffs(8) = real(SQRT15 * dirX * dirZ,defFlt) 
+        RCoeffs(9) = real(SQRT15 * HALF * (dirX2 - dirY2),defFlt) 
+         
     
         RCoeffs(10) = real(SQRT70_4 * dirY * (3 * dirX2 - dirY2),defFlt)
         RCoeffs(11) = real(SQRT105 * dirZ * dirX * dirY,defFlt)
         RCoeffs(12) = real(SQRT42_4 * dirY * (5 * dirZ2 - 1),defFlt)
         RCoeffs(13) = real(SQRT7_2 * dirZ * (5 * dirZ2 - 3),defFlt)
         RCoeffs(14) = real(SQRT42_4 * dirX * (5 * dirZ2 - 1),defFlt)
-        RCoeffs(15) = real(SQRT105 * dirZ * (dirX2 - dirY2),defFlt)
+        RCoeffs(15) = real(SQRT105 * dirZ * HALF * (dirX2 - dirY2),defFlt)
         RCoeffs(16) = real(SQRT70_4 * dirX * (dirX2 - 3 * dirY2),defFlt)
     end select
   end subroutine SphericalHarmonicCalculator
