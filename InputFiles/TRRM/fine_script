@@ -22,8 +22,6 @@ application="../../Build/scone.out"
 
 # List of files to run with the application
 files=(
-    "BW_fine_P0"
-    "BW_fine_P1"
     "BW_fine_P2"
     "BW_fine_P3"
 )
