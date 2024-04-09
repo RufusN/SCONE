@@ -54,7 +54,7 @@ echo -e "\nnumtasks=$numtasks, numnodes=$numnodes, mpi_tasks_per_node=$mpi_tasks
 
 # Loop through each file and execute the application twice
 for file in "${files[@]}"; do
-    for run_number in 1 2; do #changeto123
+    for run_number in 2; do #changeto123
         # Make a backup of the file
         #cp "$file" "$file.bak"
 
