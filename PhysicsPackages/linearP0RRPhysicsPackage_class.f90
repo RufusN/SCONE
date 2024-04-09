@@ -1141,6 +1141,7 @@ contains
     dirX = mu(1)
     dirY = mu(2)
     dirZ = mu(3)
+    ! Assign coefficients based on SHOrder
     select case(self % SHLength)
     case(1)  
         RCoeffs(1) = 1.0_defFlt 
@@ -1185,18 +1186,14 @@ contains
         RCoeffs(7) = real(SQRT5_2 * (3 * dirZ2 - 1),defFlt)
         RCoeffs(8) = real(SQRT15 * dirX * dirZ,defFlt) 
         RCoeffs(9) = real(SQRT15 * HALF * (dirX2 - dirY2),defFlt) 
-        ! RCoeffs(5) = real(SQRT15_2 * dirX * dirY,defFlt)
-        ! RCoeffs(6) = real(SQRT15_2 * dirZ * dirY,defFlt) 
-        ! RCoeffs(7) = real(SQRT5_2 * (3 * dirZ2 - 1),defFlt)
-        ! RCoeffs(8) = real(SQRT15_2 * dirX * dirZ,defFlt) 
-        ! RCoeffs(9) = real(SQRT15_2 * (dirX2 - dirY2),defFlt)  
+         
     
         RCoeffs(10) = real(SQRT70_4 * dirY * (3 * dirX2 - dirY2),defFlt)
         RCoeffs(11) = real(SQRT105 * dirZ * dirX * dirY,defFlt)
         RCoeffs(12) = real(SQRT42_4 * dirY * (5 * dirZ2 - 1),defFlt)
         RCoeffs(13) = real(SQRT7_2 * dirZ * (5 * dirZ2 - 3),defFlt)
         RCoeffs(14) = real(SQRT42_4 * dirX * (5 * dirZ2 - 1),defFlt)
-        RCoeffs(15) = real(SQRT105 * HALF * dirZ * (dirX2 - dirY2),defFlt)
+        RCoeffs(15) = real(SQRT105 * dirZ * HALF * (dirX2 - dirY2),defFlt)
         RCoeffs(16) = real(SQRT70_4 * dirX * (dirX2 - 3 * dirY2),defFlt)
     end select
 

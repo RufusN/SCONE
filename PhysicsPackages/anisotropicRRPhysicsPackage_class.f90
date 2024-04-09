@@ -936,11 +936,6 @@ contains
         RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
         RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
 
-        ! RCoeffs(5) = real(SQRT15_2 * dirX * dirY,defFlt)
-        ! RCoeffs(6) = real(SQRT15_2 * dirZ * dirY,defFlt) 
-        ! RCoeffs(7) = real(SQRT5_2 * (3 * dirZ2 - 1),defFlt)
-        ! RCoeffs(8) = real(SQRT15_2 * dirX * dirZ,defFlt) 
-        ! RCoeffs(9) = real(SQRT15_2 * (dirX2 - dirY2),defFlt) 
         RCoeffs(5) = real(SQRT15 * dirX * dirY,defFlt)
         RCoeffs(6) = real(SQRT15 * dirZ * dirY,defFlt) 
         RCoeffs(7) = real(SQRT5_2 * (3 * dirZ2 - 1),defFlt)
