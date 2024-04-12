@@ -2316,8 +2316,8 @@ contains
       mIdx = (cIdx - 1) * matSize
 
       ! Update volume due to additional rays
-      self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
-      vol = real(self % volume(cIdx),defFlt)
+      !self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
+      !vol = real(self % volume(cIdx),defFlt)
       ! Update volume due to additional rays unless volume was precomputed
       !if (self % nVolRays <= 0) then
       ! Forget the above - use precomputed volumes only for first collided
