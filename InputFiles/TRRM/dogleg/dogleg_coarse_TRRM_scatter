@@ -1,4 +1,5 @@
-type fixedSourceTRRMPhysicsPackage; 
+//type fixedSourceTRRMPhysicsPackage; 
+type testPackage;
 
 // Currently no recommended settings for fixed source problems
 // but hopefully this will be updated in future!
@@ -439,6 +440,20 @@ viz {
     vox ( 60 100 60 );
 //    vox ( 6 10 6 );
   }
+  bmp2 { 
+    type bmp; 
+    output slab_geom; 
+    what material; 
+    centre (0.0 0.0 0.0); 
+    axis z; 
+    res (1000 1000);  }
+  bmp1 { 
+    type bmp; 
+    output slab_mesh_geom; 
+    what uniqueID; 
+    centre (0.0 0.0 0.0); 
+    axis z; 
+    res (2000 2000);  }
 //    corner ( 0.5 0.5 0.5 );
 } 
 
