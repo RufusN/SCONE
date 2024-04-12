@@ -1976,6 +1976,10 @@ contains
         matIdx = self % nMatVOID
       end if
 
+      if  (matIdx > 5) then
+        print *, 'error'
+      end if
+
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
 
