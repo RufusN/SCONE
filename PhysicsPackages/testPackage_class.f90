@@ -1957,11 +1957,7 @@ contains
     if (cIdx > 0) then
       do g = 1, self % nG
         idx = (cIdx - 1) * self % nG + g
-        if (totVec(g) > 0.0_defFlt) then
-          fluxVec(g) = self % source(idx) / totVec(g)
-        else
-          fluxVec(g) = self % source(idx)
-        end if
+        fluxVec(g) = self % source(idx)
       end do
     else
       fluxVec = 0.0_defFlt
@@ -2271,7 +2267,7 @@ contains
         do g = 1, self % nG
           total = self % sigmaT((matIdx - 1) * self % nG + g)
           idx   = self % nG * (cIdx - 1) + g
-          self % scalarFlux(idx) = self % scalarFlux(idx) * normFlt / ( real(self % volume(cIdx),defFlt))!total *
+          self % scalarFlux(idx) = self % scalarFlux(idx) * normFlt / ( real(self % volume(cIdx),defFlt))
           self % scalarX(idx) = self % scalarX(idx) * normFlt / ( real(self % volume(cIdx),defFlt))
           self % scalarY(idx) = self % scalarY(idx) * normFlt / ( real(self % volume(cIdx),defFlt))
           self % scalarZ(idx) = self % scalarZ(idx) * normFlt / ( real(self % volume(cIdx),defFlt))
@@ -2544,8 +2540,8 @@ contains
       ! Output index
       idx = baseIdx + g
 
-      self % source(idx) = chi(g) * fission + scatter
-      self % source(idx) = self % source(idx) !/ total(g)
+      self % source(idx) = chi(g) * fission + scatter + self % fixedSource(idx)
+      self % source(idx) = self % source(idx) / total(g)
       xSource = chi(g) * xFission + xScatter
       xSource = xSource / total(g)
       ySource = chi(g) * yFission + yScatter
