@@ -12,7 +12,7 @@ plot 1;
 cache 1;
 XSdata   mg; 
 dataType mg;
-outputFile dogleg_coarse_TRRM_absorb;
+outputFile absorb_testpackage;
 printVolume 1;
 printFlux 1;
 volume 360000;
