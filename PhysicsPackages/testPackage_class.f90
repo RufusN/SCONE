@@ -1987,9 +1987,11 @@ contains
         totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
 
       end if
-  
+
+      !if (cIdx > 0) then
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
+      !end if
 
 
       ! Set maximum flight distance and ensure ray is active
@@ -1999,6 +2001,9 @@ contains
       else
         length = self % dead - totalLength
       end if
+
+      dirPre = r % dirGlobal()
+      posPre = r % rGlobal()
 
       ! Move ray
       ! Use distance caching or standard ray tracing
