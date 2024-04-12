@@ -2407,9 +2407,6 @@ contains
         self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
         self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
         self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
-        ! D = 0.0_defFlt
-        !   self % scalarFlux(idx) =  real((self % scalarflux(idx) + self % source(idx) &
-        !         / total + D * self % prevFlux(idx) ) / (1 + D), defFlt)
        
         ! Apply volume correction only to negative flux cells
         if (self % volCorr .and. self % passive) then
@@ -2548,7 +2545,7 @@ contains
       idx = baseIdx + g
 
       self % source(idx) = chi(g) * fission + scatter
-      self % source(idx) = self % source(idx) / total(g)
+      self % source(idx) = self % source(idx) !/ total(g)
       xSource = chi(g) * xFission + xScatter
       xSource = xSource / total(g)
       ySource = chi(g) * yFission + yScatter
