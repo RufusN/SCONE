@@ -2428,7 +2428,7 @@ contains
 
         ! NaN check - kill calculation
         if (self % scalarFlux(idx) /= self % scalarFlux(idx)) &
-                call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(cIdx))
+                call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(matIdx))
 
       end do
 

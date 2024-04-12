@@ -427,16 +427,16 @@ latGeom
 
 }
 
-// viz {
-//   myVTK {
-//     type vtk;
-//     what uniqueID; 
-//     corner ( 0.0 0.0 0.0 );
-//     width ( 60.0 100.0 60.0 );
-//     vox ( 60 100 60 );
-//   }
-// //    corner ( 0.5 0.5 0.5 );
-// } 
+viz {
+  myVTK {
+    type vtk;
+    what uniqueID; 
+    corner ( 0.0 0.0 0.0 );
+    width ( 60.0 100.0 60.0 );
+    vox ( 60 100 60 );
+  }
+//    corner ( 0.5 0.5 0.5 );
+} 
 
 
 nuclearData {
