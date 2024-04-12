@@ -1001,8 +1001,8 @@ contains
     class(testPackage), intent(inout) :: self
 
     call self % printSettings()
-    if (self % nVolRays > 0) call self % volumeCalculation()
-    if (self % uncollidedType > NO_UC) call self % uncollidedCalculation()
+    !if (self % nVolRays > 0) call self % volumeCalculation()
+    !if (self % uncollidedType > NO_UC) call self % uncollidedCalculation()
     call self % cycles()
     call self % printResults()
 
