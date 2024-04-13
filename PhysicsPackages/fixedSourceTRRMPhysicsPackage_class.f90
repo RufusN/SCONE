@@ -913,8 +913,8 @@ contains
     class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
 
     call self % printSettings()
-    if (self % nVolRays > 0) call self % volumeCalculation()
-    if (self % uncollidedType > NO_UC) call self % uncollidedCalculation()
+    !if (self % nVolRays > 0) call self % volumeCalculation()
+    !if (self % uncollidedType > NO_UC) call self % uncollidedCalculation()
     call self % cycles()
     call self % printResults()
 
@@ -1667,10 +1667,8 @@ contains
 
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
-
         ! Cache total cross section
         totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
-
       end if
 
       ! Remember co-ordinates to set new cell's position
@@ -1922,7 +1920,7 @@ contains
         total = self % sigmaT((matIdx - 1) * self % nG + g)
 
         if (vol > volume_tolerance) then
-          self % scalarFlux(idx) = self % scalarFlux(idx) * norm/ (total * real(vol,defFlt))
+          self % scalarFlux(idx) = self % scalarFlux(idx) * norm / (total * real(vol,defFlt))
         else
           corr = ONE
         end if

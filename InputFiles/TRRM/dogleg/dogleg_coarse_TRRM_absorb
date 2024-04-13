@@ -8,13 +8,13 @@ active   2100;
 inactive 0; 
 dead     120; 
 termination 1220; 
-plot 1;
+//plot 1;
 cache 1;
 XSdata   mg; 
 dataType mg;
 outputFile absorb_testpackage;
-printVolume 1;
-printFlux 1;
+printVolume 0;
+printFlux 0;
 volume 360000;
 cellCheck 1;
 
