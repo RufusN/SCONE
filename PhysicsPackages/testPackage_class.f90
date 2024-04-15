@@ -2327,17 +2327,18 @@ contains
     do cIdx = 1, self % nCells
       matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
 
-      if (matIdx >= 2000000) then
+      if (matIdx >= VOIDMAT - 0.5) then
         matIdx = self % nMatVOID
       end if 
-      ! Guard against void cells
-      ! if (matIdx > 2000000) then
-      !   do g = 1, self % nG
-      !     idx   = self % nG * (cIdx - 1) + g
-      !     self % scalarFlux(idx) = 0.0_defFlt
-      !   end do
-      !   cycle
-      ! end if
+
+      !Guard against void cells
+      if (abs(matIdx - UNDEF_MAT) < 1E-2) then
+        do g = 1, self % nG
+          idx   = self % nG * (cIdx - 1) + g
+          self % scalarFlux(idx) = 0.0_defFlt
+        end do
+        cycle
+      end if
 
       dIdx = (cIdx - 1) * nDim
       mIdx = (cIdx - 1) * matSize
@@ -2448,25 +2449,25 @@ contains
           if (self % scalarFlux(idx) < 0) then
             self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
                     (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-                  self % scalarX(idx) =  0.0_defFlt
-                  self % scalarY(idx) =  0.0_defFlt
-                  self % scalarZ(idx) =  0.0_defFlt
+                  ! self % scalarX(idx) =  0.0_defFlt
+                  ! self % scalarY(idx) =  0.0_defFlt
+                  ! self % scalarZ(idx) =  0.0_defFlt
 
           end if 
         ! Apply volume correction to all cells
         elseif (self % volCorr) then
           self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-          self % scalarX(idx) =  0.0_defFlt
-          self % scalarY(idx) =  0.0_defFlt
-          self % scalarZ(idx) =  0.0_defFlt
+          ! self % scalarX(idx) =  0.0_defFlt
+          ! self % scalarY(idx) =  0.0_defFlt
+          ! self % scalarZ(idx) =  0.0_defFlt
         end if
 
         ! This will probably affect things like neutron conservation...
         if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) then
           self % scalarFlux(idx) = 0.0_defFlt
-          self % scalarX(idx) =  0.0_defFlt
-          self % scalarY(idx) =  0.0_defFlt
-          self % scalarZ(idx) =  0.0_defFlt
+          ! self % scalarX(idx) =  0.0_defFlt
+          ! self % scalarY(idx) =  0.0_defFlt
+          ! self % scalarZ(idx) =  0.0_defFlt
         end if
 
 
@@ -2477,6 +2478,7 @@ contains
                 print *, 'prev', self % prevFlux(idx)
                 print *, 'source', self % source(idx)
                 print *, 'correction', self % volCorr
+                print *, 'mat', matIdx
                 print *, self % sourceX(idx), self % sourceY(idx), self % sourceZ(idx)
                 call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(cIdx) &
                 //numToChar_defReal(vol))
