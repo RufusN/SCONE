@@ -2428,11 +2428,20 @@ contains
        
         ! Apply volume correction only to negative flux cells
         if (self % volCorr .and. self % passive) then
-          if (self % scalarFlux(idx) < 0) self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
-                  (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+          if (self % scalarFlux(idx) < 0) then
+            self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
+                    (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+                  self % scalarX(idx) =  0.0_defFlt
+                  self % scalarY(idx) =  0.0_defFlt
+                  self % scalarZ(idx) =  0.0_defFlt
+
+          end if 
         ! Apply volume correction to all cells
         elseif (self % volCorr) then
           self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+          self % scalarX(idx) =  0.0_defFlt
+          self % scalarY(idx) =  0.0_defFlt
+          self % scalarZ(idx) =  0.0_defFlt
         end if
 
         ! This will probably affect things like neutron conservation...
