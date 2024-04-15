@@ -1278,6 +1278,12 @@ contains
     self % momTracks      = 0.0_defReal
     self % centroid       = 0.0_defReal
     self % centroidTracks = 0.0_defReal
+    self % scalarX = 0.0_defFlt
+    self % scalarY = 0.0_defFlt
+    self % scalarZ = 0.0_defFlt
+    self % sourceX = 0.0_defFlt
+    self % sourceY = 0.0_defFlt
+    self % sourceZ = 0.0_defFlt
 
     ! Update the cell number after several iterations
     ! Allows for better diagnostics on ray coverage
@@ -1991,6 +1997,8 @@ contains
       !if (cIdx > 0) then
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
+      dirPre = r % dirGlobal()
+      posPre = r % rGlobal()
       !end if
 
 
@@ -2001,9 +2009,6 @@ contains
       else
         length = self % dead - totalLength
       end if
-
-      dirPre = r % dirGlobal()
-      posPre = r % rGlobal()
 
       ! Move ray
       ! Use distance caching or standard ray tracing
@@ -2313,9 +2318,17 @@ contains
     do cIdx = 1, self % nCells
       matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
 
-      if (matIdx >= 2000000) then
-        matIdx = self % nMatVOID
-      end if 
+      ! if (matIdx >= 2000000) then
+      !   matIdx = self % nMatVOID
+      ! end if 
+      ! Guard against void cells
+      if (matIdx > 2000000) then
+        do g = 1, self % nG
+          idx   = self % nG * (cIdx - 1) + g
+          self % scalarFlux(idx) = 0.0_defFlt
+        end do
+        cycle
+      end if
 
       dIdx = (cIdx - 1) * nDim
       mIdx = (cIdx - 1) * matSize

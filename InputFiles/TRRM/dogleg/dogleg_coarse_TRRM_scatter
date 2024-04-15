@@ -12,7 +12,7 @@ plot 1;
 cache 1;
 XSdata   mg; 
 dataType mg;
-outputFile dogleg_coarse_TRRM_scatter;
+outputFile scatter_test;
 printVolume 0;
 printFlux 0;
 volume 360000;
