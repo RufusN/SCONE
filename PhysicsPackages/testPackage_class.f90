@@ -3,7 +3,7 @@ module testPackage_class
   use numPrecision
   use universalVariables
   use genericProcedures,              only : fatalError, numToChar, rotateVector, &
-                                             printFishLineR, dotProduct
+                                             printFishLineR, dotProduct, numToChar_defReal
   use hashFunctions_func,             only : FNV_1
   use charMap_class,                  only : charMap
   use exponentialRA_func,             only : exponential, f1, expG, expG2
@@ -1963,7 +1963,11 @@ contains
     if (cIdx > 0) then
       do g = 1, self % nG
         idx = (cIdx - 1) * self % nG + g
-        fluxVec(g) = self % source(idx)
+        if (totVec(g) > volume_tolerance) then
+          fluxVec(g) = self % source(idx) / totVec(g)
+        else
+          fluxVec(g) = 0.0_defFlt
+        end if
       end do
     else
       fluxVec = 0.0_defFlt
@@ -1982,10 +1986,6 @@ contains
         matIdx = self % nMatVOID
       end if
 
-      if  (matIdx > 5) then
-        print *, 'error'
-      end if
-
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
 
@@ -1995,6 +1995,7 @@ contains
       end if
 
       !if (cIdx > 0) then
+      !can remove one set
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
       dirPre = r % dirGlobal()
@@ -2066,16 +2067,24 @@ contains
       lenFlt  = real(length,defFlt)
 
       ! Calculate source terms
+    
       !$omp simd aligned(xGradVec, yGradVec, zGradVec)
       do g = 1, self % nG
-        flatQ(g) = rNormFlt(x) * xGradVec(g)
-        flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
-        flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
-        flatQ(g) = flatQ(g) + sourceVec(g)
+        if (totVec(g) > volume_tolerance) then
+          flatQ(g) = rNormFlt(x) * xGradVec(g)
+          flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
+          flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
+          flatQ(g) = flatQ(g) + sourceVec(g)
+          flatQ(g) = flatQ(g) / totVec(g)
 
-        gradQ(g) = muFlt(x) * xGradVec(g)
-        gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
-        gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
+          gradQ(g) = muFlt(x) * xGradVec(g)
+          gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
+          gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
+          gradQ(g) = gradQ(g) / totVec(g)
+        else
+          flatQ(g) = 0.0_defFlt
+          gradQ(g) = 0.0_defFlt
+        end if
       end do
 
        !$omp simd
@@ -2454,8 +2463,15 @@ contains
 
 
         ! NaN check - kill calculation
-        if (self % scalarFlux(idx) /= self % scalarFlux(idx)) &
-                call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(matIdx))
+        if (self % scalarFlux(idx) /= self % scalarFlux(idx)) then
+                print *, 'total', total
+                print *, 'flux', self % scalarflux(idx)
+                print *, 'prev', self % prevFlux(idx)
+                print *, 'source', self % source(idx)
+                print *, self % sourceX(idx), self % sourceY(idx), self % sourceZ(idx)
+                call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(cIdx) &
+                //numToChar_defReal(vol))
+        end if
 
       end do
 
@@ -2487,14 +2503,14 @@ contains
 
     ! Hack to guard against non-material cells
     if (matIdx >= VOID_MAT - 1) then
-      baseIdx = self % ng * (cIdx - 1)
-      do g = 1, self % nG
-        idx = baseIdx + g
-        self % source(idx) = 0.0_defFlt
-        self % sourceX(idx) = 0.0_defFlt
-        self % sourceY(idx) = 0.0_defFlt
-        self % sourceZ(idx) = 0.0_defFlt
-      end do
+      ! baseIdx = self % ng * (cIdx - 1)
+      ! do g = 1, self % nG
+      !   idx = baseIdx + g
+      !   self % source(idx) = 0.0_defFlt
+      !   self % sourceX(idx) = 0.0_defFlt
+      !   self % sourceY(idx) = 0.0_defFlt
+      !   self % sourceZ(idx) = 0.0_defFlt
+      ! end do
       return
     end if
 
@@ -2572,13 +2588,13 @@ contains
       idx = baseIdx + g
 
       self % source(idx) = chi(g) * fission + scatter + self % fixedSource(idx)
-      self % source(idx) = self % source(idx) / total(g)
+      self % source(idx) = self % source(idx) !/ total(g)
       xSource = chi(g) * xFission + xScatter
-      xSource = xSource / total(g)
+      xSource = xSource !/ total(g)
       ySource = chi(g) * yFission + yScatter
-      ySource = ySource / total(g)
+      ySource = ySource !/ total(g)
       zSource = chi(g) * zFission + zScatter
-      zSource = zSource / total(g)
+      zSource = zSource !/ total(g)
         
       ! Calculate source gradients by inverting the moment matrix
       self % sourceX(baseIdx + g) = invMxx * xSource + &
