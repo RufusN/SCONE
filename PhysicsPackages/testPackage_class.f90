@@ -2129,10 +2129,10 @@ contains
         fluxVec(g) = fluxVec(g) - delta(g) * totVec(g) 
       end do
 
-        ! !$omp simd
-        ! do g = 1, self % nG
-          !avgfluxVec(g) = (delta(g) + lenFlt * sourceVec(g))/tau(g)
-        ! end do
+      ! !$omp simd
+      ! do g = 1, self % nG
+        !avgfluxVec(g) = (delta(g) + lenFlt * sourceVec(g))/tau(g)
+      ! end do
 
       ! Accumulate to scalar flux
       if (activeRay) then
@@ -2428,6 +2428,7 @@ contains
         else
           D = 0.0_defFlt
         end if
+
         if (matIdx < self % nMatVOID) then
           self % scalarFlux(idx) =  real((self % scalarflux(idx) + self % source(idx) &
                   / total + D * self % prevFlux(idx) ) / (1 + D), defFlt)
@@ -2440,7 +2441,6 @@ contains
           self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
           self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
           self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
-
         end if
        
         ! Apply volume correction only to negative flux cells
@@ -2476,6 +2476,7 @@ contains
                 print *, 'flux', self % scalarflux(idx)
                 print *, 'prev', self % prevFlux(idx)
                 print *, 'source', self % source(idx)
+                print *, 'correction', self % volCorr
                 print *, self % sourceX(idx), self % sourceY(idx), self % sourceZ(idx)
                 call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(cIdx) &
                 //numToChar_defReal(vol))
