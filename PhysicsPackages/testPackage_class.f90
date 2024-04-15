@@ -2327,7 +2327,7 @@ contains
     do cIdx = 1, self % nCells
       matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
 
-      if (matIdx >= VOIDMAT - 0.5) then
+      if (matIdx >= VOID_MAT - 0.5) then
         matIdx = self % nMatVOID
       end if 
 
