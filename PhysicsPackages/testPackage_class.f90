@@ -1316,7 +1316,7 @@ contains
 
       !$omp parallel do schedule(static)
       do i = 1, self % nCells
-        call self % sourceUpdateKernel(i)
+        call self % sourceUpdateKernel(i, it)
       end do
       !$omp end parallel do
 
@@ -2407,6 +2407,11 @@ contains
         idx   = self % nG * (cIdx - 1) + g
         total = self % sigmaT((matIdx - 1) * self % nG + g)
 
+        ! if (total < volume_tolerance) then
+        !   print *, total 
+        !   print *, 'error'
+        ! end if
+
         if (vol > volume_tolerance) then
           self % scalarFlux(idx) = self % scalarFlux(idx) * norm / (real(vol,defFlt)) !total *
           self % scalarX(idx) = self % scalarX(idx) * norm / (real(vol,defFlt))
@@ -2495,9 +2500,10 @@ contains
   !!
   !! Kernel to update sources given a cell index
   !!
-  subroutine sourceUpdateKernel(self, cIdx)
+  subroutine sourceUpdateKernel(self, cIdx, it)
     class(testPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
+    integer(shortInt), intent(in)                         :: it
     real(defFlt)                                          :: scatter, xScatter, yScatter, zScatter, &
                                                              fission, xFission, yFission, zFission, &
                                                              xSource, ySource, zSource
@@ -2607,13 +2613,29 @@ contains
       zSource = chi(g) * zFission + zScatter
       zSource = zSource !/ total(g)
         
-      ! Calculate source gradients by inverting the moment matrix
-      self % sourceX(baseIdx + g) = invMxx * xSource + &
-              invMxy * ySource + invMxz * zSource
-      self % sourceY(baseIdx + g) = invMxy * xSource + &
-              invMyy * ySource + invMyz * zSource
-      self % sourceZ(baseIdx + g) = invMxz * xSource + &
-           invMyz * ySource + invMzz * zSource
+      if ( it > 29 ) then 
+        xSource = chi(g) * xFission + xScatter
+        xSource = xSource / total(g) 
+        ySource = chi(g) * yFission + yScatter
+        ySource = ySource / total(g) 
+        zSource = chi(g) * zFission + zScatter
+        zSource = zSource / total(g) 
+
+        ! Calculate source gradients by inverting the moment matrix
+        self % sourceX(idx) = invMxx * xSource + &
+                invMxy * ySource + invMxz * zSource 
+        self % sourceY(idx) = invMxy * xSource + & 
+                invMyy * ySource + invMyz * zSource 
+        self % sourceZ(idx) = invMxz * xSource + &
+                invMyz * ySource + invMzz * zSource 
+      else
+
+        self % sourceX(idx) = 0.0_defFlt
+        self % sourceY(idx) = 0.0_defFlt
+        self % sourceZ(idx) = 0.0_defFlt
+        
+      end if
+    
 
     end do
 
