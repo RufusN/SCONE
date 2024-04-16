@@ -2342,7 +2342,7 @@ contains
     !     end do
     !     cycle
     !   end if
-        ! Guard against void cells
+      ! Guard against void cells
       if (matIdx > 2000000) then
         do g = 1, self % nG
           idx   = self % nG * (cIdx - 1) + g
@@ -2502,9 +2502,6 @@ contains
     end do
     !$omp end parallel do
     print *, 'scalar', MAXVAL(self % scalarFlux)
-    ! print *, MAXVAL(self % scalarX)
-    ! print *, MAXVAL(self % scalarY)
-    ! print *, MAXVAL(self % scalarZ)
 
   end subroutine normaliseFluxAndVolume
 
