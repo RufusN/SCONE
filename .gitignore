@@ -8,3 +8,4 @@ cream.egg-info/
 !/.gitignore
 /Build
 *.vtk
+InputFiles/TRRM/dogleg/dogleg_coarse_TRRM_absorb.vtk
