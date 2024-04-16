@@ -1982,7 +1982,7 @@ contains
       matIdx  = r % coords % matIdx
       cIdx    = self % IDToCell(r % coords % uniqueID)
 
-      if (matIdx >= VOID_MAT - 1) then
+      if (matIdx >= VOID_MAT) then
         matIdx = self % nMatVOID
       end if
 
@@ -2457,31 +2457,31 @@ contains
         !   self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
         ! end if
        
-        ! ! Apply volume correction only to negative flux cells
-        ! if (self % volCorr .and. self % passive) then
-        !   if (self % scalarFlux(idx) < 0) then
-        !     self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
-        !             (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-        !           self % scalarX(idx) =  0.0_defFlt
-        !           self % scalarY(idx) =  0.0_defFlt
-        !           self % scalarZ(idx) =  0.0_defFlt
+        ! Apply volume correction only to negative flux cells
+        if (self % volCorr .and. self % passive) then
+          if (self % scalarFlux(idx) < 0) then
+            self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
+                    (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+                  self % scalarX(idx) =  0.0_defFlt
+                  self % scalarY(idx) =  0.0_defFlt
+                  self % scalarZ(idx) =  0.0_defFlt
 
-        !   end if 
-        ! ! Apply volume correction to all cells
-        ! elseif (self % volCorr) then
-        !   self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-        !   self % scalarX(idx) =  0.0_defFlt
-        !   self % scalarY(idx) =  0.0_defFlt
-        !   self % scalarZ(idx) =  0.0_defFlt
-        ! end if
+          end if 
+        ! Apply volume correction to all cells
+        elseif (self % volCorr) then
+          self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+          self % scalarX(idx) =  0.0_defFlt
+          self % scalarY(idx) =  0.0_defFlt
+          self % scalarZ(idx) =  0.0_defFlt
+        end if
 
-        ! ! This will probably affect things like neutron conservation...
-        ! if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) then
-        !   self % scalarFlux(idx) = 0.0_defFlt
-        !   self % scalarX(idx) =  0.0_defFlt
-        !   self % scalarY(idx) =  0.0_defFlt
-        !   self % scalarZ(idx) =  0.0_defFlt
-        ! end if
+        ! This will probably affect things like neutron conservation...
+        if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) then
+          self % scalarFlux(idx) = 0.0_defFlt
+          self % scalarX(idx) =  0.0_defFlt
+          self % scalarY(idx) =  0.0_defFlt
+          self % scalarZ(idx) =  0.0_defFlt
+        end if
 
 
         ! NaN check - kill calculation
@@ -2501,10 +2501,10 @@ contains
 
     end do
     !$omp end parallel do
-    print *, MAXVAL(self % scalarFlux)
-    print *, MAXVAL(self % scalarX)
-    print *, MAXVAL(self % scalarY)
-    print *, MAXVAL(self % scalarZ)
+    print *, 'scalar', MAXVAL(self % scalarFlux)
+    ! print *, MAXVAL(self % scalarX)
+    ! print *, MAXVAL(self % scalarY)
+    ! print *, MAXVAL(self % scalarZ)
 
   end subroutine normaliseFluxAndVolume
 
@@ -2566,13 +2566,13 @@ contains
       invMzz = 0.0_defFlt
       det = ONE 
     end if
-    invMxx = 0.0_defFlt
-    invMxy = 0.0_defFlt
-    invMxz = 0.0_defFlt
-    invMyy = 0.0_defFlt
-    invMyz = 0.0_defFlt
-    invMzz = 0.0_defFlt
-    det = ONE 
+    ! invMxx = 0.0_defFlt
+    ! invMxy = 0.0_defFlt
+    ! invMxz = 0.0_defFlt
+    ! invMyy = 0.0_defFlt
+    ! invMyz = 0.0_defFlt
+    ! invMzz = 0.0_defFlt
+    ! det = ONE 
 
    ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
@@ -2655,12 +2655,14 @@ contains
         
       end if
 
-    self % sourceX(idx) = 0.0_defFlt
-    self % sourceY(idx) = 0.0_defFlt
-    self % sourceZ(idx) = 0.0_defFlt
+    ! self % sourceX(idx) = 0.0_defFlt
+    ! self % sourceY(idx) = 0.0_defFlt
+    ! self % sourceZ(idx) = 0.0_defFlt
     
 
     end do
+
+    !print *, MAXVAL(self % sourceX), MAXVAL(self % sourceY), MAXVAL(self % sourceZ)
 
   end subroutine sourceUpdateKernel
 
