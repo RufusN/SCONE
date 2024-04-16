@@ -1966,7 +1966,7 @@ contains
         if (totVec(g) > volume_tolerance) then
           fluxVec(g) = self % source(idx) / totVec(g)
         else
-          fluxVec(g) = 0.0_defFlt
+          fluxVec(g) = self % source(idx)
         end if
       end do
     else
@@ -2329,13 +2329,21 @@ contains
     do cIdx = 1, self % nCells
       matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
 
-      if (matIdx >= VOID_MAT - 0.5) then
-        matIdx = self % nMatVOID
-      end if 
+    !   if (matIdx >= VOID_MAT - 0.5) then
+    !     matIdx = self % nMatVOID
+    !   end if 
 
-      !Guard against void cells
-      !if (abs(matIdx - UNDEF_MAT) < 1E-2) then
-      if (matIdx == UNDEF_MAT) then
+    !   !Guard against void cells
+    !   !if (abs(matIdx - UNDEF_MAT) < 1E-2) then
+    !   if (matIdx == UNDEF_MAT) then
+    !     do g = 1, self % nG
+    !       idx   = self % nG * (cIdx - 1) + g
+    !       self % scalarFlux(idx) = 0.0_defFlt
+    !     end do
+    !     cycle
+    !   end if
+        ! Guard against void cells
+      if (matIdx > 2000000) then
         do g = 1, self % nG
           idx   = self % nG * (cIdx - 1) + g
           self % scalarFlux(idx) = 0.0_defFlt
@@ -2414,63 +2422,66 @@ contains
           self % scalarX(idx) = self % scalarX(idx) * norm / (real(vol,defFlt))
           self % scalarY(idx) = self % scalarY(idx) * norm / (real(vol,defFlt))
           self % scalarZ(idx) = self % scalarZ(idx) * norm / (real(vol,defFlt))
-        else
-          corr = ONE
-        end if
-
-        ! ! TODO: I think this may not work when volume correction is applied...
-        if (matIdx < UNDEF_MAT) then
-          sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
-
-          ! Assumes non-zero total XS
-          if ((sigGG < 0) .and. (total > 0)) then
-            D = -real(self % rho, defFlt) * sigGG / total
-          else
-            D = 0.0_defFlt
-          end if
-        else
-          D = 0.0_defFlt
+        ! else
+        !   corr = ONE
         end if
 
         if (total > 0.0_defFlt) then
-          self % scalarFlux(idx) =  real((self % scalarflux(idx) + self % source(idx) &
-                  / total + D * self % prevFlux(idx) ) / (1 + D), defFlt)
-          self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
-          self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
-          self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
-        else
-          self % scalarFlux(idx) =  real((self % scalarflux(idx) + &
-                          D * self % prevFlux(idx) ) / (1 + D), defFlt)
-          self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
-          self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
-          self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
+            self % scalarFlux(idx) = self % scalarFlux(idx) + self % source(idx) / total
         end if
+        ! ! ! TODO: I think this may not work when volume correction is applied...
+        ! if (matIdx < UNDEF_MAT) then
+        !   sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
+
+        !   ! Assumes non-zero total XS
+        !   if ((sigGG < 0) .and. (total > 0)) then
+        !     D = -real(self % rho, defFlt) * sigGG / total
+        !   else
+        !     D = 0.0_defFlt
+        !   end if
+        ! else
+        !   D = 0.0_defFlt
+        ! end if
+
+        ! if (total > 0.0_defFlt) then
+        !   self % scalarFlux(idx) =  real((self % scalarflux(idx) + self % source(idx) &
+        !           / total + D * self % prevFlux(idx) ) / (1 + D), defFlt)
+        !   self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
+        !   self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
+        !   self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
+        ! else
+        !   self % scalarFlux(idx) =  real((self % scalarflux(idx) + &
+        !                   D * self % prevFlux(idx) ) / (1 + D), defFlt)
+        !   self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
+        !   self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
+        !   self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
+        ! end if
        
-        ! Apply volume correction only to negative flux cells
-        if (self % volCorr .and. self % passive) then
-          if (self % scalarFlux(idx) < 0) then
-            self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
-                    (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-                  self % scalarX(idx) =  0.0_defFlt
-                  self % scalarY(idx) =  0.0_defFlt
-                  self % scalarZ(idx) =  0.0_defFlt
+        ! ! Apply volume correction only to negative flux cells
+        ! if (self % volCorr .and. self % passive) then
+        !   if (self % scalarFlux(idx) < 0) then
+        !     self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
+        !             (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+        !           self % scalarX(idx) =  0.0_defFlt
+        !           self % scalarY(idx) =  0.0_defFlt
+        !           self % scalarZ(idx) =  0.0_defFlt
 
-          end if 
-        ! Apply volume correction to all cells
-        elseif (self % volCorr) then
-          self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-          self % scalarX(idx) =  0.0_defFlt
-          self % scalarY(idx) =  0.0_defFlt
-          self % scalarZ(idx) =  0.0_defFlt
-        end if
+        !   end if 
+        ! ! Apply volume correction to all cells
+        ! elseif (self % volCorr) then
+        !   self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+        !   self % scalarX(idx) =  0.0_defFlt
+        !   self % scalarY(idx) =  0.0_defFlt
+        !   self % scalarZ(idx) =  0.0_defFlt
+        ! end if
 
-        ! This will probably affect things like neutron conservation...
-        if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) then
-          self % scalarFlux(idx) = 0.0_defFlt
-          self % scalarX(idx) =  0.0_defFlt
-          self % scalarY(idx) =  0.0_defFlt
-          self % scalarZ(idx) =  0.0_defFlt
-        end if
+        ! ! This will probably affect things like neutron conservation...
+        ! if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) then
+        !   self % scalarFlux(idx) = 0.0_defFlt
+        !   self % scalarX(idx) =  0.0_defFlt
+        !   self % scalarY(idx) =  0.0_defFlt
+        !   self % scalarZ(idx) =  0.0_defFlt
+        ! end if
 
 
         ! NaN check - kill calculation
