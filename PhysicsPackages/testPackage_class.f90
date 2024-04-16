@@ -2519,7 +2519,7 @@ contains
     matIdx  =  self % geom % geom % graph % getMatFromUID(id)
 
     ! Hack to guard against non-material cells
-    if (matIdx >= VOID_MAT - 1) then
+    if (matIdx >= UNDEF_MAT) then
       baseIdx = self % ng * (cIdx - 1)
       do g = 1, self % nG
         idx = baseIdx + g
