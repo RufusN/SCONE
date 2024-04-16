@@ -1923,9 +1923,6 @@ contains
 
     end do
 
-
-    print *, 'UnCOll'
-
   end subroutine uncollidedSweep
 
   !!
