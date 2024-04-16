@@ -1982,9 +1982,9 @@ contains
       matIdx  = r % coords % matIdx
       cIdx    = self % IDToCell(r % coords % uniqueID)
 
-      if (matIdx >= VOID_MAT) then
-        matIdx = self % nMatVOID
-      end if
+      ! if (matIdx >= VOID_MAT) then
+      !   matIdx = self % nMatVOID
+      ! end if
 
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
@@ -2500,6 +2500,7 @@ contains
 
     end do
     !$omp end parallel do
+
     print *, 'scalar', MAXVAL(self % scalarFlux)
 
   end subroutine normaliseFluxAndVolume
@@ -2562,13 +2563,6 @@ contains
       invMzz = 0.0_defFlt
       det = ONE 
     end if
-    ! invMxx = 0.0_defFlt
-    ! invMxy = 0.0_defFlt
-    ! invMxz = 0.0_defFlt
-    ! invMyy = 0.0_defFlt
-    ! invMyz = 0.0_defFlt
-    ! invMzz = 0.0_defFlt
-    ! det = ONE 
 
    ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
@@ -2621,12 +2615,6 @@ contains
 
       self % source(idx) = chi(g) * fission + scatter + self % fixedSource(idx)
       ! self % source(idx) = self % source(idx) !/ total(g)
-      ! xSource = chi(g) * xFission + xScatter
-      ! xSource = xSource !/ total(g)
-      ! ySource = chi(g) * yFission + yScatter
-      ! ySource = ySource !/ total(g)
-      ! zSource = chi(g) * zFission + zScatter
-      ! zSource = zSource !/ total(g)
         
       if ( it > 29 ) then 
         xSource = chi(g) * xFission + xScatter
@@ -2651,14 +2639,7 @@ contains
         
       end if
 
-    ! self % sourceX(idx) = 0.0_defFlt
-    ! self % sourceY(idx) = 0.0_defFlt
-    ! self % sourceZ(idx) = 0.0_defFlt
-    
-
     end do
-
-    !print *, MAXVAL(self % sourceX), MAXVAL(self % sourceY), MAXVAL(self % sourceZ)
 
   end subroutine sourceUpdateKernel
 
