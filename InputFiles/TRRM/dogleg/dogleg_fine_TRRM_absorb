@@ -17,6 +17,7 @@ printVolume 0;
 printFlux 0;
 volume 360000;
 //cellCheck 1;??
+seed -1369706621;
 
 integrate (sourceMat);
 source { sourceMat ( 1.0 ); }
