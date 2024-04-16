@@ -17,6 +17,8 @@ printVolume 0;
 printFlux 0;
 volume 360000;
 cellCheck 1;
+outputFormat asciiJSON;
+seed -1369706621;
 
 //volRays 500000; volLength 800;
 
