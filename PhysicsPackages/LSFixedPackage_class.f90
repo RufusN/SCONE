@@ -2490,6 +2490,7 @@ contains
 
     end do
     !$omp end parallel do
+    print *, MAXVAL(self % scalarFlux)
 
   end subroutine normaliseFluxAndVolume
 
