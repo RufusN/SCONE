@@ -2532,14 +2532,14 @@ contains
 
     ! Hack to guard against non-material cells
     if (matIdx >= UNDEF_MAT) then
-      baseIdx = self % ng * (cIdx - 1)
-      do g = 1, self % nG
-        idx = baseIdx + g
-        self % source(idx) = 0.0_defFlt
-        self % sourceX(idx) = 0.0_defFlt
-        self % sourceY(idx) = 0.0_defFlt
-        self % sourceZ(idx) = 0.0_defFlt
-      end do
+    !   baseIdx = self % ng * (cIdx - 1)
+    !   do g = 1, self % nG
+    !     idx = baseIdx + g
+    !     self % source(idx) = 0.0_defFlt
+    !     self % sourceX(idx) = 0.0_defFlt
+    !     self % sourceY(idx) = 0.0_defFlt
+    !     self % sourceZ(idx) = 0.0_defFlt
+    !   end do
       return
     end if
 
