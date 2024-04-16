@@ -2070,7 +2070,7 @@ contains
     
         !$omp simd aligned(xGradVec, yGradVec, zGradVec)
         do g = 1, self % nG
-            if (totVec(g) > 0.0_defFlt) then
+            if (totVec(g) > volume_tolerance) then
             flatQ(g) = rNormFlt(x) * xGradVec(g)
             flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
             flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
@@ -2090,9 +2090,9 @@ contains
         !$omp simd
         do g = 1, self % nG
             tau(g) = totVec(g) * lenFlt
-            if (tau(g) < 1E-8_defFlt) then 
-              tau(g) = 0.0_defFlt
-            end if
+            ! if (tau(g) < 1E-8_defFlt) then 
+            !   tau(g) = 0.0_defFlt
+            ! end if
         end do
 
         ! Compute exponentials necessary for angular flux update
