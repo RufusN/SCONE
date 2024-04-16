@@ -3,8 +3,8 @@ type LSFixedPackage;
 
 // Currently no recommended settings for fixed source problems
 // but hopefully this will be updated in future!
-pop      10;
-active   21;  
+pop      10000;
+active   2100;  
 inactive 0; 
 dead     120; 
 termination 1220; 

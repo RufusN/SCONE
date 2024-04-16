@@ -2491,6 +2491,9 @@ contains
     end do
     !$omp end parallel do
     print *, MAXVAL(self % scalarFlux)
+    print *, MAXVAL(self % scalarX)
+    print *, MAXVAL(self % scalarY)
+    print *, MAXVAL(self % scalarZ)
 
   end subroutine normaliseFluxAndVolume
 
