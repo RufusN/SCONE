@@ -2129,6 +2129,8 @@ contains
         fluxVec(g) = fluxVec(g) - delta(g) * totVec(g) 
       end do
 
+
+
       ! !$omp simd
       ! do g = 1, self % nG
         !avgfluxVec(g) = (delta(g) + lenFlt * sourceVec(g))/tau(g)
@@ -2301,6 +2303,8 @@ contains
     end do
     !$omp end parallel do
 
+    print *, 'Norm2'
+
   end subroutine normaliseFluxUncollided
 
   !!
@@ -2332,7 +2336,8 @@ contains
       end if 
 
       !Guard against void cells
-      if (abs(matIdx - UNDEF_MAT) < 1E-2) then
+      !if (abs(matIdx - UNDEF_MAT) < 1E-2) then
+      if (matIdx == UNDEF_MAT) then
         do g = 1, self % nG
           idx   = self % nG * (cIdx - 1) + g
           self % scalarFlux(idx) = 0.0_defFlt
@@ -2399,7 +2404,6 @@ contains
 
       end if
 
-
       vol = self % volume(cIdx)
 
       do g = 1, self % nG
@@ -2407,13 +2411,8 @@ contains
         idx   = self % nG * (cIdx - 1) + g
         total = self % sigmaT((matIdx - 1) * self % nG + g)
 
-        ! if (total < volume_tolerance) then
-        !   print *, total 
-        !   print *, 'error'
-        ! end if
-
         if (vol > volume_tolerance) then
-          self % scalarFlux(idx) = self % scalarFlux(idx) * norm / (real(vol,defFlt)) !total *
+          self % scalarFlux(idx) = self % scalarFlux(idx) * norm / (real(vol,defFlt)) 
           self % scalarX(idx) = self % scalarX(idx) * norm / (real(vol,defFlt))
           self % scalarY(idx) = self % scalarY(idx) * norm / (real(vol,defFlt))
           self % scalarZ(idx) = self % scalarZ(idx) * norm / (real(vol,defFlt))
@@ -2493,6 +2492,7 @@ contains
 
     end do
     !$omp end parallel do
+    print *, MAXVAL(self % scalarFlux)
 
   end subroutine normaliseFluxAndVolume
 
@@ -2520,14 +2520,14 @@ contains
 
     ! Hack to guard against non-material cells
     if (matIdx >= VOID_MAT - 1) then
-      ! baseIdx = self % ng * (cIdx - 1)
-      ! do g = 1, self % nG
-      !   idx = baseIdx + g
-      !   self % source(idx) = 0.0_defFlt
-      !   self % sourceX(idx) = 0.0_defFlt
-      !   self % sourceY(idx) = 0.0_defFlt
-      !   self % sourceZ(idx) = 0.0_defFlt
-      ! end do
+      baseIdx = self % ng * (cIdx - 1)
+      do g = 1, self % nG
+        idx = baseIdx + g
+        self % source(idx) = 0.0_defFlt
+        self % sourceX(idx) = 0.0_defFlt
+        self % sourceY(idx) = 0.0_defFlt
+        self % sourceZ(idx) = 0.0_defFlt
+      end do
       return
     end if
 
@@ -2605,21 +2605,21 @@ contains
       idx = baseIdx + g
 
       self % source(idx) = chi(g) * fission + scatter + self % fixedSource(idx)
-      self % source(idx) = self % source(idx) !/ total(g)
-      xSource = chi(g) * xFission + xScatter
-      xSource = xSource !/ total(g)
-      ySource = chi(g) * yFission + yScatter
-      ySource = ySource !/ total(g)
-      zSource = chi(g) * zFission + zScatter
-      zSource = zSource !/ total(g)
+      ! self % source(idx) = self % source(idx) !/ total(g)
+      ! xSource = chi(g) * xFission + xScatter
+      ! xSource = xSource !/ total(g)
+      ! ySource = chi(g) * yFission + yScatter
+      ! ySource = ySource !/ total(g)
+      ! zSource = chi(g) * zFission + zScatter
+      ! zSource = zSource !/ total(g)
         
       if ( it > 29 ) then 
         xSource = chi(g) * xFission + xScatter
-        xSource = xSource / total(g) 
+        !xSource = xSource !/ total(g) 
         ySource = chi(g) * yFission + yScatter
-        ySource = ySource / total(g) 
+        !ySource = ySource !/ total(g) 
         zSource = chi(g) * zFission + zScatter
-        zSource = zSource / total(g) 
+        !zSource = zSource !/ total(g) 
 
         ! Calculate source gradients by inverting the moment matrix
         self % sourceX(idx) = invMxx * xSource + &
@@ -3058,6 +3058,8 @@ contains
           groupFlux(cIdx) = self % fluxScores(idx,1)
         end do
         !$omp end parallel do
+        print *, self % nCells 
+        print *, size(groupFlux)
         call self % viz % addVTKData(groupFlux,name)
       end do
       groupFlux = ZERO
