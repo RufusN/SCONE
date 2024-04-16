@@ -2040,209 +2040,209 @@ contains
           !$omp end critical
         end if
 
-      ints = ints + 1
+        ints = ints + 1
 
-      baseIdx = (cIdx - 1) * self % nG
-      sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
-      xGradVec => self % sourceX((baseIdx + 1):(baseIdx + self % nG))
-      yGradVec => self % sourceY((baseIdx + 1):(baseIdx + self % nG))
-      zGradVec => self % sourceZ((baseIdx + 1):(baseIdx + self % nG))
-      mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
+        baseIdx = (cIdx - 1) * self % nG
+        sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
+        xGradVec => self % sourceX((baseIdx + 1):(baseIdx + self % nG))
+        yGradVec => self % sourceY((baseIdx + 1):(baseIdx + self % nG))
+        zGradVec => self % sourceZ((baseIdx + 1):(baseIdx + self % nG))
+        mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
 
-      ! Check cell has been visited 
-      if (self % volume(cIdx) > volume_tolerance) then
-        ! Compute the track centroid in local co-ordinates
-        rNorm = rC - mid(1:nDim)
-        ! Compute the entry point in local co-ordinates
-        r0Norm = r0 - mid(1:nDim)
-      else
-        rNorm = ZERO
-        r0Norm = - mu0 * HALF * length
-      end if 
-
-      ! Convert to floats for speed
-      r0NormFlt = real(r0Norm,defFlt)
-      rNormFlt = real(rNorm,defFlt)
-      muFlt = real(mu0,defFlt)
-      lenFlt  = real(length,defFlt)
-
-      ! Calculate source terms
-    
-      !$omp simd aligned(xGradVec, yGradVec, zGradVec)
-      do g = 1, self % nG
-        if (totVec(g) > volume_tolerance) then
-          flatQ(g) = rNormFlt(x) * xGradVec(g)
-          flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
-          flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
-          flatQ(g) = flatQ(g) + sourceVec(g)
-          flatQ(g) = flatQ(g) / totVec(g)
-
-          gradQ(g) = muFlt(x) * xGradVec(g)
-          gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
-          gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
-          gradQ(g) = gradQ(g) / totVec(g)
+        ! Check cell has been visited 
+        if (self % volume(cIdx) > volume_tolerance) then
+            ! Compute the track centroid in local co-ordinates
+            rNorm = rC - mid(1:nDim)
+            ! Compute the entry point in local co-ordinates
+            r0Norm = r0 - mid(1:nDim)
         else
-          flatQ(g) = 0.0_defFlt
-          gradQ(g) = 0.0_defFlt
-        end if
-      end do
+            rNorm = ZERO
+            r0Norm = - mu0 * HALF * length
+        end if 
 
-       !$omp simd
-      do g = 1, self % nG
-        tau(g) = totVec(g) * lenFlt
-        if (tau(g) < 1E-8_defFlt) then 
-          tau(g) = 0.0_defFlt
-        end if
-      end do
+        ! Convert to floats for speed
+        r0NormFlt = real(r0Norm,defFlt)
+        rNormFlt = real(rNorm,defFlt)
+        muFlt = real(mu0,defFlt)
+        lenFlt  = real(length,defFlt)
 
-      ! Compute exponentials necessary for angular flux update
-      !$omp simd
-      do g = 1, self % nG
-        Gn(g) = expG(tau(g))
-      end do
-
-     !$omp simd
-      do g = 1, self % nG
-        F1(g)  = 1.0_defFlt - tau(g) * Gn(g) !expTau(tau(g)) * lenFlt
-      end do
-
-      !$omp simd
-      do g = 1, self % nG
-        F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt * lenFlt
-      end do
-
-      !$omp simd
-      do g = 1, self % nG
-        delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) * lenFlt & 
-                    - one_two * gradQ(g) * F2(g) 
-      end do
-
-      ! Intermediate flux variable creation or update
-      !$omp simd
-      do g = 1, self % nG
-        fluxVec0(g) = fluxVec(g)
-      end do
-
-      ! Flux vector update
-      !$omp simd
-      do g = 1, self % nG
-        fluxVec(g) = fluxVec(g) - delta(g) * totVec(g) 
-      end do
-
-
-
-      ! !$omp simd
-      ! do g = 1, self % nG
-        !avgfluxVec(g) = (delta(g) + lenFlt * sourceVec(g))/tau(g)
-      ! end do
-
-      ! Accumulate to scalar flux
-      if (activeRay) then
-        len2_12 = length * length / 12
-        matScore(xx) = length * (rnorm(x) * rnorm(x) + mu0(x) * mu0(x) * len2_12) 
-        matScore(xy) = length * (rnorm(x) * rnorm(y) + mu0(x) * mu0(y) * len2_12) 
-        matScore(xz) = length * (rnorm(x) * rnorm(z) + mu0(x) * mu0(z) * len2_12) 
-        matScore(yy) = length * (rnorm(y) * rnorm(y) + mu0(y) * mu0(y) * len2_12) 
-        matScore(yz) = length * (rnorm(y) * rnorm(z) + mu0(y) * mu0(z) * len2_12) 
-        matScore(zz) = length * (rnorm(z) * rnorm(z) + mu0(z) * mu0(z) * len2_12) 
-        centIdx = nDim * (cIdx - 1)
-        momIdx = matSize * (cIdx - 1)
-        
-        rC = rC * length
-
-        ! Compute necessary exponential quantities
-        lenFlt2_2 = lenFlt * lenFlt * one_two
-
-        !$omp simd
+        ! Calculate source terms
+    
+        !$omp simd aligned(xGradVec, yGradVec, zGradVec)
         do g = 1, self % nG
-          H(g) = ( F1(g) - Gn(g) ) !expH(tau(g))
-        end do
-      
-        !$omp simd
-        do g = 1, self % nG
-            G1(g) = one_two - H(g)
-        end do
+            if (totVec(g) > volume_tolerance) then
+            flatQ(g) = rNormFlt(x) * xGradVec(g)
+            flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
+            flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
+            flatQ(g) = flatQ(g) + sourceVec(g)
+            flatQ(g) = flatQ(g) / totVec(g)
 
-        !$omp simd 
-        do g = 1, self % nG
-          G2(g) = expG2(tau(g)) 
-        end do
-
-        ! $omp simd 
-        do g = 1, self % nG
-          G1(g) = G1(g) * flatQ(g) * lenFlt
-          G2(g) = G2(g) * gradQ(g) * lenFlt2_2
-          H(g)  = H(g) * fluxVec0(g) * lenFlt
-          H(g) = (G1(g) + G2(g) + H(g)) * lenFlt
-          flatQ(g) = flatQ(g) * lenFlt + delta(g)
+            gradQ(g) = muFlt(x) * xGradVec(g)
+            gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
+            gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
+            gradQ(g) = gradQ(g) / totVec(g)
+            else
+            flatQ(g) = 0.0_defFlt
+            gradQ(g) = 0.0_defFlt
+            end if
         end do
 
         !$omp simd
         do g = 1, self % nG
-          xInc(g) = r0NormFlt(x) * flatQ(g) + muFlt(x) * H(g) 
-          yInc(g) = r0NormFlt(y) * flatQ(g) + muFlt(y) * H(g) 
-          zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g)
+            tau(g) = totVec(g) * lenFlt
+            if (tau(g) < 1E-8_defFlt) then 
+            tau(g) = 0.0_defFlt
+            end if
         end do
 
-        call OMP_set_lock(self % locks(cIdx))
-          scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
-          xMomVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG))
-          yMomVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
-          zMomVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))
+        ! Compute exponentials necessary for angular flux update
+        !$omp simd
+        do g = 1, self % nG
+            Gn(g) = expG(tau(g))
+        end do
 
-          !$omp simd
-          do g = 1, self % nG
-            scalarVec(g) = scalarVec(g) + delta(g) 
-            xMomVec(g) = xMomVec(g) + xInc(g) 
-            yMomVec(g) = yMomVec(g) + yInc(g)
-            zMomVec(g) = zMomVec(g) + zInc(g) 
-          end do
-          !self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
-          centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
-          momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
-          volTrack => self % volumeTracks(cIdx)
+        !$omp simd
+        do g = 1, self % nG
+            F1(g)  = 1.0_defFlt - tau(g) * Gn(g) !expTau(tau(g)) * lenFlt
+        end do
 
-          volTrack = volTrack + length
+        !$omp simd
+        do g = 1, self % nG
+            F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt * lenFlt
+        end do
 
-          !$omp simd aligned(centVec)
-          do g = 1, nDim
-            centVec(g) = centVec(g) + rC(g)
-          end do
+        !$omp simd
+        do g = 1, self % nG
+            delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) * lenFlt & 
+                        - one_two * gradQ(g) * F2(g) 
+        end do
 
-          ! Update spatial moment scores
-          !$omp simd aligned(momVec)
-          do g = 1, matSize
-            momVec(g) = momVec(g) + matScore(g)
-          end do
+        ! Intermediate flux variable creation or update
+        !$omp simd
+        do g = 1, self % nG
+            fluxVec0(g) = fluxVec(g)
+        end do
 
-        call OMP_unset_lock(self % locks(cIdx))
-
-        !!! Ingoing currents !!! Check if a new cell was entered
-        if (allocated(self % fluxMap)) then
-
-          ! Get indexes
-          state % r  = posPre + length * HALF * dirPre
-          mapIdxPre  = self % fluxMap % map(state)
-
-          state % r  = r % rGlobal() + NUDGE * r % dirGlobal()
-          mapIdxPost = self % fluxMap % map(state)
-          dirPost = r % dirGlobal()
+        ! Flux vector update
+        !$omp simd
+        do g = 1, self % nG
+            fluxVec(g) = fluxVec(g) - delta(g) * totVec(g) 
+        end do
 
 
-          !!! Accumulate currents !!!
-          if ((mapIdxPre /= mapIdxPost .or. event == BOUNDARY_EV) .and. .not. hitVacuum) then
+
+        ! !$omp simd
+        ! do g = 1, self % nG
+            !avgfluxVec(g) = (delta(g) + lenFlt * sourceVec(g))/tau(g)
+        ! end do
+
+        ! Accumulate to scalar flux
+        if (activeRay) then
+            len2_12 = length * length / 12
+            matScore(xx) = length * (rnorm(x) * rnorm(x) + mu0(x) * mu0(x) * len2_12) 
+            matScore(xy) = length * (rnorm(x) * rnorm(y) + mu0(x) * mu0(y) * len2_12) 
+            matScore(xz) = length * (rnorm(x) * rnorm(z) + mu0(x) * mu0(z) * len2_12) 
+            matScore(yy) = length * (rnorm(y) * rnorm(y) + mu0(y) * mu0(y) * len2_12) 
+            matScore(yz) = length * (rnorm(y) * rnorm(z) + mu0(y) * mu0(z) * len2_12) 
+            matScore(zz) = length * (rnorm(z) * rnorm(z) + mu0(z) * mu0(z) * len2_12) 
+            centIdx = nDim * (cIdx - 1)
+            momIdx = matSize * (cIdx - 1)
+            
+            rC = rC * length
+
+            ! Compute necessary exponential quantities
+            lenFlt2_2 = lenFlt * lenFlt * one_two
+
+            !$omp simd
             do g = 1, self % nG
-              idx = (mapIdxPost - 1)*self % nG + g
-              !$omp atomic
-              self % currentIn(idx) = self % currentIn(idx) + fluxVec(g)
+            H(g) = ( F1(g) - Gn(g) ) !expH(tau(g))
             end do
-          end if
+        
+            !$omp simd
+            do g = 1, self % nG
+                G1(g) = one_two - H(g)
+            end do
+
+            !$omp simd 
+            do g = 1, self % nG
+            G2(g) = expG2(tau(g)) 
+            end do
+
+            ! $omp simd 
+            do g = 1, self % nG
+            G1(g) = G1(g) * flatQ(g) * lenFlt
+            G2(g) = G2(g) * gradQ(g) * lenFlt2_2
+            H(g)  = H(g) * fluxVec0(g) * lenFlt
+            H(g) = (G1(g) + G2(g) + H(g)) * lenFlt
+            flatQ(g) = flatQ(g) * lenFlt + delta(g)
+            end do
+
+            !$omp simd
+            do g = 1, self % nG
+            xInc(g) = r0NormFlt(x) * flatQ(g) + muFlt(x) * H(g) 
+            yInc(g) = r0NormFlt(y) * flatQ(g) + muFlt(y) * H(g) 
+            zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g)
+            end do
+
+            call OMP_set_lock(self % locks(cIdx))
+            scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
+            xMomVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG))
+            yMomVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
+            zMomVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))
+
+            !$omp simd
+            do g = 1, self % nG
+                scalarVec(g) = scalarVec(g) + delta(g) 
+                xMomVec(g) = xMomVec(g) + xInc(g) 
+                yMomVec(g) = yMomVec(g) + yInc(g)
+                zMomVec(g) = zMomVec(g) + zInc(g) 
+            end do
+            !self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
+            centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
+            momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
+            volTrack => self % volumeTracks(cIdx)
+
+            volTrack = volTrack + length
+
+            !$omp simd aligned(centVec)
+            do g = 1, nDim
+                centVec(g) = centVec(g) + rC(g)
+            end do
+
+            ! Update spatial moment scores
+            !$omp simd aligned(momVec)
+            do g = 1, matSize
+                momVec(g) = momVec(g) + matScore(g)
+            end do
+
+            call OMP_unset_lock(self % locks(cIdx))
+
+            !!! Ingoing currents !!! Check if a new cell was entered
+            if (allocated(self % fluxMap)) then
+
+            ! Get indexes
+            state % r  = posPre + length * HALF * dirPre
+            mapIdxPre  = self % fluxMap % map(state)
+
+            state % r  = r % rGlobal() + NUDGE * r % dirGlobal()
+            mapIdxPost = self % fluxMap % map(state)
+            dirPost = r % dirGlobal()
+
+
+            !!! Accumulate currents !!!
+            if ((mapIdxPre /= mapIdxPost .or. event == BOUNDARY_EV) .and. .not. hitVacuum) then
+                do g = 1, self % nG
+                idx = (mapIdxPost - 1)*self % nG + g
+                !$omp atomic
+                self % currentIn(idx) = self % currentIn(idx) + fluxVec(g)
+                end do
+            end if
+
+            end if
+
+            if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
 
         end if
-
-        if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
-
-      end if
 
     elseif((totalLength + length) >= self % termination) then
       totalLength = self % termination
@@ -2432,7 +2432,7 @@ contains
           D = 0.0_defFlt
         end if
 
-        if (matIdx < self % nMatVOID) then
+        if (total > 0.0_defFlt) then
           self % scalarFlux(idx) =  real((self % scalarflux(idx) + self % source(idx) &
                   / total + D * self % prevFlux(idx) ) / (1 + D), defFlt)
           self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
@@ -2451,25 +2451,25 @@ contains
           if (self % scalarFlux(idx) < 0) then
             self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
                     (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-                  ! self % scalarX(idx) =  0.0_defFlt
-                  ! self % scalarY(idx) =  0.0_defFlt
-                  ! self % scalarZ(idx) =  0.0_defFlt
+                  self % scalarX(idx) =  0.0_defFlt
+                  self % scalarY(idx) =  0.0_defFlt
+                  self % scalarZ(idx) =  0.0_defFlt
 
           end if 
         ! Apply volume correction to all cells
         elseif (self % volCorr) then
           self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-          ! self % scalarX(idx) =  0.0_defFlt
-          ! self % scalarY(idx) =  0.0_defFlt
-          ! self % scalarZ(idx) =  0.0_defFlt
+          self % scalarX(idx) =  0.0_defFlt
+          self % scalarY(idx) =  0.0_defFlt
+          self % scalarZ(idx) =  0.0_defFlt
         end if
 
         ! This will probably affect things like neutron conservation...
         if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) then
           self % scalarFlux(idx) = 0.0_defFlt
-          ! self % scalarX(idx) =  0.0_defFlt
-          ! self % scalarY(idx) =  0.0_defFlt
-          ! self % scalarZ(idx) =  0.0_defFlt
+          self % scalarX(idx) =  0.0_defFlt
+          self % scalarY(idx) =  0.0_defFlt
+          self % scalarZ(idx) =  0.0_defFlt
         end if
 
 
@@ -2643,6 +2643,10 @@ contains
         self % sourceZ(idx) = 0.0_defFlt
         
       end if
+
+    self % sourceX(idx) = 0.0_defFlt
+    self % sourceY(idx) = 0.0_defFlt
+    self % sourceZ(idx) = 0.0_defFlt
     
 
     end do
