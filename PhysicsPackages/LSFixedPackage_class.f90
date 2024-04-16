@@ -2552,6 +2552,13 @@ contains
       invMzz = 0.0_defFlt
       det = ONE 
     end if
+    invMxx = 0.0_defFlt
+    invMxy = 0.0_defFlt
+    invMxz = 0.0_defFlt
+    invMyy = 0.0_defFlt
+    invMyz = 0.0_defFlt
+    invMzz = 0.0_defFlt
+    det = ONE 
 
    ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
