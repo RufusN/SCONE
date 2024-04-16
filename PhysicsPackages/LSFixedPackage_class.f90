@@ -2070,7 +2070,7 @@ contains
     
         !$omp simd aligned(xGradVec, yGradVec, zGradVec)
         do g = 1, self % nG
-            if (totVec(g) > volume_tolerance) then
+            if (totVec(g) > 0.0_defFlt) then
             flatQ(g) = rNormFlt(x) * xGradVec(g)
             flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
             flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
@@ -2091,45 +2091,43 @@ contains
         do g = 1, self % nG
             tau(g) = totVec(g) * lenFlt
             if (tau(g) < 1E-8_defFlt) then 
-            tau(g) = 0.0_defFlt
+              tau(g) = 0.0_defFlt
             end if
         end do
 
         ! Compute exponentials necessary for angular flux update
         !$omp simd
         do g = 1, self % nG
-            Gn(g) = expG(tau(g))
+          Gn(g) = expG(tau(g))
         end do
 
         !$omp simd
         do g = 1, self % nG
-            F1(g)  = 1.0_defFlt - tau(g) * Gn(g) !expTau(tau(g)) * lenFlt
+          F1(g)  = 1.0_defFlt - tau(g) * Gn(g) !expTau(tau(g)) * lenFlt
         end do
 
         !$omp simd
         do g = 1, self % nG
-            F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt * lenFlt
+          F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt * lenFlt
         end do
 
         !$omp simd
         do g = 1, self % nG
-            delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) * lenFlt & 
-                        - one_two * gradQ(g) * F2(g) 
+          delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) * lenFlt & 
+                      - one_two * gradQ(g) * F2(g) 
         end do
 
         ! Intermediate flux variable creation or update
         !$omp simd
         do g = 1, self % nG
-            fluxVec0(g) = fluxVec(g)
+          fluxVec0(g) = fluxVec(g)
         end do
 
         ! Flux vector update
         !$omp simd
         do g = 1, self % nG
-            fluxVec(g) = fluxVec(g) - delta(g) * totVec(g) 
+          fluxVec(g) = fluxVec(g) - delta(g) * totVec(g) 
         end do
-
-
 
         ! !$omp simd
         ! do g = 1, self % nG
@@ -2155,17 +2153,17 @@ contains
 
             !$omp simd
             do g = 1, self % nG
-            H(g) = ( F1(g) - Gn(g) ) !expH(tau(g))
+              H(g) = ( F1(g) - Gn(g) ) !expH(tau(g))
             end do
         
             !$omp simd
             do g = 1, self % nG
-                G1(g) = one_two - H(g)
+              G1(g) = one_two - H(g)
             end do
 
             !$omp simd 
             do g = 1, self % nG
-            G2(g) = expG2(tau(g)) 
+              G2(g) = expG2(tau(g)) 
             end do
 
             ! $omp simd 
@@ -2197,7 +2195,7 @@ contains
                 yMomVec(g) = yMomVec(g) + yInc(g)
                 zMomVec(g) = zMomVec(g) + zInc(g) 
             end do
-            !self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
+
             centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
             momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
             volTrack => self % volumeTracks(cIdx)
@@ -2285,9 +2283,9 @@ contains
       if (self % volume(cIdx) > volume_tolerance) then
         matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
 
-        if (matIdx >= VOID_MAT - 1) then
-          matIdx = self % nMatVOID
-        end if 
+        ! if (matIdx >= VOID_MAT - 1) then !come back and check/complete
+        !   matIdx = self % nMatVOID 
+        ! end if 
   
         do g = 1, self % nG
           total = self % sigmaT((matIdx - 1) * self % nG + g)
@@ -2342,6 +2340,7 @@ contains
     !     end do
     !     cycle
     !   end if
+
       ! Guard against void cells
       if (matIdx > 2000000) then
         do g = 1, self % nG
@@ -2426,7 +2425,7 @@ contains
         !   corr = ONE
         end if
 
-        if (total > 0.0_defFlt) then
+        if (total > volume_tolerance) then
             self % scalarFlux(idx) = self % scalarFlux(idx) + self % source(idx) / total
         end if
         ! ! ! TODO: I think this may not work when volume correction is applied...
@@ -2457,31 +2456,31 @@ contains
         !   self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
         ! end if
        
-        ! Apply volume correction only to negative flux cells
-        if (self % volCorr .and. self % passive) then
-          if (self % scalarFlux(idx) < 0) then
-            self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
-                    (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-                  self % scalarX(idx) =  0.0_defFlt
-                  self % scalarY(idx) =  0.0_defFlt
-                  self % scalarZ(idx) =  0.0_defFlt
+        ! ! Apply volume correction only to negative flux cells
+        ! if (self % volCorr .and. self % passive) then
+        !   if (self % scalarFlux(idx) < 0) then
+        !     self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
+        !             (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+        !           self % scalarX(idx) =  0.0_defFlt
+        !           self % scalarY(idx) =  0.0_defFlt
+        !           self % scalarZ(idx) =  0.0_defFlt
 
-          end if 
-        ! Apply volume correction to all cells
-        elseif (self % volCorr) then
-          self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-          self % scalarX(idx) =  0.0_defFlt
-          self % scalarY(idx) =  0.0_defFlt
-          self % scalarZ(idx) =  0.0_defFlt
-        end if
+        !   end if 
+        ! ! Apply volume correction to all cells
+        ! elseif (self % volCorr) then
+        !   self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+        !   self % scalarX(idx) =  0.0_defFlt
+        !   self % scalarY(idx) =  0.0_defFlt
+        !   self % scalarZ(idx) =  0.0_defFlt
+        ! end if
 
-        ! This will probably affect things like neutron conservation...
-        if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) then
-          self % scalarFlux(idx) = 0.0_defFlt
-          self % scalarX(idx) =  0.0_defFlt
-          self % scalarY(idx) =  0.0_defFlt
-          self % scalarZ(idx) =  0.0_defFlt
-        end if
+        ! ! This will probably affect things like neutron conservation...
+        ! if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) then
+        !   self % scalarFlux(idx) = 0.0_defFlt
+        !   self % scalarX(idx) =  0.0_defFlt
+        !   self % scalarY(idx) =  0.0_defFlt
+        !   self % scalarZ(idx) =  0.0_defFlt
+        ! end if
 
 
         ! NaN check - kill calculation
