@@ -1707,7 +1707,7 @@ contains
       matIdx  = r % coords % matIdx
       cIdx    = self % IDToCell(r % coords % uniqueID)
       
-      if (matIdx >= VOID_MAT - 1) then
+      if (matIdx >= VOID_MAT) then
         matIdx = self % nMatVOID
       end if
       
@@ -1970,7 +1970,6 @@ contains
       mu0 = r % dirGlobal()
       dirPre = r % dirGlobal()
       posPre = r % rGlobal()
-
 
       ! Set maximum flight distance and ensure ray is active
       if (totalLength >= self % dead) then
@@ -2922,12 +2921,14 @@ contains
         point = s
         call self % geom % placeCoord(point % coords)
         cIdx = self % IDToCell(point % coords % uniqueID) !return
-        do g = 1, self % nG
-          idx = (cIdx - 1) * self % nG + g
-          res = self % fluxScores(idx,1)
-          std = self % fluxScores(idx,2)
-          call out % addResult(res, std)
-        end do
+        if (cIdx > 0) then
+          do g = 1, self % nG
+            idx = (cIdx - 1) * self % nG + g
+            res = self % fluxScores(idx,1)
+            std = self % fluxScores(idx,2)
+            call out % addResult(res, std)
+          end do
+        end if
         call out % endArray()
         call out % endBlock()
       end do
