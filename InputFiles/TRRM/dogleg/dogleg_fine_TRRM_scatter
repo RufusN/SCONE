@@ -5,7 +5,7 @@ type LSFixedPackage;
 // but hopefully this will be updated in future!
 pop      10000;
 active   2000;  
-inactive 300; 
+inactive 100; 
 dead     120; 
 termination 1220; 
 plot 1;
@@ -15,7 +15,7 @@ dataType mg;
 outputFile scatter_fine_testpackage;
 printVolume 0;
 printFlux 0;
-//volume 360000;
+volume 360000;
 cellCheck 1;
 outputFormat asciiJSON;
 seed -1369706621;
