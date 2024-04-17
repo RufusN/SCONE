@@ -756,11 +756,11 @@ contains
     ! TODO: clean nuclear database afterwards! It is no longer used
     !       and takes up memory.
     self % nMat = mm_nMat()
-    ! self % nMatVOID = self % nMat + 1
-    allocate(self % sigmaT(self % nMat * self % nG))
-    allocate(self % nuSigmaF(self % nMat * self % nG))
-    allocate(self % chi(self % nMat * self % nG))
-    allocate(self % sigmaS(self % nMat * self % nG * self % nG))
+    self % nMatVOID = self % nMat + 1
+    allocate(self % sigmaT(self % nMatVOID * self % nG))
+    allocate(self % nuSigmaF(self % nMatVOID * self % nG))
+    allocate(self % chi(self % nMatVOID * self % nG))
+    allocate(self % sigmaS(self % nMatVOID * self % nG * self % nG))
 
     do m = 1, self % nMat
       matPtr  => self % mgData % getMaterial(m)
@@ -777,16 +777,16 @@ contains
       end do
     end do
 
-    ! do g = 1, self % nG
-    !   self % sigmaT(self % nG * (self % nMatVOID - 1) + g)   = 0.0_defFlt
-    !   self % nuSigmaF(self % nG * (self % nMatVOID - 1) + g) = 0.0_defFlt
-    !   self % chi(self % nG * (self % nMatVOID - 1) + g)      = 0.0_defFlt
+    do g = 1, self % nG
+      self % sigmaT(self % nG * (self % nMatVOID - 1) + g)   = 0.0_defFlt
+      self % nuSigmaF(self % nG * (self % nMatVOID - 1) + g) = 0.0_defFlt
+      self % chi(self % nG * (self % nMatVOID - 1) + g)      = 0.0_defFlt
       
-    !   do g1 = 1, self % nG
-    !           self % sigmaS(self % nG * self % nG * (self % nMatVOID - 1) &
-    !           + self % nG * (g - 1) + g1)  = 0.0_defFlt
-    !       end do
-    ! end do
+      do g1 = 1, self % nG
+              self % sigmaS(self % nG * self % nG * (self % nMatVOID - 1) &
+              + self % nG * (g - 1) + g1)  = 0.0_defFlt
+          end do
+    end do
 
   end subroutine init
 
@@ -985,7 +985,7 @@ contains
         end do
       end do
     end do
-    !add in VOID XS for CADIS
+    !add in VOID XS for CADIS !!!!!!!!!!
 
     ! CADIS flag
     self % adjointRes = .true.
@@ -1270,20 +1270,20 @@ contains
     integer(shortInt), dimension(:), allocatable        :: cellOnes
     !$omp threadprivate(pRNG, r, ints)
 
-    ! Reinitialise volumes
-    ! Perhaps it is worth doing something more clever if volumes have been precomputed...
-    ! self % volumeTracks = ZERO
-    ! self % volume = ZERO
-    ! self % momMat         = 0.0_defReal
-    ! self % momTracks      = 0.0_defReal
-    ! self % centroid       = 0.0_defReal
-    ! self % centroidTracks = 0.0_defReal
-    ! self % scalarX = 0.0_defFlt
-    ! self % scalarY = 0.0_defFlt
-    ! self % scalarZ = 0.0_defFlt
-    ! self % sourceX = 0.0_defFlt
-    ! self % sourceY = 0.0_defFlt
-    ! self % sourceZ = 0.0_defFlt
+    !Reinitialise volumes
+    !Perhaps it is worth doing something more clever if volumes have been precomputed...
+    self % volumeTracks = ZERO
+    self % volume = ZERO
+    self % momMat         = 0.0_defReal
+    self % momTracks      = 0.0_defReal
+    self % centroid       = 0.0_defReal
+    self % centroidTracks = 0.0_defReal
+    self % scalarX = 0.0_defFlt
+    self % scalarY = 0.0_defFlt
+    self % scalarZ = 0.0_defFlt
+    self % sourceX = 0.0_defFlt
+    self % sourceY = 0.0_defFlt
+    self % sourceZ = 0.0_defFlt
 
     ! Update the cell number after several iterations
     ! Allows for better diagnostics on ray coverage
@@ -1473,7 +1473,7 @@ contains
   !! Also used for constructing the cell map
   !!
   subroutine volumeSweep(self, r, maxLength, doVolume)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSFixedPackage), target, intent(inout) :: self
     type(ray), intent(inout)                            :: r
     real(defReal), intent(in)                           :: maxLength
     logical(defBool), intent(in)                        :: doVolume
@@ -1486,8 +1486,7 @@ contains
     logical(defBool)                                    :: hitVacuum
     real(defReal), pointer, dimension(:)                :: mid, momVec, centVec
     real(defReal), dimension(matSize)                   :: matScore
-
-    !POINTER ERROR?
+    real(defReal), pointer                              :: volTrack
 
     totalLength = ZERO
     ints = 0_longInt
@@ -1518,19 +1517,13 @@ contains
       end if
       totalLength = totalLength + length
 
-
-      if (doVolume) then
-        !$omp atomic
-        self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
-      end if
-
-
+      rC = r0 + mu0 * HALF * length
       ! Set new cell's position. Use half distance across cell
       ! to try and avoid FP error
       if (.not. self % cellFound(cIdx)) then
         !$omp critical
         self % cellFound(cIdx) = .true.
-        self % cellPos(cIdx,:) = r0 + length * HALF * mu0
+        self % cellPos(cIdx,:) = rC
         !$omp end critical
       end if
 
@@ -1540,55 +1533,58 @@ contains
         !$omp end critical
       end if 
 
-      !mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
+      
 
 
-      ! if (doVolume) then
+      if (doVolume) then
 
-        ! rC = r0 + mu0 * HALF * length
+        mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
 
-        ! ! Check cell has been visited 
-        ! if (self % volume(cIdx) > volume_tolerance) then
-        !   ! Compute the track centroid in local co-ordinates
-        !   rNorm = rC - self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
-        !   ! Compute the entry point in local co-ordinates
-        !   r0Norm = r0 - self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
-        ! else
-        !   rNorm = ZERO
-        !   r0Norm = - mu0 * HALF * length
-        ! end if 
+        ! Check cell has been visited 
+        if (self % volume(cIdx) > volume_tolerance) then
+          ! Compute the track centroid in local co-ordinates
+          rNorm = rC - mid(1:nDim)!self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
+          ! Compute the entry point in local co-ordinates
+          r0Norm = r0 -  mid(1:nDim) !self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
+        else
+          rNorm = ZERO
+          r0Norm = - mu0 * HALF * length
+        end if 
 
-        ! len2_12 = length * length / 12
-        ! matScore(xx) = length * (rnorm(x) * rnorm(x) + mu0(x) * mu0(x) * len2_12) 
-        ! matScore(xy) = length * (rnorm(x) * rnorm(y) + mu0(x) * mu0(y) * len2_12) 
-        ! matScore(xz) = length * (rnorm(x) * rnorm(z) + mu0(x) * mu0(z) * len2_12) 
-        ! matScore(yy) = length * (rnorm(y) * rnorm(y) + mu0(y) * mu0(y) * len2_12) 
-        ! matScore(yz) = length * (rnorm(y) * rnorm(z) + mu0(y) * mu0(z) * len2_12) 
-        ! matScore(zz) = length * (rnorm(z) * rnorm(z) + mu0(z) * mu0(z) * len2_12) 
-        ! centIdx = nDim * (cIdx - 1)
-        ! momIdx = matSize * (cIdx - 1)
+        len2_12 = length * length / 12
+        matScore(xx) = length * (rnorm(x) * rnorm(x) + mu0(x) * mu0(x) * len2_12) 
+        matScore(xy) = length * (rnorm(x) * rnorm(y) + mu0(x) * mu0(y) * len2_12) 
+        matScore(xz) = length * (rnorm(x) * rnorm(z) + mu0(x) * mu0(z) * len2_12) 
+        matScore(yy) = length * (rnorm(y) * rnorm(y) + mu0(y) * mu0(y) * len2_12) 
+        matScore(yz) = length * (rnorm(y) * rnorm(z) + mu0(y) * mu0(z) * len2_12) 
+        matScore(zz) = length * (rnorm(z) * rnorm(z) + mu0(z) * mu0(z) * len2_12) 
+        centIdx = nDim * (cIdx - 1)
+        momIdx = matSize * (cIdx - 1)
         
-        ! rC = rC * length
-        ! Convert to floats for speed
+        rC = rC * length
 
-        !centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
-        !momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
+        centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
+        momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
+        volTrack => self % volumeTracks(cIdx)
 
-        ! ! Update centroid
-        ! call OMP_set_lock(self % locks(cIdx))
-        !   self % centroidTracks((centIdx + 1):(centIdx + nDim)) = self % centroidTracks((centIdx + 1):(centIdx + nDim)) + rC(g)
+        ! Update centroid
+        call OMP_set_lock(self % locks(cIdx))
 
+          !$omp simd aligned(centVec)
+          do g = 1, nDim
+              centVec(g) = centVec(g) + rC(g)
+          end do
 
-        !   ! Update spatial moment scores
-        !   !$omp simd 
-        !   do g = 1, matSize
-        !     self % momTracks(momIdx + g) = self % momTracks(momIdx + g) + matScore(g)
-        !   end do
+          ! Update spatial moment scores
+          !$omp simd aligned(momVec)
+          do g = 1, matSize
+              momVec(g) = momVec(g) + matScore(g)
+          end do
 
-          ! !$omp atomic
-          ! self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
-        !call OMP_unset_lock(self % locks(cIdx))
-      ! end if
+          volTrack = volTrack + length
+
+        call OMP_unset_lock(self % locks(cIdx))
+      end if
 
 
     end do
@@ -1697,7 +1693,11 @@ contains
       totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
       !$omp simd
       do g = 1, self % nG
-        fluxVec(g) = self % fixedSource(baseIdx + g)
+        if (totVec(g) > 0.0_defFlt) then
+          fluxVec(g) = self % fixedSource(baseIdx + g) / totVec(g)
+        else 
+          fluxVec(g) = 0.0_defFlt
+        end if
       end do
     end if
 
@@ -1707,9 +1707,9 @@ contains
       matIdx  = r % coords % matIdx
       cIdx    = self % IDToCell(r % coords % uniqueID)
       
-      ! if (matIdx >= VOID_MAT - 1) then
-      !   matIdx = self % nMatVOID
-      ! end if
+      if (matIdx >= VOID_MAT - 1) then
+        matIdx = self % nMatVOID
+      end if
       
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
@@ -1750,7 +1750,7 @@ contains
       if (.not. self % cellFound(cIdx)) then
         !$omp critical
         self % cellFound(cIdx) = .true.
-        self % cellPos(cIdx,:) = r0 + length * HALF * mu0
+        self % cellPos(cIdx,:) = rC
         !$omp end critical
       end if
 
@@ -1832,16 +1832,6 @@ contains
       do g = 1, self % nG
         fluxVec(g) = fluxVec(g) - delta(g) * totVec(g) 
       end do
-
-      ! len2_12 = length * length / 12
-      ! matScore(xx) = length * (rnorm(x) * rnorm(x) + mu0(x) * mu0(x) * len2_12) 
-      ! matScore(xy) = length * (rnorm(x) * rnorm(y) + mu0(x) * mu0(y) * len2_12) 
-      ! matScore(xz) = length * (rnorm(x) * rnorm(z) + mu0(x) * mu0(z) * len2_12) 
-      ! matScore(yy) = length * (rnorm(y) * rnorm(y) + mu0(y) * mu0(y) * len2_12) 
-      ! matScore(yz) = length * (rnorm(y) * rnorm(z) + mu0(y) * mu0(z) * len2_12) 
-      ! matScore(zz) = length * (rnorm(z) * rnorm(z) + mu0(z) * mu0(z) * len2_12) 
-      ! centIdx = nDim * (cIdx - 1)
-      ! momIdx = matSize * (cIdx - 1)
       
       rC = rC * length
 
@@ -1894,27 +1884,6 @@ contains
         yMomVec(g) = yMomVec(g) + yInc(g)
         zMomVec(g) = zMomVec(g) + zInc(g) 
       end do
-      
-
-      ! centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
-      ! momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
-      ! volTrack => self % volumeTracks(cIdx)
-      
-      ! ! Update track lengths
-      ! !self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
-      ! volTrack = volTrack + length
-      
-      ! ! Update centroid
-      ! !$omp simd aligned(centVec)
-      ! do g = 1, nDim
-      !   centVec(g) = centVec(g) + rC(g)
-      ! end do
-
-      ! ! Update spatial moment scores
-      ! !$omp simd aligned(momVec)
-      ! do g = 1, matSize
-      !   momVec(g) = momVec(g) + matScore(g)
-      ! end do
 
       call OMP_unset_lock(self % locks(cIdx))
 
@@ -1984,9 +1953,9 @@ contains
       matIdx  = r % coords % matIdx
       cIdx    = self % IDToCell(r % coords % uniqueID)
 
-      ! if (matIdx >= VOID_MAT) then
-      !   matIdx = self % nMatVOID
-      ! end if
+      if (matIdx >= VOID_MAT) then
+        matIdx = self % nMatVOID
+      end if
 
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
@@ -2952,9 +2921,9 @@ contains
         s % r = self % samplePoints(1+3*(i-1):3*i)
         point = s
         call self % geom % placeCoord(point % coords)
-        cIdx = self % IDToCell(point % coords % uniqueID)
+        cIdx = self % IDToCell(point % coords % uniqueID) !return
         do g = 1, self % nG
-          idx = (cIdx - 1)* self % nG + g
+          idx = (cIdx - 1) * self % nG + g
           res = self % fluxScores(idx,1)
           std = self % fluxScores(idx,2)
           call out % addResult(res, std)
