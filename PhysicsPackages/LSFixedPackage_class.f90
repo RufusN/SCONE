@@ -756,11 +756,11 @@ contains
     ! TODO: clean nuclear database afterwards! It is no longer used
     !       and takes up memory.
     self % nMat = mm_nMat()
-    self % nMatVOID = self % nMat + 1
-    allocate(self % sigmaT(self % nMatVOID * self % nG))
-    allocate(self % nuSigmaF(self % nMatVOID * self % nG))
-    allocate(self % chi(self % nMatVOID * self % nG))
-    allocate(self % sigmaS(self % nMatVOID * self % nG * self % nG))
+    ! self % nMatVOID = self % nMat + 1
+    allocate(self % sigmaT(self % nMat * self % nG))
+    allocate(self % nuSigmaF(self % nMat * self % nG))
+    allocate(self % chi(self % nMat * self % nG))
+    allocate(self % sigmaS(self % nMat * self % nG * self % nG))
 
     do m = 1, self % nMat
       matPtr  => self % mgData % getMaterial(m)
@@ -777,16 +777,16 @@ contains
       end do
     end do
 
-    do g = 1, self % nG
-      self % sigmaT(self % nG * (self % nMatVOID - 1) + g)   = 0.0_defFlt
-      self % nuSigmaF(self % nG * (self % nMatVOID - 1) + g) = 0.0_defFlt
-      self % chi(self % nG * (self % nMatVOID - 1) + g)      = 0.0_defFlt
+    ! do g = 1, self % nG
+    !   self % sigmaT(self % nG * (self % nMatVOID - 1) + g)   = 0.0_defFlt
+    !   self % nuSigmaF(self % nG * (self % nMatVOID - 1) + g) = 0.0_defFlt
+    !   self % chi(self % nG * (self % nMatVOID - 1) + g)      = 0.0_defFlt
       
-      do g1 = 1, self % nG
-              self % sigmaS(self % nG * self % nG * (self % nMatVOID - 1) &
-              + self % nG * (g - 1) + g1)  = 0.0_defFlt
-          end do
-    end do
+    !   do g1 = 1, self % nG
+    !           self % sigmaS(self % nG * self % nG * (self % nMatVOID - 1) &
+    !           + self % nG * (g - 1) + g1)  = 0.0_defFlt
+    !       end do
+    ! end do
 
   end subroutine init
 
@@ -1001,8 +1001,8 @@ contains
     class(LSFixedPackage), intent(inout) :: self
 
     call self % printSettings()
-    if (self % nVolRays > 0) call self % volumeCalculation()
-    if (self % uncollidedType > NO_UC) call self % uncollidedCalculation()
+     if (self % nVolRays > 0) call self % volumeCalculation()
+     if (self % uncollidedType > NO_UC) call self % uncollidedCalculation()
     call self % cycles()
     call self % printResults()
 
@@ -1272,18 +1272,18 @@ contains
 
     ! Reinitialise volumes
     ! Perhaps it is worth doing something more clever if volumes have been precomputed...
-    self % volumeTracks = ZERO
-    self % volume = ZERO
-    self % momMat         = 0.0_defReal
-    self % momTracks      = 0.0_defReal
-    self % centroid       = 0.0_defReal
-    self % centroidTracks = 0.0_defReal
-    self % scalarX = 0.0_defFlt
-    self % scalarY = 0.0_defFlt
-    self % scalarZ = 0.0_defFlt
-    self % sourceX = 0.0_defFlt
-    self % sourceY = 0.0_defFlt
-    self % sourceZ = 0.0_defFlt
+    ! self % volumeTracks = ZERO
+    ! self % volume = ZERO
+    ! self % momMat         = 0.0_defReal
+    ! self % momTracks      = 0.0_defReal
+    ! self % centroid       = 0.0_defReal
+    ! self % centroidTracks = 0.0_defReal
+    ! self % scalarX = 0.0_defFlt
+    ! self % scalarY = 0.0_defFlt
+    ! self % scalarZ = 0.0_defFlt
+    ! self % sourceX = 0.0_defFlt
+    ! self % sourceY = 0.0_defFlt
+    ! self % sourceZ = 0.0_defFlt
 
     ! Update the cell number after several iterations
     ! Allows for better diagnostics on ray coverage
@@ -1519,6 +1519,12 @@ contains
       totalLength = totalLength + length
 
 
+      if (doVolume) then
+        !$omp atomic
+        self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
+      end if
+
+
       ! Set new cell's position. Use half distance across cell
       ! to try and avoid FP error
       if (.not. self % cellFound(cIdx)) then
@@ -1537,52 +1543,52 @@ contains
       !mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
 
 
-      if (doVolume) then
+      ! if (doVolume) then
 
-        rC = r0 + mu0 * HALF * length
+        ! rC = r0 + mu0 * HALF * length
 
-        ! Check cell has been visited 
-        if (self % volume(cIdx) > volume_tolerance) then
-          ! Compute the track centroid in local co-ordinates
-          rNorm = rC - self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
-          ! Compute the entry point in local co-ordinates
-          r0Norm = r0 - self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
-        else
-          rNorm = ZERO
-          r0Norm = - mu0 * HALF * length
-        end if 
+        ! ! Check cell has been visited 
+        ! if (self % volume(cIdx) > volume_tolerance) then
+        !   ! Compute the track centroid in local co-ordinates
+        !   rNorm = rC - self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
+        !   ! Compute the entry point in local co-ordinates
+        !   r0Norm = r0 - self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
+        ! else
+        !   rNorm = ZERO
+        !   r0Norm = - mu0 * HALF * length
+        ! end if 
 
-        len2_12 = length * length / 12
-        matScore(xx) = length * (rnorm(x) * rnorm(x) + mu0(x) * mu0(x) * len2_12) 
-        matScore(xy) = length * (rnorm(x) * rnorm(y) + mu0(x) * mu0(y) * len2_12) 
-        matScore(xz) = length * (rnorm(x) * rnorm(z) + mu0(x) * mu0(z) * len2_12) 
-        matScore(yy) = length * (rnorm(y) * rnorm(y) + mu0(y) * mu0(y) * len2_12) 
-        matScore(yz) = length * (rnorm(y) * rnorm(z) + mu0(y) * mu0(z) * len2_12) 
-        matScore(zz) = length * (rnorm(z) * rnorm(z) + mu0(z) * mu0(z) * len2_12) 
-        centIdx = nDim * (cIdx - 1)
-        momIdx = matSize * (cIdx - 1)
+        ! len2_12 = length * length / 12
+        ! matScore(xx) = length * (rnorm(x) * rnorm(x) + mu0(x) * mu0(x) * len2_12) 
+        ! matScore(xy) = length * (rnorm(x) * rnorm(y) + mu0(x) * mu0(y) * len2_12) 
+        ! matScore(xz) = length * (rnorm(x) * rnorm(z) + mu0(x) * mu0(z) * len2_12) 
+        ! matScore(yy) = length * (rnorm(y) * rnorm(y) + mu0(y) * mu0(y) * len2_12) 
+        ! matScore(yz) = length * (rnorm(y) * rnorm(z) + mu0(y) * mu0(z) * len2_12) 
+        ! matScore(zz) = length * (rnorm(z) * rnorm(z) + mu0(z) * mu0(z) * len2_12) 
+        ! centIdx = nDim * (cIdx - 1)
+        ! momIdx = matSize * (cIdx - 1)
         
-        rC = rC * length
+        ! rC = rC * length
         ! Convert to floats for speed
 
         !centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
         !momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
 
-        ! Update centroid
-        call OMP_set_lock(self % locks(cIdx))
-          self % centroidTracks((centIdx + 1):(centIdx + nDim)) = self % centroidTracks((centIdx + 1):(centIdx + nDim)) + rC(g)
+        ! ! Update centroid
+        ! call OMP_set_lock(self % locks(cIdx))
+        !   self % centroidTracks((centIdx + 1):(centIdx + nDim)) = self % centroidTracks((centIdx + 1):(centIdx + nDim)) + rC(g)
 
 
-          ! Update spatial moment scores
-          !$omp simd 
-          do g = 1, matSize
-            self % momTracks(momIdx + g) = self % momTracks(momIdx + g) + matScore(g)
-          end do
+        !   ! Update spatial moment scores
+        !   !$omp simd 
+        !   do g = 1, matSize
+        !     self % momTracks(momIdx + g) = self % momTracks(momIdx + g) + matScore(g)
+        !   end do
 
-          !$omp atomic
-          self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
-        call OMP_unset_lock(self % locks(cIdx))
-      end if
+          ! !$omp atomic
+          ! self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
+        !call OMP_unset_lock(self % locks(cIdx))
+      ! end if
 
 
     end do
@@ -1701,9 +1707,9 @@ contains
       matIdx  = r % coords % matIdx
       cIdx    = self % IDToCell(r % coords % uniqueID)
       
-      if (matIdx >= VOID_MAT - 1) then
-        matIdx = self % nMatVOID
-      end if
+      ! if (matIdx >= VOID_MAT - 1) then
+      !   matIdx = self % nMatVOID
+      ! end if
       
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
@@ -1963,11 +1969,7 @@ contains
     if (cIdx > 0) then
       do g = 1, self % nG
         idx = (cIdx - 1) * self % nG + g
-        if (totVec(g) > volume_tolerance) then
-          fluxVec(g) = self % source(idx) / totVec(g)
-        else
-          fluxVec(g) = self % source(idx)
-        end if
+        fluxVec(g) = self % source(idx) 
       end do
     else
       fluxVec = 0.0_defFlt
@@ -1994,13 +1996,11 @@ contains
 
       end if
 
-      !if (cIdx > 0) then
       !can remove one set
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
       dirPre = r % dirGlobal()
       posPre = r % rGlobal()
-      !end if
 
 
       ! Set maximum flight distance and ensure ray is active
@@ -2029,14 +2029,15 @@ contains
       ! Simply skips transport for the given movement
       if (cIdx > 0 .and. length > self % skipLength) then
 
+        rC = r0 + length * HALF * mu0
         totalLength = totalLength + length
 
         ! Set new cell's position. Use half distance across cell
         ! to try and avoid FP error
-        if (.not. self % cellFound(cIdx) .and. cIdx > 0) then
+        if (.not. self % cellFound(cIdx)) then
           !$omp critical
           self % cellFound(cIdx) = .true.
-          self % cellPos(cIdx,:) = r0 + length * HALF * mu0
+          self % cellPos(cIdx,:) = rC
           !$omp end critical
         end if
 
@@ -2057,7 +2058,7 @@ contains
             r0Norm = r0 - mid(1:nDim)
         else
             rNorm = ZERO
-            r0Norm = - mu0 * HALF * length
+            r0Norm = ZERO !- mu0 * HALF * length
         end if 
 
         ! Convert to floats for speed
@@ -2070,29 +2071,21 @@ contains
     
         !$omp simd aligned(xGradVec, yGradVec, zGradVec)
         do g = 1, self % nG
-            if (totVec(g) > volume_tolerance) then
             flatQ(g) = rNormFlt(x) * xGradVec(g)
             flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
             flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
             flatQ(g) = flatQ(g) + sourceVec(g)
-            flatQ(g) = flatQ(g) / totVec(g)
-
             gradQ(g) = muFlt(x) * xGradVec(g)
             gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
             gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
-            gradQ(g) = gradQ(g) / totVec(g)
-            else
-            flatQ(g) = 0.0_defFlt
-            gradQ(g) = 0.0_defFlt
-            end if
         end do
 
         !$omp simd
         do g = 1, self % nG
             tau(g) = totVec(g) * lenFlt
-            ! if (tau(g) < 1E-8_defFlt) then 
-            !   tau(g) = 0.0_defFlt
-            ! end if
+            if (tau(g) < 1E-8) then
+              tau(g) = 0.0_defFlt
+            end if
         end do
 
         ! Compute exponentials necessary for angular flux update
@@ -2129,11 +2122,6 @@ contains
           fluxVec(g) = fluxVec(g) - delta(g) * totVec(g) 
         end do
 
-        ! !$omp simd
-        ! do g = 1, self % nG
-            !avgfluxVec(g) = (delta(g) + lenFlt * sourceVec(g))/tau(g)
-        ! end do
-
         ! Accumulate to scalar flux
         if (activeRay) then
             len2_12 = length * length / 12
@@ -2153,7 +2141,7 @@ contains
 
             !$omp simd
             do g = 1, self % nG
-              H(g) = ( F1(g) - Gn(g) ) !expH(tau(g))
+              H(g) = ( F1(g) - Gn(g) ) 
             end do
         
             !$omp simd
@@ -2168,11 +2156,11 @@ contains
 
             ! $omp simd 
             do g = 1, self % nG
-            G1(g) = G1(g) * flatQ(g) * lenFlt
-            G2(g) = G2(g) * gradQ(g) * lenFlt2_2
-            H(g)  = H(g) * fluxVec0(g) * lenFlt
-            H(g) = (G1(g) + G2(g) + H(g)) * lenFlt
-            flatQ(g) = flatQ(g) * lenFlt + delta(g)
+              G1(g) = G1(g) * flatQ(g) * lenFlt
+              G2(g) = G2(g) * gradQ(g) * lenFlt2_2
+              H(g)  = H(g) * fluxVec0(g) * lenFlt
+              H(g) = (G1(g) + G2(g) + H(g)) * lenFlt
+              flatQ(g) = flatQ(g) * lenFlt + delta(g)
             end do
 
             !$omp simd
@@ -2183,35 +2171,36 @@ contains
             end do
 
             call OMP_set_lock(self % locks(cIdx))
-            scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
-            xMomVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG))
-            yMomVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
-            zMomVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))
 
-            !$omp simd
-            do g = 1, self % nG
-                scalarVec(g) = scalarVec(g) + delta(g) 
-                xMomVec(g) = xMomVec(g) + xInc(g) 
+              scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
+              xMomVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG))
+              yMomVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
+              zMomVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))
+
+              !$omp simd
+              do g = 1, self % nG
+                scalarVec(g) = scalarVec(g) + delta(g)  
+                xMomVec(g) = xMomVec(g) + xInc(g)  
                 yMomVec(g) = yMomVec(g) + yInc(g)
-                zMomVec(g) = zMomVec(g) + zInc(g) 
-            end do
+                zMomVec(g) = zMomVec(g) + zInc(g)  
+              end do
 
-            centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
-            momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
-            volTrack => self % volumeTracks(cIdx)
+              centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
+              momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
+              volTrack => self % volumeTracks(cIdx)
 
-            volTrack = volTrack + length
+              volTrack = volTrack + length
 
-            !$omp simd aligned(centVec)
-            do g = 1, nDim
-                centVec(g) = centVec(g) + rC(g)
-            end do
+              !$omp simd aligned(centVec)
+              do g = 1, nDim
+                  centVec(g) = centVec(g) + rC(g)
+              end do
 
-            ! Update spatial moment scores
-            !$omp simd aligned(momVec)
-            do g = 1, matSize
-                momVec(g) = momVec(g) + matScore(g)
-            end do
+              ! Update spatial moment scores
+              !$omp simd aligned(momVec)
+              do g = 1, matSize
+                  momVec(g) = momVec(g) + matScore(g)
+              end do
 
             call OMP_unset_lock(self % locks(cIdx))
 
@@ -2327,35 +2316,12 @@ contains
     do cIdx = 1, self % nCells
       matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
 
-    !   if (matIdx >= VOID_MAT - 0.5) then
-    !     matIdx = self % nMatVOID
-    !   end if 
-
-    !   !Guard against void cells
-    !   !if (abs(matIdx - UNDEF_MAT) < 1E-2) then
-    !   if (matIdx == UNDEF_MAT) then
-    !     do g = 1, self % nG
-    !       idx   = self % nG * (cIdx - 1) + g
-    !       self % scalarFlux(idx) = 0.0_defFlt
-    !     end do
-    !     cycle
-    !   end if
-
-      ! Guard against void cells
-      if (matIdx > 2000000) then
-        do g = 1, self % nG
-          idx   = self % nG * (cIdx - 1) + g
-          self % scalarFlux(idx) = 0.0_defFlt
-        end do
-        cycle
-      end if
-
-      dIdx = (cIdx - 1) * nDim
-      mIdx = (cIdx - 1) * matSize
-
-      ! Update volume due to additional rays
-      !self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
-      !vol = real(self % volume(cIdx),defFlt)
+      if (matIdx >= UNDEF_MAT) then
+        matIdx = self % nMatVOID
+      end if 
+      norm = real(ONE / lengthPerIt, defFlt)
+      normVol = ONE / ( lengthPerIt * it)
+  
       ! Update volume due to additional rays unless volume was precomputed
       !if (self % nVolRays <= 0) then
       ! Forget the above - use precomputed volumes only for first collided
@@ -2376,6 +2342,10 @@ contains
         ! Standard volume approach
         self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
       end if
+
+      vol = self % volume(cIdx)
+      dIdx = (cIdx - 1) * nDim
+      mIdx = (cIdx - 1) * matSize
 
       ! Check if cell has been visited
       if (self % volume(cIdx) > volume_tolerance) then 
@@ -2409,92 +2379,69 @@ contains
 
       end if
 
-      vol = self % volume(cIdx)
-
       do g = 1, self % nG
 
         idx   = self % nG * (cIdx - 1) + g
         total = self % sigmaT((matIdx - 1) * self % nG + g)
 
         if (vol > volume_tolerance) then
-          self % scalarFlux(idx) = self % scalarFlux(idx) * norm / (real(vol,defFlt)) 
-          self % scalarX(idx) = self % scalarX(idx) * norm / (real(vol,defFlt))
-          self % scalarY(idx) = self % scalarY(idx) * norm / (real(vol,defFlt))
-          self % scalarZ(idx) = self % scalarZ(idx) * norm / (real(vol,defFlt))
-        ! else
-        !   corr = ONE
+          self % scalarFlux(idx) = self % scalarFlux(idx) * norm / (real(vol,defFlt) ) 
+          self % scalarX(idx) = self % scalarX(idx) * norm / (real(vol,defFlt) )
+          self % scalarY(idx) = self % scalarY(idx) * norm / (real(vol,defFlt) )
+          self % scalarZ(idx) = self % scalarZ(idx) * norm / (real(vol,defFlt) )
+        else
+          corr = ONE
+        end if
+        ! ! TODO: I think this may not work when volume correction is applied...
+        if (matIdx < UNDEF_MAT) then
+          sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
+
+          ! Assumes non-zero total XS
+          if ((sigGG < 0) .and. (total > 0)) then
+            D = -real(self % rho, defFlt) * sigGG / total
+          else
+            D = 0.0_defFlt
+          end if
+        else
+          D = 0.0_defFlt
         end if
 
-        if (total > volume_tolerance) then
-            self % scalarFlux(idx) = self % scalarFlux(idx) + self % source(idx) / total
-        end if
-        ! ! ! TODO: I think this may not work when volume correction is applied...
-        ! if (matIdx < UNDEF_MAT) then
-        !   sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
-
-        !   ! Assumes non-zero total XS
-        !   if ((sigGG < 0) .and. (total > 0)) then
-        !     D = -real(self % rho, defFlt) * sigGG / total
-        !   else
-        !     D = 0.0_defFlt
-        !   end if
-        ! else
-        !   D = 0.0_defFlt
-        ! end if
-
-        ! if (total > 0.0_defFlt) then
-        !   self % scalarFlux(idx) =  real((self % scalarflux(idx) + self % source(idx) &
-        !           / total + D * self % prevFlux(idx) ) / (1 + D), defFlt)
-        !   self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
-        !   self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
-        !   self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
-        ! else
-        !   self % scalarFlux(idx) =  real((self % scalarflux(idx) + &
-        !                   D * self % prevFlux(idx) ) / (1 + D), defFlt)
-        !   self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
-        !   self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
-        !   self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
-        ! end if
+          self % scalarFlux(idx) =  real((self % scalarflux(idx) + self % source(idx) &
+                                                   + D * self % prevFlux(idx) ) / (1 + D), defFlt)
+          self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
+          self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
+          self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
        
-        ! ! Apply volume correction only to negative flux cells
-        ! if (self % volCorr .and. self % passive) then
-        !   if (self % scalarFlux(idx) < 0) then
-        !     self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
-        !             (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-        !           self % scalarX(idx) =  0.0_defFlt
-        !           self % scalarY(idx) =  0.0_defFlt
-        !           self % scalarZ(idx) =  0.0_defFlt
+        ! Apply volume correction only to negative flux cells
+        if (self % volCorr .and. self % passive) then
+          if (self % scalarFlux(idx) < 0) then
+            self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
+                    (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+                  self % scalarX(idx) =  0.0_defFlt
+                  self % scalarY(idx) =  0.0_defFlt
+                  self % scalarZ(idx) =  0.0_defFlt
 
-        !   end if 
-        ! ! Apply volume correction to all cells
-        ! elseif (self % volCorr) then
-        !   self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-        !   self % scalarX(idx) =  0.0_defFlt
-        !   self % scalarY(idx) =  0.0_defFlt
-        !   self % scalarZ(idx) =  0.0_defFlt
-        ! end if
+          end if 
+        ! Apply volume correction to all cells
+        elseif (self % volCorr) then
+          self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+          self % scalarX(idx) =  0.0_defFlt
+          self % scalarY(idx) =  0.0_defFlt
+          self % scalarZ(idx) =  0.0_defFlt
+        end if
 
-        ! ! This will probably affect things like neutron conservation...
-        ! if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) then
-        !   self % scalarFlux(idx) = 0.0_defFlt
-        !   self % scalarX(idx) =  0.0_defFlt
-        !   self % scalarY(idx) =  0.0_defFlt
-        !   self % scalarZ(idx) =  0.0_defFlt
-        ! end if
+        ! This will probably affect things like neutron conservation...
+        if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) then
+          self % scalarFlux(idx) = 0.0_defFlt
+          self % scalarX(idx) =  0.0_defFlt
+          self % scalarY(idx) =  0.0_defFlt
+          self % scalarZ(idx) =  0.0_defFlt
+        end if
 
 
         ! NaN check - kill calculation
-        if (self % scalarFlux(idx) /= self % scalarFlux(idx)) then
-                print *, 'total', total
-                print *, 'flux', self % scalarflux(idx)
-                print *, 'prev', self % prevFlux(idx)
-                print *, 'source', self % source(idx)
-                print *, 'correction', self % volCorr
-                print *, 'mat', matIdx
-                print *, self % sourceX(idx), self % sourceY(idx), self % sourceZ(idx)
-                call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(cIdx) &
-                //numToChar_defReal(vol))
-        end if
+        if (self % scalarFlux(idx) /= self % scalarFlux(idx)) &
+                call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(g))
 
       end do
 
@@ -2502,6 +2449,11 @@ contains
     !$omp end parallel do
 
     print *, 'scalar', MAXVAL(self % scalarFlux)
+    print *, 'scalarXYZ', MAXVAL(self % scalarX),MAXVAL(self % scalarY),MAXVAL(self % scalarZ)
+    print *, 'total', (self % sigmaT)
+    print *, 'mom', MAXVAL(self % momtracks), MAXVAL(self % momMat)
+    print *, 'sources', MAXVAL(self % source), MAXVAL(self % sourceX), MAXVAL(self % sourceY), MAXVAL(self % sourceZ)
+    print *, 'chi', (self % chi)
 
   end subroutine normaliseFluxAndVolume
 
@@ -2529,14 +2481,14 @@ contains
 
     ! Hack to guard against non-material cells
     if (matIdx >= UNDEF_MAT) then
-    !   baseIdx = self % ng * (cIdx - 1)
-    !   do g = 1, self % nG
-    !     idx = baseIdx + g
-    !     self % source(idx) = 0.0_defFlt
-    !     self % sourceX(idx) = 0.0_defFlt
-    !     self % sourceY(idx) = 0.0_defFlt
-    !     self % sourceZ(idx) = 0.0_defFlt
-    !   end do
+      baseIdx = self % ng * (cIdx - 1)
+      do g = 1, self % nG
+        idx = baseIdx + g
+        self % source(idx) = 0.0_defFlt
+        self % sourceX(idx) = 0.0_defFlt
+        self % sourceY(idx) = 0.0_defFlt
+        self % sourceZ(idx) = 0.0_defFlt
+      end do
       return
     end if
 
@@ -2614,15 +2566,15 @@ contains
       idx = baseIdx + g
 
       self % source(idx) = chi(g) * fission + scatter + self % fixedSource(idx)
-      ! self % source(idx) = self % source(idx) !/ total(g)
-        
+      self % source(idx) = self % source(idx) / total(g)
+
       if ( it > 29 ) then 
         xSource = chi(g) * xFission + xScatter
-        !xSource = xSource !/ total(g) 
+        xSource = xSource / total(g) 
         ySource = chi(g) * yFission + yScatter
-        !ySource = ySource !/ total(g) 
+        ySource = ySource / total(g) 
         zSource = chi(g) * zFission + zScatter
-        !zSource = zSource !/ total(g) 
+        zSource = zSource / total(g) 
 
         ! Calculate source gradients by inverting the moment matrix
         self % sourceX(idx) = invMxx * xSource + &
