@@ -1992,7 +1992,8 @@ contains
       if (cIdx > 0 .and. length > self % skipLength) then
 
         totalLength = totalLength + length
-        rC = 0 + length * HALF * mu0
+        
+        rC = r0 + length * HALF * mu0
 
         ! Set new cell's position. Use half distance across cell
         ! to try and avoid FP error
@@ -2037,6 +2038,7 @@ contains
             flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
             flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
             flatQ(g) = flatQ(g) + sourceVec(g)
+
             gradQ(g) = muFlt(x) * xGradVec(g)
             gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
             gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
