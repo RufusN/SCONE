@@ -216,7 +216,7 @@ module LSFixedPackage_class
     integer(shortInt)                     :: nG          = 0
     integer(shortInt)                     :: nCells      = 0
     integer(shortInt)                     :: nMat        = 0
-    integer(shortInt)                     :: nMatVOID    = 0 !LS
+    integer(shortInt)                     :: nMatVOID    = 0 
     real(defReal)                         :: lengthPerIt = ZERO
     real(defReal)                         :: normVolume  = ONE
 
@@ -1276,12 +1276,12 @@ contains
     self % momTracks      = 0.0_defReal
     self % centroid       = 0.0_defReal
     self % centroidTracks = 0.0_defReal
-    self % scalarX = 0.0_defFlt
-    self % scalarY = 0.0_defFlt
-    self % scalarZ = 0.0_defFlt
-    self % sourceX = 0.0_defFlt
-    self % sourceY = 0.0_defFlt
-    self % sourceZ = 0.0_defFlt
+    ! self % scalarX = 0.0_defFlt
+    ! self % scalarY = 0.0_defFlt
+    ! self % scalarZ = 0.0_defFlt
+    ! self % sourceX = 0.0_defFlt
+    ! self % sourceY = 0.0_defFlt
+    ! self % sourceZ = 0.0_defFlt
     ! Update the cell number after several iterations
     ! Allows for better diagnostics on ray coverage
     nCells = self % nCells
@@ -1712,11 +1712,10 @@ contains
         totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
       end if
 
-      ! Remember co-ordinates to set new cell's position
-      !if (.not. self % cellFound(cIdx)) then
-        r0 = r % rGlobal()
-        mu0 = r % dirGlobal()
-      !end if
+
+      r0 = r % rGlobal()
+      mu0 = r % dirGlobal()
+
 
       ! Set maximum flight distance
       length = self % uncollidedLength - totalLength
@@ -1992,7 +1991,7 @@ contains
       if (cIdx > 0 .and. length > self % skipLength) then
 
         totalLength = totalLength + length
-        
+
         rC = r0 + length * HALF * mu0
 
         ! Set new cell's position. Use half distance across cell
@@ -2411,12 +2410,6 @@ contains
 
     end do
     !$omp end parallel do
-
-    print *, 'scalar', MAXVAL(self % scalarFlux)
-    print *, 'scalarXYZ', MAXVAL(self % scalarX),MAXVAL(self % scalarY),MAXVAL(self % scalarZ)
-    print *, 'mom', MAXVAL(self % momtracks), MAXVAL(self % momMat)
-    print *, 'sources', MAXVAL(self % source), MAXVAL(self % sourceX), MAXVAL(self % sourceY), MAXVAL(self % sourceZ)
- 
 
   end subroutine normaliseFluxAndVolume
 
