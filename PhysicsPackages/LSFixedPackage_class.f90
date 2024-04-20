@@ -1276,12 +1276,6 @@ contains
     self % momTracks      = 0.0_defReal
     self % centroid       = 0.0_defReal
     self % centroidTracks = 0.0_defReal
-    ! self % scalarX = 0.0_defFlt
-    ! self % scalarY = 0.0_defFlt
-    ! self % scalarZ = 0.0_defFlt
-    ! self % sourceX = 0.0_defFlt
-    ! self % sourceY = 0.0_defFlt
-    ! self % sourceZ = 0.0_defFlt
     ! Update the cell number after several iterations
     ! Allows for better diagnostics on ray coverage
     nCells = self % nCells
@@ -1537,9 +1531,9 @@ contains
         ! Check cell has been visited 
         if (self % volume(cIdx) > volume_tolerance) then
           ! Compute the track centroid in local co-ordinates
-          rNorm = rC - mid(1:nDim)!self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
+          rNorm = rC - mid(1:nDim)
           ! Compute the entry point in local co-ordinates
-          r0Norm = r0 -  mid(1:nDim) !self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
+          r0Norm = r0 -  mid(1:nDim) 
         else
           rNorm = ZERO
           r0Norm = - mu0 * HALF * length
@@ -1607,21 +1601,15 @@ contains
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, event, matIdx0, &
-                                                             i, cIdx, baseIdx, surfIdx, centIdx, momIdx
-    real(defReal)                                         :: totalLength, length, mu, phi,  len2_12
-    real(defFlt)                                          :: lenFlt,lenFlt2_2
+                                                             i, cIdx, baseIdx, surfIdx
+    real(defReal)                                         :: totalLength, length, mu, phi
+    real(defFlt)                                          :: lenFlt
     logical(defBool)                                      :: hitVacuum
     type(distCache)                                       :: cache
-    real(defFlt), dimension(self % nG)                    :: F1, F2, Gn, G1, G2, H, tau, delta, fluxVec, &
-                                                              flatQ, gradQ, xInc, yInc, zInc, fluxVec0
-    real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, &
-                                                              xGradVec, yGradVec, zGradVec, &
-                                                              xMomVec, yMomVec, zMomVec
-    real(defReal), pointer, dimension(:)                  :: mid, momVec, centVec
-    real(defReal), dimension(3)                           :: r0, mu0, u, x0, rand3, rC, r0Norm, rNorm
-    real(defReal), pointer                                :: volTrack
-    real(defFlt), dimension(3)                            :: muFlt, rNormFlt, r0NormFlt
-    character(100), parameter :: Here = 'uncollidedSweep (LSFixedPackage_class.f90)'
+    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
+    real(defFlt), pointer, dimension(:)                   :: scalarVec, totVec
+    real(defReal), dimension(3)                           :: r0, mu0, u, x0, rand3
+    character(100), parameter :: Here = 'uncollidedSweep (fixedSourceTRRMPhysicsPackage_class.f90)'
 
     ! If point source, position and direction sample is straightforward
     ! Flux is determined by source
@@ -1687,11 +1675,7 @@ contains
       totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
       !$omp simd
       do g = 1, self % nG
-        if (totVec(g) > 0.0_defFlt) then
-          fluxVec(g) = self % fixedSource(baseIdx + g) / totVec(g)
-        else 
-          fluxVec(g) = 0.0_defFlt
-        end if
+        fluxVec(g) = self % fixedSource(baseIdx + g)
       end do
     end if
 
@@ -1700,11 +1684,6 @@ contains
       ! Get material and cell the ray is moving through
       matIdx  = r % coords % matIdx
       cIdx    = self % IDToCell(r % coords % uniqueID)
-      
-      if (matIdx >= VOID_MAT) then
-        matIdx = self % nMatVOID
-      end if
-      
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
 
@@ -1712,10 +1691,11 @@ contains
         totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
       end if
 
-
-      r0 = r % rGlobal()
-      mu0 = r % dirGlobal()
-
+      ! Remember co-ordinates to set new cell's position
+      if (.not. self % cellFound(cIdx)) then
+        r0 = r % rGlobal()
+        mu0 = r % dirGlobal()
+      end if
 
       ! Set maximum flight distance
       length = self % uncollidedLength - totalLength
@@ -1733,17 +1713,14 @@ contains
         call self % geom % moveRay_noCache(r % coords, length, event, hitVacuum, surfIdx)
       end if
       totalLength = totalLength + length
-
       lenFlt = real(length,defFlt)
-      ! Calculate the track centre
-      rC = r0 + length * HALF * mu0
 
       ! Set new cell's position. Use half distance across cell
       ! to try and avoid FP error
       if (.not. self % cellFound(cIdx)) then
         !$omp critical
         self % cellFound(cIdx) = .true.
-        self % cellPos(cIdx,:) = rC
+        self % cellPos(cIdx,:) = r0 + length * HALF * mu0
         !$omp end critical
       end if
 
@@ -1751,133 +1728,22 @@ contains
 
       baseIdx = (cIdx - 1) * self % nG
       ! No need for sourceVec when only depositing source
-      sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
-      xGradVec => self % sourceX((baseIdx + 1):(baseIdx + self % nG))
-      yGradVec => self % sourceY((baseIdx + 1):(baseIdx + self % nG))
-      zGradVec => self % sourceZ((baseIdx + 1):(baseIdx + self % nG))
-      mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
-
-      ! Check cell has been visited 
-      if (self % volume(cIdx) > volume_tolerance) then
-        ! Compute the track centroid in local co-ordinates
-        rNorm = rC - mid(1:nDim)
-        ! Compute the entry point in local co-ordinates
-        r0Norm = r0 - mid(1:nDim)
-      else
-        rNorm = ZERO
-        r0Norm = - mu0 * HALF * length
-      end if 
-
-      ! Convert to floats for speed
-      r0NormFlt = real(r0Norm,defFlt)
-      rNormFlt = real(rNorm,defFlt)
-      muFlt = real(mu0,defFlt)
-      lenFlt  = real(length,defFlt)
-
-       ! Calculate source terms
-      !$omp simd aligned(xGradVec, yGradVec, zGradVec)
-      do g = 1, self % nG
-        flatQ(g) = rNormFlt(x) * xGradVec(g)
-        flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
-        flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
-        flatQ(g) = flatQ(g) + sourceVec(g)
-
-        gradQ(g) = muFlt(x) * xGradVec(g)
-        gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
-        gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
-      end do
+      scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
 
       !$omp simd
       do g = 1, self % nG
-        tau(g) = totVec(g) * lenFlt
-      end do
-
-      ! Compute exponentials necessary for angular flux update
-      !$omp simd
-      do g = 1, self % nG
-        Gn(g) = expG(tau(g))
-      end do
-
-     !$omp simd
-      do g = 1, self % nG
-        F1(g)  = 1.0_defFlt - tau(g) * Gn(g) !expTau(tau(g)) * lenFlt
-      end do
-
-      !$omp simd
-      do g = 1, self % nG
-        F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt * lenFlt
-      end do
-
-      !$omp simd
-      do g = 1, self % nG
-        delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) * lenFlt & 
-                    - one_two * gradQ(g) * F2(g) 
-      end do
-
-      ! Intermediate flux variable creation or update
-      !$omp simd
-      do g = 1, self % nG
-        fluxVec0(g) = fluxVec(g)
-      end do
-
-      ! Flux vector update
-      !$omp simd
-      do g = 1, self % nG
-        fluxVec(g) = fluxVec(g) - delta(g) * totVec(g) 
-      end do
-      
-      rC = rC * length
-
-      ! Compute necessary exponential quantities
-      lenFlt2_2 = lenFlt * lenFlt * one_two
-
-      !$omp simd
-      do g = 1, self % nG
-        H(g) = ( F1(g) - Gn(g) ) !expH(tau(g))
-      end do
-    
-      !$omp simd
-      do g = 1, self % nG
-          G1(g) = one_two - H(g)
-      end do
-
-      !$omp simd 
-      do g = 1, self % nG
-        G2(g) = expG2(tau(g)) 
-      end do
-
-      !$omp simd 
-      do g = 1, self % nG
-        G1(g) = G1(g) * flatQ(g) * lenFlt
-        G2(g) = G2(g) * gradQ(g) * lenFlt2_2
-        H(g)  = H(g) * fluxVec0(g) * lenFlt
-        H(g) = (G1(g) + G2(g) + H(g)) * lenFlt
-        flatQ(g) = flatQ(g) * lenFlt + delta(g)
-      end do
-
-      !$omp simd
-      do g = 1, self % nG
-        xInc(g) = r0NormFlt(x) * flatQ(g) + muFlt(x) * H(g) 
-        yInc(g) = r0NormFlt(y) * flatQ(g) + muFlt(y) * H(g) 
-        zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g)
+        attenuate(g) = exponential(totVec(g) * lenFlt)
+        delta(g) = fluxVec(g) * attenuate(g)
+        fluxVec(g) = fluxVec(g) - delta(g)
       end do
 
       ! Accumulate to scalar flux
       ! Assume no volume scoring due to non-uniform sampling!
       call OMP_set_lock(self % locks(cIdx))
-      scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
-      xMomVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG))
-      yMomVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
-      zMomVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))
-
-      !$omp simd aligned(scalarVec, xMomVec, yMomVec, zMomVec)
+      !$omp simd
       do g = 1, self % nG
-        scalarVec(g) = scalarVec(g) + delta(g) 
-        xMomVec(g) = xMomVec(g) + xInc(g) 
-        yMomVec(g) = yMomVec(g) + yInc(g)
-        zMomVec(g) = zMomVec(g) + zInc(g) 
+        scalarVec(g) = scalarVec(g) + delta(g)
       end do
-
       call OMP_unset_lock(self % locks(cIdx))
 
       if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
@@ -2235,17 +2101,15 @@ contains
       if (self % volume(cIdx) > volume_tolerance) then
         matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
 
-        if (matIdx >= UNDEF_MAT) then !come back and check/complete
-          matIdx = self % nMatVOID 
-        end if 
-  
+        ! Guard against void cells
+        if (matIdx > UNDEF_MAT) then
+          cycle
+        end if
+
         do g = 1, self % nG
           total = self % sigmaT((matIdx - 1) * self % nG + g)
           idx   = self % nG * (cIdx - 1) + g
-          self % scalarFlux(idx) = self % scalarFlux(idx) * normFlt / ( real(self % volume(cIdx),defFlt))
-          self % scalarX(idx) = self % scalarX(idx) * normFlt / ( real(self % volume(cIdx),defFlt))
-          self % scalarY(idx) = self % scalarY(idx) * normFlt / ( real(self % volume(cIdx),defFlt))
-          self % scalarZ(idx) = self % scalarZ(idx) * normFlt / ( real(self % volume(cIdx),defFlt))
+          self % scalarFlux(idx) = self % scalarFlux(idx) * normFlt / (total * real(self % volume(cIdx),defFlt))
         end do
 
       end if
@@ -2282,8 +2146,11 @@ contains
       if (matIdx >= UNDEF_MAT) then
         matIdx = self % nMatVOID
       end if 
+
       norm = real(ONE / lengthPerIt, defFlt)
       normVol = ONE / ( lengthPerIt * it)
+
+      !!!Volume correction not currently working with LS> 
   
       ! Update volume due to additional rays unless volume was precomputed
       !if (self % nVolRays <= 0) then
@@ -2549,7 +2416,7 @@ contains
     class(LSFixedPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
     real(defFlt)                                          :: scatter, fission
-    real(defFlt), dimension(:), pointer                   :: nuFission, chi, scatterXS
+    real(defFlt), dimension(:), pointer                   :: nuFission, chi, scatterXS, total
     integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx
     real(defFlt), pointer, dimension(:)                   :: scatterVec
     real(defReal), pointer, dimension(:)                  :: fluxVec
@@ -2565,6 +2432,7 @@ contains
     scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
     nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
     chi => self % chi((matIdx + 1):(matIdx + self % nG))
+    total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
 
     baseIdx = self % nG * (cIdx - 1)
     fluxVec => self % uncollidedScores((baseIdx+1):(baseIdx + self % nG),1)
@@ -2594,6 +2462,7 @@ contains
 
       ! Don't scale by 1/SigmaT - that occurs in the sourceUpdateKernel
       self % fixedSource(idx) = chi(g) * fission + scatter
+      self % fixedSource(idx) = self % fixedSource(idx) !/ total(idx)
 
     end do
 

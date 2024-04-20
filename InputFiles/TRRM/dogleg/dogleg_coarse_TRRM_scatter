@@ -20,9 +20,9 @@ cellCheck 1;
 outputFormat asciiJSON;
 seed -1369706621;
 
-//volRays 500000; volLength 800;
+volRays 500000; volLength 800;
 
-//uncollided { type 2; pop 200000; cycles 20; length 300; bottom ( 0.0 0.0 0.0); top (10.0 10.0 10.0); }
+uncollided { type 2; pop 200000; cycles 20; length 300; bottom ( 0.0 0.0 0.0); top (10.0 10.0 10.0); relVolume 0.00277778;}
 //uncollided { type 1; pop 200000; cycles 20; length 300; point ( 5.0 5.0 5.0); strength (10.0); }
 
 source { sourceMat ( 1.0 ); }
