@@ -785,28 +785,28 @@ contains
         scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
         segCount = segCount + 1
  
-        ! !$omp critical
-        ! if (segCount * 7 > size(attBack) ) then
-        !   allocate(attBackBuffer(size(attBack) * 2)) !add cell id for scalar flux update
-        !   attBackBuffer(1:size(attBack)) = attBack
-        !   call move_alloc(attBackBuffer, attBack)
+        !$omp critical
+        if (segCount * 7 > size(attBack) ) then
+          allocate(attBackBuffer(size(attBack) * 2)) !add cell id for scalar flux update
+          attBackBuffer(1:size(attBack)) = attBack
+          call move_alloc(attBackBuffer, attBack)
 
-        !   allocate(cIdxBackBuffer(size(cIdxBack) * 2)) !add cell id for scalar flux update
-        !   cIdxBackBuffer(1:size(cIdxBack)) = cIdxBack
-        !   call move_alloc(cIdxBackBuffer, cIdxBack)
+          allocate(cIdxBackBuffer(size(cIdxBack) * 2)) !add cell id for scalar flux update
+          cIdxBackBuffer(1:size(cIdxBack)) = cIdxBack
+          call move_alloc(cIdxBackBuffer, cIdxBack)
 
-        !   allocate(vacBackBuffer(size(vacBack) * 2)) !add cell id for scalar flux update
-        !   vacBackBuffer(1:size(vacBack)) = vacBack
-        !   call move_alloc(vacBackBuffer, vacBack)
-        ! end if
-        ! !$omp end critical
+          allocate(vacBackBuffer(size(vacBack) * 2)) !add cell id for scalar flux update
+          vacBackBuffer(1:size(vacBack)) = vacBack
+          call move_alloc(vacBackBuffer, vacBack)
+        end if
+        !$omp end critical
         
-        ! !$omp simd
-        ! do g = 1, self % nG
-        !   attBack((segCount - 1) * self % nG + g) = attenuate(g)
-        ! end do
+        !$omp simd
+        do g = 1, self % nG
+          attBack((segCount - 1) * self % nG + g) = attenuate(g)
+        end do
 
-        ! cIdxBack(segCount) = cIdx
+        cIdxBack(segCount) = cIdx
 
       
         call OMP_set_lock(self % locks(cIdx))
@@ -814,14 +814,14 @@ contains
         do g = 1, self % nG
           scalarVec(g) = scalarVec(g) + delta(g) 
         end do
-        self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length !* 2
+        self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length * 2
         call OMP_unset_lock(self % locks(cIdx))
 
         if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
 
-        ! if (hitVacuum) then
-        !   vacBack(segCount) = .true.
-        ! end if 
+        if (hitVacuum) then
+          vacBack(segCount) = .true.
+        end if 
       
       end if
 
@@ -835,41 +835,40 @@ contains
 
     end do
 
-    ! do i = segCount, 1, -1
+    do i = segCount, 1, -1
 
-    !   if (vacBack(i)) then
-    !     !$omp simd
-    !     do g = 1, self % nG
-    !       fluxVec(g) = 0.0_defFlt
-    !     end do
-    !   end if
+      if (vacBack(i)) then
+        !$omp simd
+        do g = 1, self % nG
+          fluxVec(g) = 0.0_defFlt
+        end do
+      end if
 
-    !   cIdx = cIdxBack(i)
-    !   baseIdx = (cIdx - 1) * self % nG
-    !   sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
+      cIdx = cIdxBack(i)
+      baseIdx = (cIdx - 1) * self % nG
+      sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
 
-    !   !$omp simd aligned(totVec)
-    !   do g = 1, self % nG
-    !     delta(g) = (fluxVec(g) - sourceVec(g)) * attBack((segCount - 1) * self % nG + g)
-    !     fluxVec(g) = fluxVec(g) - delta(g)
-    !   end do
+      !$omp simd aligned(totVec)
+      do g = 1, self % nG
+        delta(g) = (fluxVec(g) - sourceVec(g)) * attBack((segCount - 1) * self % nG + g)
+        fluxVec(g) = fluxVec(g) - delta(g)
+      end do
 
-    !   scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
+      scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
     
-    !   call OMP_set_lock(self % locks(cIdx))
-    !   !$omp simd aligned(scalarVec)
-    !   do g = 1, self % nG
-    !     scalarVec(g) = scalarVec(g) + delta(g) 
-    !   end do
-    !   call OMP_unset_lock(self % locks(cIdx))
+      call OMP_set_lock(self % locks(cIdx))
+      !$omp simd aligned(scalarVec)
+      do g = 1, self % nG
+        scalarVec(g) = scalarVec(g) + delta(g) 
+      end do
+      call OMP_unset_lock(self % locks(cIdx))
 
-    !   ! Check for a vacuum hit
-    !   ! if (segCount - 1 > 1E-2) then
-
-    !   ! end if
+      ! Check for a vacuum hit
+      ! if (segCount - 1 > 1E-2) then
+      ! end if
   
 
-    !  end do
+     end do
 
   end subroutine transportSweep
 
