@@ -690,12 +690,15 @@ contains
     class(randomRayPhysicsPackage), target, intent(inout) :: self
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
-    integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx
+    integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
+                                                               segCount, i
     real(defReal)                                         :: totalLength, length
     logical(defBool)                                      :: activeRay, hitVacuum
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
+    real(defFlt), allocatable, dimension(:)               :: attBack, attBackBuffer, cIdxBack, cIdxBackBuffer
+    logical(defBool), allocatable, dimension(:)           :: vacBack, vacBackBuffer 
     real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec
     real(defReal), dimension(3)                           :: r0, mu0
     
@@ -708,8 +711,13 @@ contains
 
     ints = 0
     matIdx0 = 0
+    segCount = 0
     totalLength = ZERO
     activeRay = .false.
+    allocate(attBack(self % nG * 10))
+    allocate(cIdxBack(self % nG * 10))
+    allocate(vacBack(self % nG * 10))
+
     do while (totalLength < self % termination)
 
       ! Get material and cell the ray is moving through
@@ -719,7 +727,7 @@ contains
         matIdx0 = matIdx
         
         ! Cache total cross section
-        totVec => self % sigmaT((matIdx - 1) * self % nG + 1:self % nG)
+        totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
       end if
 
       ! Remember co-ordinates to set new cell's position
@@ -760,11 +768,10 @@ contains
       end if
 
       ints = ints + 1
-
       lenFlt = real(length,defFlt)
       baseIdx = (cIdx - 1) * self % nG
-      sourceVec => self % source(baseIdx + (1):(self % nG))
-
+      sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
+        
       !$omp simd aligned(totVec)
       do g = 1, self % nG
         attenuate(g) = exponential(totVec(g) * lenFlt)
@@ -775,17 +782,46 @@ contains
       ! Accumulate to scalar flux
       if (activeRay) then
         
-        scalarVec => self % scalarFlux(baseIdx + 1 : baseIdx + self % nG)
+        scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
+        segCount = segCount + 1
+ 
+        ! !$omp critical
+        ! if (segCount * 7 > size(attBack) ) then
+        !   allocate(attBackBuffer(size(attBack) * 2)) !add cell id for scalar flux update
+        !   attBackBuffer(1:size(attBack)) = attBack
+        !   call move_alloc(attBackBuffer, attBack)
+
+        !   allocate(cIdxBackBuffer(size(cIdxBack) * 2)) !add cell id for scalar flux update
+        !   cIdxBackBuffer(1:size(cIdxBack)) = cIdxBack
+        !   call move_alloc(cIdxBackBuffer, cIdxBack)
+
+        !   allocate(vacBackBuffer(size(vacBack) * 2)) !add cell id for scalar flux update
+        !   vacBackBuffer(1:size(vacBack)) = vacBack
+        !   call move_alloc(vacBackBuffer, vacBack)
+        ! end if
+        ! !$omp end critical
+        
+        ! !$omp simd
+        ! do g = 1, self % nG
+        !   attBack((segCount - 1) * self % nG + g) = attenuate(g)
+        ! end do
+
+        ! cIdxBack(segCount) = cIdx
+
       
         call OMP_set_lock(self % locks(cIdx))
         !$omp simd aligned(scalarVec)
         do g = 1, self % nG
           scalarVec(g) = scalarVec(g) + delta(g) 
         end do
-        self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
+        self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length !* 2
         call OMP_unset_lock(self % locks(cIdx))
 
         if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
+
+        ! if (hitVacuum) then
+        !   vacBack(segCount) = .true.
+        ! end if 
       
       end if
 
@@ -795,9 +831,45 @@ contains
         do g = 1, self % nG
           fluxVec(g) = 0.0_defFlt
         end do
-      end if
+      end if 
 
     end do
+
+    ! do i = segCount, 1, -1
+
+    !   if (vacBack(i)) then
+    !     !$omp simd
+    !     do g = 1, self % nG
+    !       fluxVec(g) = 0.0_defFlt
+    !     end do
+    !   end if
+
+    !   cIdx = cIdxBack(i)
+    !   baseIdx = (cIdx - 1) * self % nG
+    !   sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
+
+    !   !$omp simd aligned(totVec)
+    !   do g = 1, self % nG
+    !     delta(g) = (fluxVec(g) - sourceVec(g)) * attBack((segCount - 1) * self % nG + g)
+    !     fluxVec(g) = fluxVec(g) - delta(g)
+    !   end do
+
+    !   scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
+    
+    !   call OMP_set_lock(self % locks(cIdx))
+    !   !$omp simd aligned(scalarVec)
+    !   do g = 1, self % nG
+    !     scalarVec(g) = scalarVec(g) + delta(g) 
+    !   end do
+    !   call OMP_unset_lock(self % locks(cIdx))
+
+    !   ! Check for a vacuum hit
+    !   ! if (segCount - 1 > 1E-2) then
+
+    !   ! end if
+  
+
+    !  end do
 
   end subroutine transportSweep
 
@@ -885,13 +957,13 @@ contains
 
     ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
-    total => self % sigmaT(matIdx + (1):(self % nG))
-    scatterXS => self % sigmaS(matIdx * self % nG + (1):(self % nG*self % nG))
-    nuFission => self % nuSigmaF(matIdx + (1):(self % nG))
-    chi => self % chi(matIdx + (1):(self % nG))
+    total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
+    scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
+    nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
+    chi => self % chi((matIdx + 1):(matIdx + self % nG))
 
     baseIdx = self % ng * (cIdx - 1)
-    fluxVec => self % prevFlux(baseIdx+(1):(self % nG))
+    fluxVec => self % prevFlux((baseIdx+1):(baseIdx + self % nG))
 
     ! Calculate fission source
     fission = 0.0_defFlt
@@ -903,7 +975,7 @@ contains
 
     do g = 1, self % nG
 
-      scatterVec => scatterXS(self % nG * (g - 1) + (1):self % nG)
+      scatterVec => scatterXS((self % nG * (g - 1) + 1):(self % nG * self % nG))
 
       ! Calculate scattering source
       scatter = 0.0_defFlt
