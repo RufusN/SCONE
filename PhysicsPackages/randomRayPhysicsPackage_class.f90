@@ -862,10 +862,6 @@ contains
         scalarVec(g) = scalarVec(g) + delta(g) 
       end do
       call OMP_unset_lock(self % locks(cIdx))
-
-      ! Check for a vacuum hit
-      ! if (segCount - 1 > 1E-2) then
-      ! end if
   
 
      end do
