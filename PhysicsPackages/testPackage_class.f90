@@ -796,7 +796,7 @@ contains
     real(defReal)                                         :: totalLength, length, len2_12
     logical(defBool)                                      :: activeRay, hitVacuum, newray
     type(distCache)                                       :: cache
-    real(defFlt)                                          :: lenFlt, lenFlt2_2
+    real(defFlt)                                          :: lenFlt, lenFlt2_2, maxtot
     real(defFlt), dimension(self % nG)                    :: F1, F2, G1, G2, Gn, H, H2, tau, delta, fluxVec, &
                                                              flatQ, gradQ, xInc, yInc, zInc, fluxVec0, &
                                                              currentSource, currentXLS, &
@@ -855,6 +855,18 @@ contains
         activeRay = .true.
       else
         length = self % dead - totalLength
+      end if
+
+      maxtot = 0.0_defFlt
+      !$omp simd
+      do g = 1, self % nG
+        if (maxtot < totVec(g)) then
+          maxtot = totVec(g)
+        end if
+      end do
+
+      if ((30.0_defFlt/maxtot) < length) then
+        length = real(30.0_defFlt/maxtot)
       end if
 
       ! Move ray
@@ -942,7 +954,7 @@ contains
       !$omp simd
       do g = 1, self % nG
         tau(g) = totVec(g) * lenFlt
-        if (tau(g) < 1E-8) then !1E-8 gives 1.154
+        if (tau(g) < 1E-8) then
           tau(g) = 0.0_defFlt
         end if
       end do
@@ -986,12 +998,12 @@ contains
       if (activeRay) then
 
         len2_12 = length * length / 12
-        matScore(xx) = length * (rnorm(x) * rnorm(x) + mu0(x) * mu0(x) * len2_12) !* ONE_FOUR_PI
-        matScore(xy) = length * (rnorm(x) * rnorm(y) + mu0(x) * mu0(y) * len2_12) !* ONE_FOUR_PI
-        matScore(xz) = length * (rnorm(x) * rnorm(z) + mu0(x) * mu0(z) * len2_12) !* ONE_FOUR_PI
-        matScore(yy) = length * (rnorm(y) * rnorm(y) + mu0(y) * mu0(y) * len2_12) !* ONE_FOUR_PI
-        matScore(yz) = length * (rnorm(y) * rnorm(z) + mu0(y) * mu0(z) * len2_12) !* ONE_FOUR_PI
-        matScore(zz) = length * (rnorm(z) * rnorm(z) + mu0(z) * mu0(z) * len2_12) !* ONE_FOUR_PI
+        matScore(xx) = length * (rnorm(x) * rnorm(x) + mu0(x) * mu0(x) * len2_12) 
+        matScore(xy) = length * (rnorm(x) * rnorm(y) + mu0(x) * mu0(y) * len2_12) 
+        matScore(xz) = length * (rnorm(x) * rnorm(z) + mu0(x) * mu0(z) * len2_12) 
+        matScore(yy) = length * (rnorm(y) * rnorm(y) + mu0(y) * mu0(y) * len2_12) 
+        matScore(yz) = length * (rnorm(y) * rnorm(z) + mu0(y) * mu0(z) * len2_12) 
+        matScore(zz) = length * (rnorm(z) * rnorm(z) + mu0(z) * mu0(z) * len2_12) 
         centIdx = nDim * (cIdx - 1)
         momIdx = matSize * (cIdx - 1)
         
@@ -1025,6 +1037,13 @@ contains
           flatQ(g) = flatQ(g) * lenFlt + delta(g)
         end do
 
+        !$omp simd
+        do g = 1, self % nG
+          xInc(g) = r0NormFlt(x) * flatQ(g) + muFlt(x) * H(g) 
+          yInc(g) = r0NormFlt(y) * flatQ(g) + muFlt(y) * H(g) 
+          zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g)
+        end do
+
         
         call OMP_set_lock(self % locks(cIdx))
 
@@ -1038,7 +1057,7 @@ contains
         do g = 1, self % nG
 
             do SH = 1, self % SHLength
-                angularMomVec(g, SH) = angularMomVec(g, SH) + flatQ(g) * RCoeffs(SH) 
+                angularMomVec(g, SH) = angularMomVec(g, SH) + delta(g) * RCoeffs(SH) !+ flatQ(g) * RCoeffs(SH) 
                 xMomVec(g,SH) = xMomVec(g,SH) + xInc(g) * RCoeffs(SH)
                 yMomVec(g,SH) = yMomVec(g,SH) + yInc(g) * RCoeffs(SH) 
                 zMomVec(g,Sh) = zMomVec(g,SH) + zInc(g) * RCoeffs(SH) 
@@ -1221,15 +1240,21 @@ contains
               self % moments(idx,SH) = self % moments(idx,SH) * NTV
               self % scalarX(idx,SH) = self % scalarX(idx,SH) * NTV 
               self % scalarY(idx,SH) = self % scalarY(idx,SH) * NTV 
-              self % scalarZ(idx,SH) = self % scalarZ(idx,SH) * NTV 
+              self % scalarZ(idx,SH) = 0.0_defFlt!self % scalarZ(idx,SH) * NTV 
           end if
-          !self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH)
+          self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH)
 
         end do
 
       end do
     end do
     !$omp end parallel do
+
+    print *, 'sources', MAXVAL(self % sourceX), MAXVAL(self % sourceY), MAXVAL(self % sourceZ)
+
+    print *, 'fluxes', MAXVAL(self % scalarX), MAXVAL(self % scalarY), MAXVAL(self % scalarZ)
+
+    print *, 'flux + source', MAXVAL(self % moments), MAXVAL(self % source)
 
   end subroutine normaliseFluxAndVolume
   
@@ -1272,23 +1297,13 @@ contains
       return
     end if
 
-    condX = 0
-    condY = 0
-    condZ = 0
-
     momVec => self % momMat(((cIdx - 1) * matSize + 1):(cIdx * matSize))
 
-    if (momVec(xx) > 1.0E-4_defReal) condX = 1
-    if (momVec(yy) > 1.0E-4_defReal) condY = 1
-    if (momVec(zz) > 1.0E-4_defReal) condZ = 1
+    det = momVec(xx) * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)) &
+    - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
+    + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-    inversionTest = condX * 4 + condY * 2 + condZ
-    
-    select case(inversionTest)
-    case(invertXYZ)
-      det = momVec(xx) * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)) &
-            - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
-            + 2 * momVec(xy) * momVec(xz) * momVec(yz)
+    if ((abs(det) > 1E-6) .and. self % volume(cIdx) > 1E-6 ) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
       one_det = ONE/det
       invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
       invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
@@ -1296,87 +1311,15 @@ contains
       invMyy = real(one_det * (momVec(xx) * momVec(zz) - momVec(xz) * momVec(xz)),defFlt)
       invMyz = real(one_det * (momVec(xy) * momVec(xz) - momVec(xx) * momVec(yz)),defFlt)
       invMzz = real(one_det * (momVec(xx) * momVec(yy) - momVec(xy) * momVec(xy)),defFlt)
-
-    case(invertYZ)
-      det = momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)
-      one_det = ONE/det
-      invMxx = 0.0_defFlt
-      invMxy = 0.0_defFlt
-      invMxz = 0.0_defFlt
-      invMyy = real(one_det * momVec(zz),defFlt)
-      invMyz = real(-one_det * momVec(yz),defFlt)
-      invMzz = real(one_det * momVec(yy),defFlt)
-
-    case(invertXY)
-      det = momVec(xx) * momVec(yy) - momVec(xy) * momVec(xy)
-      one_det = ONE/det
-      invMxx = real(one_det * momVec(yy),defFlt)
-      invMxy = real(-one_det * momVec(xy),defFlt)
-      invMxz = 0.0_defFlt
-      invMyy = real(one_det * momVec(xx),defFlt)
-      invMyz = 0.0_defFlt
-      invMzz = 0.0_defFlt
-
-    case(invertXZ)
-      det = momVec(xx) * momVec(zz) - momVec(xz) * momVec(xz)
-      one_det = ONE/det
-      invMxx = real(one_det * momVec(zz),defFlt)
-      invMxy = 0.0_defFlt
-      invMxz = real(-one_det * momVec(xz),defFlt)
-      invMyy = 0.0_defFlt
-      invMyz = 0.0_defFlt
-      invMzz = real(one_det * momVec(xx),defFlt)
-
-    case(invertX)
-      det = momVec(xx)
-      one_det = ONE/det
-      invMxx = real(one_det,defFlt)
-      invMxy = 0.0_defFlt
-      invMxz = 0.0_defFlt
-      invMyy = 0.0_defFlt
-      invMyz = 0.0_defFlt
-      invMzz = 0.0_defFLt
-
-    case(invertY)
-      det = momVec(yy)
-      one_det = ONE/det
-      invMxx = 0.0_defFlt
-      invMxy = 0.0_defFlt
-      invMxz = 0.0_defFlt
-      invMyy = real(one_det,defFlt)
-      invMyz = 0.0_defFlt
-      invMzz = 0.0_defFlt
-
-    case(invertZ)
-      det = momVec(zz)
-      one_det = ONE/det
-      invMxx = 0.0_defFlt
-      invMxy = 0.0_defFlt
-      invMxz = 0.0_defFlt
-      invMyy = 0.0_defFlt
-      invMyz = 0.0_defFlt
-      invMzz = real(one_det,defFlt)
-
-    case default
+    else
       invMxx = 0.0_defFlt
       invMxy = 0.0_defFlt
       invMxz = 0.0_defFlt
       invMyy = 0.0_defFlt
       invMyz = 0.0_defFlt
       invMzz = 0.0_defFlt
-      det = ONE
-    end select
-
-    ! Check for zero determinant
-    if (abs(det) < 1E-10) then
-      invMxx = 0.0_defFlt
-      invMxy = 0.0_defFlt
-      invMxz = 0.0_defFlt
-      invMyy = 0.0_defFlt
-      invMyz = 0.0_defFlt
-      invMzz = 0.0_defFlt
+      det = ONE 
     end if
-
 
     matIdx = (matIdx - 1) * self % nG
     total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
@@ -1434,22 +1377,22 @@ contains
           zScatter = zScatter + zFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
         end do
 
-        self % source(idx,SH) = scatter / total(g) !* ONE_FOUR_PI
-        xSource(SH) = xScatter / total(g) !* ONE_FOUR_PI
-        ySource(SH) = yScatter / total(g) !* ONE_FOUR_PI
-        zSource(SH) = zScatter / total(g) !* ONE_FOUR_PI   
+        self % source(idx,SH) = scatter / total(g)
+        xSource(SH) = xScatter / total(g) 
+        ySource(SH) = yScatter / total(g) 
+        zSource(SH) = zScatter / total(g)
 
       end do
 
       ! Calculate scattering source for isotropic scattering / flat source
-      self % source(idx,1) = self % source(idx,1) + (chi(g) * fission) / total(g) !* ONE_FOUR_PI
+      self % source(idx,1) = self % source(idx,1) + (chi(g) * fission) / total(g) 
 
-      if (it > 29 ) then
+      if (it > 29) then
  
 
-        xSource(1) = xSource(1) + (chi(g) * xFission) / total(g) ! ONE_FOUR_PI
-        ySource(1) = ySource(1) + (chi(g) * yFission) / total(g) !* ONE_FOUR_PI
-        zSource(1) = zSource(1) + (chi(g) * zFission) / total(g) !* ONE_FOUR_PI
+        xSource(1) = xSource(1) + (chi(g) * xFission) / total(g) 
+        ySource(1) = ySource(1) + (chi(g) * yFission) / total(g) 
+        zSource(1) = zSource(1) + (chi(g) * zFission) / total(g) 
       
           
           ! Calculate source gradients by inverting the moment matrix
@@ -1527,23 +1470,24 @@ contains
   !! Sets prevFlux to scalarFlux and zero's scalarFlux
   !!
   subroutine resetFluxes(self)
-    class(testPackage), intent(inout) :: self
-    integer(shortInt)                              :: idx, SH
+    class(testPackage), intent(inout)           :: self
+    integer(shortInt)                           :: idx, SH
 
-   !$omp parallel do schedule(static)
-    do idx = 1, (self % nG * self % nCells)
-      do SH = 1, self % SHLength
-        self % prevMoments(idx,SH) = self % moments(idx,SH) 
-        self % moments(idx,SH) = 0.0_defFlt
-        self % prevX(idx,SH) = self % scalarX(idx,SH)
-        self % scalarX(idx,SH) = 0.0_defFlt
-        self % prevY(idx,SH) = self % scalarY(idx,SH)
-        self % scalarY(idx,SH) = 0.0_defFlt
-        self % prevZ(idx,SH) = self % scalarZ(idx,SH)
-        self % scalarZ(idx,SH) = 0.0_defFlt
+    do SH = 1, self % SHLength
+    !$omp parallel do schedule(static)
+      do idx = 1, (self % nG * self % nCells)
+          self % prevMoments(idx,SH) = self % moments(idx,SH) 
+          self % moments(idx,SH) = 0.0_defFlt
+          self % prevX(idx,SH) = self % scalarX(idx,SH)
+          self % scalarX(idx,SH) = 0.0_defFlt
+          self % prevY(idx,SH) = self % scalarY(idx,SH)
+          self % scalarY(idx,SH) = 0.0_defFlt
+          self % prevZ(idx,SH) = self % scalarZ(idx,SH)
+          self % scalarZ(idx,SH) = 0.0_defFlt
       end do
+      !$omp end parallel do
     end do
-    !$omp end parallel do
+
 
   end subroutine resetFluxes
 
