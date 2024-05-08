@@ -14,7 +14,6 @@ cream.egg-info/
 *.bmp
 
 # Used for testing
-PhysicsPackages/testPackage_class.f90
 PhysicsPackages/testingPackage.f90
 InputFiles/TRRM/Flat_fine.json
 .gitignore
