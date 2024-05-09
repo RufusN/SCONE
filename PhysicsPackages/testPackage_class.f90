@@ -915,25 +915,29 @@ contains
       muFlt = real(mu0,defFlt)
       lenFlt  = real(length,defFlt)
 
-      ! Calculates source for higher order moments.
       !$omp simd
       do g = 1, self % nG
         currentSource(g) = 0.0_defFlt
-        do SH = 1, self % SHLength
+        currentXLS(g) = 0.0_defFlt
+        currentYLS(g) = 0.0_defFlt
+        currentZLS(g) = 0.0_defFlt
+      end do
+
+      ! Calculates source for higher order moments.
+      do SH = 1, self % SHLength
+        !$omp simd
+        do g = 1, self % nG
           currentSource(g) = currentSource(g) + sourceVec(g,SH) * RCoeffs(SH) 
         end do 
       end do
 
       ! Calculates LS source for higher order spatial moments.
-      !$omp simd
-      do g = 1, self % nG
-        currentXLS(g) = 0.0_defFlt
-        currentYLS(g) = 0.0_defFlt
-        currentZLS(g) = 0.0_defFlt
-        do SH = 1, self % SHLength
-          currentXLS(g) = currentXLS(g) + xGradVec(g,SH) * RCoeffs(SH) 
-          currentYLS(g) = currentYLS(g) + yGradVec(g,SH) * RCoeffs(SH)
-          currentZLS(g) = currentZLS(g) + zGradVec(g,SH) * RCoeffs(SH) 
+      do SH = 1, self % SHLength
+        !$omp simd
+        do g = 1, self % nG
+            currentXLS(g) = currentXLS(g) + xGradVec(g,SH) * RCoeffs(SH) 
+            currentYLS(g) = currentYLS(g) + yGradVec(g,SH) * RCoeffs(SH)
+            currentZLS(g) = currentZLS(g) + zGradVec(g,SH) * RCoeffs(SH) 
         end do 
       end do
 
@@ -1057,7 +1061,7 @@ contains
         do g = 1, self % nG
 
             do SH = 1, self % SHLength
-                angularMomVec(g, SH) = angularMomVec(g, SH) + delta(g) * RCoeffs(SH) !+ flatQ(g) * RCoeffs(SH) 
+                angularMomVec(g, SH) = angularMomVec(g, SH) + delta(g) * RCoeffs(SH) 
                 xMomVec(g,SH) = xMomVec(g,SH) + xInc(g) * RCoeffs(SH)
                 yMomVec(g,SH) = yMomVec(g,SH) + yInc(g) * RCoeffs(SH) 
                 zMomVec(g,Sh) = zMomVec(g,SH) + zInc(g) * RCoeffs(SH) 
@@ -1240,7 +1244,7 @@ contains
               self % moments(idx,SH) = self % moments(idx,SH) * NTV
               self % scalarX(idx,SH) = self % scalarX(idx,SH) * NTV 
               self % scalarY(idx,SH) = self % scalarY(idx,SH) * NTV 
-              self % scalarZ(idx,SH) = 0.0_defFlt!self % scalarZ(idx,SH) * NTV 
+              self % scalarZ(idx,SH) = 0.0_defFlt !self % scalarZ(idx,SH) * NTV 
           end if
           self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH)
 
