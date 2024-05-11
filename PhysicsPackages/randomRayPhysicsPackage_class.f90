@@ -786,9 +786,8 @@ contains
         scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
         segCount = segCount + 1
  
-        !$omp critical
+        !should i have a critical around this
         if (segCount > size(cIdxBack) - 1 ) then
-
           allocate(attBackBuffer(size(attBack) * 2)) !add cell id for scalar flux update
           attBackBuffer(1:size(attBack)) = attBack
           call move_alloc(attBackBuffer, attBack)
@@ -800,9 +799,7 @@ contains
           allocate(vacBackBuffer(size(vacBack) * 2)) !add cell id for scalar flux update
           vacBackBuffer(1:size(vacBack)) = vacBack
           call move_alloc(vacBackBuffer, vacBack)
-
         end if
-        !$omp end critical
         
         !$omp simd
         do g = 1, self % nG
