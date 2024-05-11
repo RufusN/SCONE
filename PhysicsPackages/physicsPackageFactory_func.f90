@@ -19,7 +19,7 @@ module physicsPackageFactory_func
   use linearSourceRRPhysicsPackage_class,  only : linearSourceRRPhysicsPackage
   use anisotropicRRPhysicsPackage_class,   only : anisotropicRRPhysicsPackage
   use linearP0RRPhysicsPackage_class,      only : linearP0RRPhysicsPackage 
-  use testPackage_class,                   only : testPackage
+  use linearPNRRPhysicsPackage_class,      only : linearPNRRPhysicsPackage
 !  use dynamPhysicsPackage_class, only : dynamPhysicsPackage
 
   implicit none
@@ -37,7 +37,7 @@ module physicsPackageFactory_func
                                                                              'linearSourceRRPhysicsPackage ',&
                                                                              'anisotropicRRPhysicsPackage  ',&
                                                                              'linearP0RRPhysicsPackage     ',&
-                                                                             'testPackage                  ',&
+                                                                             'linearPNRRPhysicsPackage     ',&
                                                                              'rayVolPhysicsPackage         ']
 
   !!
@@ -118,9 +118,9 @@ contains
         allocate( linearP0RRPhysicsPackage  :: new)
         call new % init(dict)
 
-      case('testPackage')
+      case('linearPNRRPhysicsPackage')
         ! Allocate and initialise
-        allocate( testPackage  :: new)
+        allocate( linearPNRRPhysicsPackage  :: new)
         call new % init(dict)
 
       case('rayVolPhysicsPackage')
