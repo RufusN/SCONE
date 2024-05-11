@@ -15,6 +15,4 @@ cream.egg-info/
 
 # Used for testing
 PhysicsPackages/testingPackage.f90
-InputFiles/TRRM/Flat_fine.json
 .gitignore
-InputFiles/TRRM/BW_coarse.json
