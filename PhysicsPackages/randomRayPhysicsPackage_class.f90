@@ -714,9 +714,10 @@ contains
     segCount = 0
     totalLength = ZERO
     activeRay = .false.
-    allocate(attBack(self % nG * 10))
-    allocate(cIdxBack(self % nG * 10))
-    allocate(vacBack(self % nG * 10))
+
+    allocate(attBack(self % nG * 50))
+    allocate(cIdxBack(50))
+    allocate(vacBack(50))
 
     do while (totalLength < self % termination)
 
@@ -781,12 +782,13 @@ contains
 
       ! Accumulate to scalar flux
       if (activeRay) then
-        
+      
         scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
         segCount = segCount + 1
  
         !$omp critical
-        if (segCount * 7 > size(attBack) ) then
+        if (segCount > size(cIdxBack) - 1 ) then
+
           allocate(attBackBuffer(size(attBack) * 2)) !add cell id for scalar flux update
           attBackBuffer(1:size(attBack)) = attBack
           call move_alloc(attBackBuffer, attBack)
@@ -798,6 +800,7 @@ contains
           allocate(vacBackBuffer(size(vacBack) * 2)) !add cell id for scalar flux update
           vacBackBuffer(1:size(vacBack)) = vacBack
           call move_alloc(vacBackBuffer, vacBack)
+
         end if
         !$omp end critical
         
@@ -808,6 +811,7 @@ contains
 
         cIdxBack(segCount) = cIdx
 
+        vacBack(segCount + 1) = hitVacuum
       
         call OMP_set_lock(self % locks(cIdx))
         !$omp simd aligned(scalarVec)
@@ -818,10 +822,6 @@ contains
         call OMP_unset_lock(self % locks(cIdx))
 
         if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
-
-        if (hitVacuum) then
-          vacBack(segCount) = .true.
-        end if 
       
       end if
 
@@ -862,8 +862,7 @@ contains
         scalarVec(g) = scalarVec(g) + delta(g) 
       end do
       call OMP_unset_lock(self % locks(cIdx))
-  
-
+      
      end do
 
   end subroutine transportSweep
