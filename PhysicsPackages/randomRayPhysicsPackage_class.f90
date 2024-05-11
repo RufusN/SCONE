@@ -787,7 +787,7 @@ contains
         segCount = segCount + 1
  
         !should i have a critical around this
-        if (segCount > size(cIdxBack) - 1 ) then
+        if (segCount > size(cIdxBack) - 2 ) then
           allocate(attBackBuffer(size(attBack) * 2)) !add cell id for scalar flux update
           attBackBuffer(1:size(attBack)) = attBack
           call move_alloc(attBackBuffer, attBack)
@@ -808,7 +808,7 @@ contains
 
         cIdxBack(segCount) = cIdx
 
-        vacBack(segCount + 1) = hitVacuum
+        vacBack(segCount+2) = hitVacuum
       
         call OMP_set_lock(self % locks(cIdx))
         !$omp simd aligned(scalarVec)
