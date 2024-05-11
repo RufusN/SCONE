@@ -1244,7 +1244,7 @@ contains
               self % moments(idx,SH) = self % moments(idx,SH) * NTV
               self % scalarX(idx,SH) = self % scalarX(idx,SH) * NTV 
               self % scalarY(idx,SH) = self % scalarY(idx,SH) * NTV 
-              self % scalarZ(idx,SH) = 0.0_defFlt !self % scalarZ(idx,SH) * NTV 
+              self % scalarZ(idx,SH) = self % scalarZ(idx,SH) * NTV  !0.0_defFlt 
           end if
           self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH)
 
