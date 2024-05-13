@@ -1056,17 +1056,15 @@ contains
         yMomVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG), :)
         zMomVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG), :)
 
-        ! Update flux moments !aligned(angularMomVec, xMomVec, yMomVec, zMomVec)
-        !$omp simd 
-        do g = 1, self % nG
-
-            do SH = 1, self % SHLength
+        ! Update flux moments 
+        do SH = 1, self % SHLength
+          !$omp simd aligned(angularMomVec, xMomVec, yMomVec, zMomVec)
+          do g = 1, self % nG
                 angularMomVec(g, SH) = angularMomVec(g, SH) + delta(g) * RCoeffs(SH) 
                 xMomVec(g,SH) = xMomVec(g,SH) + xInc(g) * RCoeffs(SH)
                 yMomVec(g,SH) = yMomVec(g,SH) + yInc(g) * RCoeffs(SH) 
                 zMomVec(g,Sh) = zMomVec(g,SH) + zInc(g) * RCoeffs(SH) 
             end do
-
         end do
         
         centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
@@ -1254,12 +1252,6 @@ contains
     end do
     !$omp end parallel do
 
-    print *, 'sources', MAXVAL(self % sourceX), MAXVAL(self % sourceY), MAXVAL(self % sourceZ)
-
-    print *, 'fluxes', MAXVAL(self % scalarX), MAXVAL(self % scalarY), MAXVAL(self % scalarZ)
-
-    print *, 'flux + source', MAXVAL(self % moments), MAXVAL(self % source)
-
   end subroutine normaliseFluxAndVolume
   
   !!
@@ -1307,7 +1299,7 @@ contains
     - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
     + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-    if ((abs(det) > 1E-6) .and. self % volume(cIdx) > 1E-6 ) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
+    if ((abs(det) > 1E-10) .and. self % volume(cIdx) > 1E-6 ) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
       one_det = ONE/det
       invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
       invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
@@ -1344,8 +1336,7 @@ contains
     yFission = 0.0_defFlt
     zFission = 0.0_defFlt
 
-    !reduction(+:fission) aligned(angularMomVec)
-    !$omp simd 
+    !$omp simd !$omp simd reduction(+:fission, xFission, yFission, zFission) aligned(angularMomVec, xFluxVec, yFluxVec, zFluxVec, nuFission)
     do gIn = 1, self % nG
       fission  = fission + angularMomVec(gIn,1) * nuFission(gIn)
       xFission = xFission + xFluxVec(gIn,1) * nuFission(gIn)
@@ -1373,7 +1364,7 @@ contains
         yScatter = 0.0_defFlt
         zScatter = 0.0_defFlt 
 
-        !$omp simd 
+        !$omp simd  $omp simd reduction(+:xScatter, yScatter, zScatter) aligned(xFluxVec, yFluxVec, zFluxVec, scatterVec)
         do gIn = 1, self % nG
           scatter = scatter + angularMomVec(gIn, SH) * scatterVec(gIn, SHidx)
           xScatter = xScatter + xFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
@@ -1409,6 +1400,12 @@ contains
               invMyz * ySource(SH) + invMzz * zSource(SH)
         end do
 
+      else
+
+        self % sourceX(idx) = 0.0_defFlt
+        self % sourceY(idx) = 0.0_defFlt
+        self % sourceZ(idx) = 0.0_defFlt
+        
       end if
 
   end do
