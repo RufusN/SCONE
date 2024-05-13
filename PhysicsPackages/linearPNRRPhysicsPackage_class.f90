@@ -1336,7 +1336,7 @@ contains
     yFission = 0.0_defFlt
     zFission = 0.0_defFlt
 
-    !$omp simd !$omp simd reduction(+:fission, xFission, yFission, zFission) aligned(angularMomVec, xFluxVec, yFluxVec, zFluxVec, nuFission)
+    !$omp simd reduction(+:fission, xFission, yFission, zFission) aligned(angularMomVec, xFluxVec, yFluxVec, zFluxVec, nuFission)
     do gIn = 1, self % nG
       fission  = fission + angularMomVec(gIn,1) * nuFission(gIn)
       xFission = xFission + xFluxVec(gIn,1) * nuFission(gIn)
@@ -1364,7 +1364,7 @@ contains
         yScatter = 0.0_defFlt
         zScatter = 0.0_defFlt 
 
-        !$omp simd  $omp simd reduction(+:xScatter, yScatter, zScatter) aligned(xFluxVec, yFluxVec, zFluxVec, scatterVec)
+        !$omp simd reduction(+:xScatter, yScatter, zScatter) aligned(xFluxVec, yFluxVec, zFluxVec, scatterVec)
         do gIn = 1, self % nG
           scatter = scatter + angularMomVec(gIn, SH) * scatterVec(gIn, SHidx)
           xScatter = xScatter + xFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
@@ -1402,9 +1402,11 @@ contains
 
       else
 
-        self % sourceX(idx) = 0.0_defFlt
-        self % sourceY(idx) = 0.0_defFlt
-        self % sourceZ(idx) = 0.0_defFlt
+        do SH = 1, self % SHLength
+          self % sourceX(idx, SH) = 0.0_defFlt
+          self % sourceY(idx, SH) = 0.0_defFlt
+          self % sourceZ(idx, SH) = 0.0_defFlt
+        end do
         
       end if
 
