@@ -1050,7 +1050,7 @@ contains
           do g = 1, self % nG
             scalarVec(g) = scalarVec(g) + delta(g) 
           end do
-          self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length 
+          self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length !*2 seems to not be needed? 
           call OMP_unset_lock(self % locks(cIdx))
         end if
 
