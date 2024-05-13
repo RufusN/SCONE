@@ -1075,6 +1075,9 @@ contains
       fluxVec(g) = self % source(idx)
     end do
 
+
+    !could trim arrays, (attback...)
+
     !iterate over segments
     do i = segCount, 1, -1
 
@@ -1109,8 +1112,6 @@ contains
           fluxVec(g) = 0.0_defFlt
         end do
       end if
-
-  
 
      end do
 
