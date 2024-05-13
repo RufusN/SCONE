@@ -429,7 +429,7 @@ contains
     allocate(self % cellPos(self % nCells, 3))
     
     ! Set active length traveled per iteration
-    self % lengthPerIt = (self % termination - self % dead) * self % pop
+    self % lengthPerIt =  (self % termination - self % dead) * self % pop * 2
     
     ! Initialise OMP locks
     allocate(self % locks(self % nCells))
@@ -686,18 +686,243 @@ contains
   !! scoring scalar flux and volume.
   !! Records the number of integrations/ray movements.
   !!
+  ! subroutine transportSweep(self, r, ints)
+  !   class(randomRayPhysicsPackage), target, intent(inout) :: self
+  !   type(ray), intent(inout)                              :: r
+  !   integer(longInt), intent(out)                         :: ints
+  !   integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
+  !                                                              segCount, seg
+  !   real(defReal)                                         :: totalLength, length
+  !   logical(defBool)                                      :: activeRay, hitVacuum
+  !   type(distCache)                                       :: cache
+  !   real(defFlt)                                          :: lenFlt
+  !   real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
+  !   real(defFlt), allocatable, dimension(:)               :: attBack, attBackBuffer, XSBack, XSBackBuffer
+  !   real(defFlt), allocatable, dimension(:)              :: lenBack, lenBackBuffer
+  !   integer(shortInt), allocatable, dimension(:)          :: cIdxBack, cIdxBackBuffer
+  !   logical(defBool), allocatable, dimension(:)           :: vacBack, vacBackBuffer 
+  !   real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec
+  !   real(defReal), dimension(3)                           :: r0, mu0
+    
+  !   ! Set initial angular flux to angle average of cell source
+  !   cIdx = r % coords % uniqueID
+  !   do g = 1, self % nG
+  !     idx = (cIdx - 1) * self % nG + g
+  !     fluxVec(g) = self % source(idx)
+  !   end do
+
+  !   ints = 0
+  !   matIdx0 = 0
+  !   segCount = 0
+  !   totalLength = ZERO
+  !   activeRay = .false.
+
+  !   ! allocate(attBack(self % nG * 50))
+  !   allocate(cIdxBack(50))
+  !   allocate(vacBack(50))
+  !   allocate(lenBack(50))
+  !   allocate(XSBack(self % nG * 50))
+  !   ! attBack  = 0.0_defFlt
+  !   cIdxBack = 0.0_defFlt
+  !   XSBack = 0.0_defFlt
+  !   lenBack = 0.0_defReal
+  !   vacBack  = .false.
+
+  !   do while (totalLength < self % termination)
+
+  !     ! Get material and cell the ray is moving through
+  !     matIdx  = r % coords % matIdx
+  !     cIdx    = r % coords % uniqueID
+  !     if (matIdx0 /= matIdx) then
+  !       matIdx0 = matIdx
+        
+  !       ! Cache total cross section
+  !       totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
+  !     end if
+
+  !     ! Remember co-ordinates to set new cell's position
+  !     if (.not. self % cellFound(cIdx)) then
+  !       r0 = r % rGlobal()
+  !       mu0 = r % dirGlobal()
+  !     end if
+          
+  !     ! Set maximum flight distance and ensure ray is active
+  !     if (totalLength >= self % dead) then
+  !       length = self % termination - totalLength 
+  !       activeRay = .true.
+  !     else
+  !       length = self % dead - totalLength
+  !     end if
+
+  !     ! Move ray
+  !     ! Use distance caching or standard ray tracing
+  !     ! Distance caching seems a little bit more unstable
+  !     ! due to FP error accumulation, but is faster.
+  !     ! This can be fixed by resetting the cache after X number
+  !     ! of distance calculations.
+  !     if (self % cache) then
+  !       if (mod(ints,100_longInt) == 0)  cache % lvl = 0
+  !       call self % geom % moveRay_withCache(r % coords, length, event, cache, hitVacuum)
+  !     else
+  !       call self % geom % moveRay_noCache(r % coords, length, event, hitVacuum)
+  !     end if
+  !     totalLength = totalLength + length
+      
+  !     ! Set new cell's position. Use half distance across cell
+  !     ! to try and avoid FP error
+  !     if (.not. self % cellFound(cIdx)) then
+  !       !$omp critical 
+  !       self % cellFound(cIdx) = .true.
+  !       self % cellPos(cIdx,:) = r0 + length * HALF * mu0
+  !       !$omp end critical
+  !     end if
+
+  !     ints = ints + 1
+  !     lenFlt = real(length,defFlt)
+  !     baseIdx = (cIdx - 1) * self % nG
+  !     sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
+        
+  !     !$omp simd aligned(totVec)
+  !     do g = 1, self % nG
+  !       attenuate(g) = exponential(totVec(g) * lenFlt)
+  !       delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
+  !       fluxVec(g) = fluxVec(g) - delta(g)
+  !     end do
+
+
+  !     ! Accumulate to scalar flux
+  !     if (activeRay) then
+      
+  !       scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
+       
+      
+  !       call OMP_set_lock(self % locks(cIdx))
+  !       !$omp simd aligned(scalarVec)
+  !       do g = 1, self % nG
+  !         scalarVec(g) = scalarVec(g) + delta(g) 
+  !       end do
+  !       self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length !* 2
+  !       call OMP_unset_lock(self % locks(cIdx))
+
+  !       if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
+
+
+  !       segCount = segCount + 1
+  
+  !       !should there be a critical around this
+  !       if (segCount > size(cIdxBack) - 1 ) then
+  !         ! allocate(attBackBuffer(size(attBack) * 2)) !add cell id for scalar flux update
+  !         ! attBackBuffer(1:size(attBack)) = attBack
+  !         ! call move_alloc(attBackBuffer, attBack)
+
+  !         allocate(cIdxBackBuffer(size(cIdxBack) * 2)) !add cell id for scalar flux update
+  !         cIdxBackBuffer(1:size(cIdxBack)) = cIdxBack
+  !         call move_alloc(cIdxBackBuffer, cIdxBack)
+
+  !         allocate(vacBackBuffer(size(vacBack) * 2)) !add cell id for scalar flux update
+  !         vacBackBuffer(1:size(vacBack)) = vacBack
+  !         call move_alloc(vacBackBuffer, vacBack)
+
+
+  !         allocate(lenBackBuffer(size(lenBack) * 2)) !add cell id for scalar flux update
+  !         lenBackBuffer(1:size(lenBack)) = lenBack
+  !         call move_alloc(lenBackBuffer, lenBack)
+
+  !         allocate(XSBackBuffer(size(XSBack) * 2)) !add cell id for scalar flux update
+  !         XSBackBuffer(1:size(XSBack)) = XSback
+  !         call move_alloc(xSBackBuffer, XSBack)
+  !       end if
+        
+  !       !$omp simd
+  !       do g = 1, self % nG
+  !         ! attBack((segCount - 1) * self % nG + g) = attenuate(g)
+  !         XSBack((segCount - 1) * self % nG + g) = totVec(g)
+  !       end do
+
+  !       lenBack(segCount) = real(length,defFlt)
+
+  !       cIdxBack(segCount) = cIdx
+
+  !       ! vacBack(segCount) = hitVacuum
+      
+  !     end if
+
+  !     ! ! Check for a vacuum hit
+  !     ! if (hitVacuum) then
+  !     !   !$omp simd
+  !     !   do g = 1, self % nG
+  !     !     fluxVec(g) = 0.0_defFlt
+  !     !   end do
+  !     ! end if 
+
+  !    end do
+
+  !   ! allocate(attBackBuffer(segCount)) !add cell id for scalar flux update
+  !   ! attBackBuffer = attBack(1:segCount*self%nG)
+  !   ! call move_alloc(attBackBuffer, attBack)
+
+  !   ! allocate(cIdxBackBuffer(segCount)) !add cell id for scalar flux update
+  !   ! cIdxBackBuffer = cIdxBack(1:segCount)
+  !   ! call move_alloc(cIdxBackBuffer, cIdxBack)
+
+  !   ! allocate(vacBackBuffer(segCount)) !add cell id for scalar flux update
+  !   ! vacBackBuffer = vacBack(1:segCount)
+  !   ! call move_alloc(vacBackBuffer, vacBack)
+
+  !   do seg = segCount, 1, -1
+
+  !     ! if (vacBack(seg)) then
+  !     !   !$omp simd
+  !     !   do g = 1, self % nG
+  !     !     fluxVec(g) = 0.0_defFlt
+  !     !   end do
+  !     ! end if
+
+  !     cIdx = cIdxBack(seg)
+  !     baseIdx = (cIdx - 1) * self % nG
+  !     sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
+
+  !     !$omp simd
+  !     do g = 1, self % nG
+  !       attenuate(g) = exponential(XSBack((seg - 1) * self % nG + g) * lenBack(seg))
+  !       delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
+  !       !exponential(XSBack((seg - 1) * self % nG + g) * lenBack(seg))
+  !       !attBack((seg - 1) * self % nG + g)
+  !     end do
+
+  !     !$omp simd
+  !     do g = 1, self % nG
+  !       fluxVec(g) = fluxVec(g) - delta(g)
+  !     end do
+
+  !     scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
+    
+  !     call OMP_set_lock(self % locks(cIdx))
+  !     !$omp simd aligned(scalarVec)
+  !     do g = 1, self % nG
+  !       scalarVec(g) = scalarVec(g) + delta(g) 
+  !     end do
+  !     self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + lenBack(seg)
+  !     call OMP_unset_lock(self % locks(cIdx))
+
+  !   end do
+
+
+  ! end subroutine transportSweep
+
   subroutine transportSweep(self, r, ints)
     class(randomRayPhysicsPackage), target, intent(inout) :: self
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
-                                                               segCount, i
+                                                               segCount, i, segCountCrit
     real(defReal)                                         :: totalLength, length
-    logical(defBool)                                      :: activeRay, hitVacuum
+    logical(defBool)                                      :: activeRay, hitVacuum, tally
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
-    real(defFlt), allocatable, dimension(:)               :: attBack, attBackBuffer, cIdxBack, cIdxBackBuffer
+    real(defFlt), allocatable, dimension(:)               :: attBack, attBackBuffer
+    integer(shortInt),allocatable, dimension(:)           ::cIdxBack, cIdxBackBuffer
     logical(defBool), allocatable, dimension(:)           :: vacBack, vacBackBuffer 
     real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec
     real(defReal), dimension(3)                           :: r0, mu0
@@ -714,12 +939,13 @@ contains
     segCount = 0
     totalLength = ZERO
     activeRay = .false.
+    tally = .true.
 
-    allocate(attBack(self % nG * 50))
+    allocate(attBack(self % nG * 50)) !could add some kind of termination  / average cell length to get an approx length
     allocate(cIdxBack(50))
     allocate(vacBack(50))
 
-    do while (totalLength < self % termination)
+    do while (totalLength < self % termination + self % dead)
 
       ! Get material and cell the ray is moving through
       matIdx  = r % coords % matIdx
@@ -744,6 +970,13 @@ contains
       else
         length = self % dead - totalLength
       end if
+
+      !second dead length
+      if (totalLength >= self % termination) then
+        length = self % termination + self % dead - totalLength
+        tally = .false.
+      end if
+
 
       ! Move ray
       ! Use distance caching or standard ray tracing
@@ -782,13 +1015,16 @@ contains
 
       ! Accumulate to scalar flux
       if (activeRay) then
-      
+        
         scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
         segCount = segCount + 1
+
+        if (tally) then
+            segCountCrit = segCount
+        end if
  
-        !should i have a critical around this
-        if (segCount > size(cIdxBack) - 2 ) then
-          allocate(attBackBuffer(size(attBack) * 2)) !add cell id for scalar flux update
+        if (segCount > size(cIdxBack) - 1) then
+          allocate(attBackBuffer(size(attBack) * 2)) !record expoentials 
           attBackBuffer(1:size(attBack)) = attBack
           call move_alloc(attBackBuffer, attBack)
 
@@ -796,7 +1032,7 @@ contains
           cIdxBackBuffer(1:size(cIdxBack)) = cIdxBack
           call move_alloc(cIdxBackBuffer, cIdxBack)
 
-          allocate(vacBackBuffer(size(vacBack) * 2)) !add cell id for scalar flux update
+          allocate(vacBackBuffer(size(vacBack) * 2))   !check vacuum
           vacBackBuffer(1:size(vacBack)) = vacBack
           call move_alloc(vacBackBuffer, vacBack)
         end if
@@ -808,17 +1044,19 @@ contains
 
         cIdxBack(segCount) = cIdx
 
-        vacBack(segCount+2) = hitVacuum
-      
-        call OMP_set_lock(self % locks(cIdx))
-        !$omp simd aligned(scalarVec)
-        do g = 1, self % nG
-          scalarVec(g) = scalarVec(g) + delta(g) 
-        end do
-        self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length * 2
-        call OMP_unset_lock(self % locks(cIdx))
+        if (tally) then
+          call OMP_set_lock(self % locks(cIdx))
+          !$omp simd aligned(scalarVec)
+          do g = 1, self % nG
+            scalarVec(g) = scalarVec(g) + delta(g) 
+          end do
+          self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length 
+          call OMP_unset_lock(self % locks(cIdx))
+        end if
 
         if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
+
+        vacBack(segCount + 1) = hitVacuum
       
       end if
 
@@ -829,17 +1067,16 @@ contains
           fluxVec(g) = 0.0_defFlt
         end do
       end if 
-
     end do
 
-    do i = segCount, 1, -1
+    !flux for new deadlength
+    do g = 1, self % nG
+      idx = (cIdx - 1) * self % nG + g
+      fluxVec(g) = self % source(idx)
+    end do
 
-      if (vacBack(i)) then
-        !$omp simd
-        do g = 1, self % nG
-          fluxVec(g) = 0.0_defFlt
-        end do
-      end if
+    !iterate over segments
+    do i = segCount, 1, -1
 
       cIdx = cIdxBack(i)
       baseIdx = (cIdx - 1) * self % nG
@@ -848,21 +1085,37 @@ contains
       !$omp simd aligned(totVec)
       do g = 1, self % nG
         delta(g) = (fluxVec(g) - sourceVec(g)) * attBack((segCount - 1) * self % nG + g)
-        fluxVec(g) = fluxVec(g) - delta(g)
+        fluxVec(g) = fluxVec(g) + delta(g)
       end do
 
       scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
     
-      call OMP_set_lock(self % locks(cIdx))
-      !$omp simd aligned(scalarVec)
-      do g = 1, self % nG
-        scalarVec(g) = scalarVec(g) + delta(g) 
-      end do
-      call OMP_unset_lock(self % locks(cIdx))
-      
+      if (segCount <= segCountCrit) then
+
+        !this would be record adjAF for inner product or tally adj flux 
+
+        call OMP_set_lock(self % locks(cIdx))
+        !$omp simd aligned(scalarVec)
+        do g = 1, self % nG
+            scalarVec(g) = scalarVec(g) + delta(g) 
+        end do
+        call OMP_unset_lock(self % locks(cIdx))
+
+      end if  
+
+      if (vacBack(i)) then
+        !$omp simd
+        do g = 1, self % nG
+          fluxVec(g) = 0.0_defFlt
+        end do
+      end if
+
+  
+
      end do
 
   end subroutine transportSweep
+
 
   !!
   !! Normalise flux and volume by total track length and increments
