@@ -429,7 +429,7 @@ contains
     allocate(self % cellPos(self % nCells, 3))
     
     ! Set active length traveled per iteration
-    self % lengthPerIt =  (self % termination - self % dead) * self % pop * 2
+    self % lengthPerIt =  (self % termination - self % dead) * self % pop !*2
     
     ! Initialise OMP locks
     allocate(self % locks(self % nCells))
