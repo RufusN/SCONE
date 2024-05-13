@@ -434,7 +434,7 @@ contains
     allocate(self % cellPos(self % nCells, 3))
     
     ! Set active length traveled per iteration
-    self % lengthPerIt = (self % termination - self % dead) * self % pop
+    self % lengthPerIt = (self % termination - self % dead) * self % pop * 2
     
     ! Initialise OMP locks
     allocate(self % locks(self % nCells))
@@ -706,7 +706,7 @@ contains
     logical(defBool), allocatable, dimension(:)           :: vacBack, vacBackBuffer 
     real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec
     real(defReal), dimension(3)                           :: r0, mu0
-    
+        
     ! Set initial angular flux to angle average of cell source
     cIdx = r % coords % uniqueID
     do g = 1, self % nG
@@ -719,9 +719,11 @@ contains
     segCount = 0
     totalLength = ZERO
     activeRay = .false.
-    allocate(attBack(self % nG * 10)) !could add some kind of termination  / average cell length to get an approx
-    allocate(cIdxBack(self % nG * 10))
-    allocate(vacBack(self % nG * 10))
+    tally = .true.
+
+    allocate(attBack(self % nG * 50)) !could add some kind of termination  / average cell length to get an approx length
+    allocate(cIdxBack(50))
+    allocate(vacBack(50))
 
     do while (totalLength < self % termination + self % dead)
 
@@ -745,11 +747,14 @@ contains
       if (totalLength >= self % dead) then
         length = self % termination - totalLength 
         activeRay = .true.
-      elseif (totalLength >= self % termination) then
-        tally = .false.
-        length = self % termination + self % dead - totalLength
       else
         length = self % dead - totalLength
+      end if
+
+      !second dead length
+      if (totalLength >= self % termination) then
+        length = self % termination + self % dead - totalLength
+        tally = .false.
       end if
 
 
@@ -784,7 +789,15 @@ contains
       !$omp simd aligned(totVec)
       do g = 1, self % nG
         attenuate(g) = exponential(totVec(g) * lenFlt)
+      end do
+
+      !$omp simd
+      do g = 1, self % nG
         delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
+      end do
+
+      !$omp simd
+      do g = 1, self % nG
         fluxVec(g) = fluxVec(g) - delta(g)
       end do
 
@@ -794,12 +807,11 @@ contains
         scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
         segCount = segCount + 1
 
-        if (.not. tally) then
+        if (tally) then
             segCountCrit = segCount
         end if
  
-        !$omp critical
-        if (segCount * 7 > size(attBack) ) then
+        if (segCount > size(cIdxBack) - 1) then
           allocate(attBackBuffer(size(attBack) * 2)) !record expoentials 
           attBackBuffer(1:size(attBack)) = attBack
           call move_alloc(attBackBuffer, attBack)
@@ -812,7 +824,6 @@ contains
           vacBackBuffer(1:size(vacBack)) = vacBack
           call move_alloc(vacBackBuffer, vacBack)
         end if
-        !$omp end critical
         
         !$omp simd
         do g = 1, self % nG
@@ -827,16 +838,13 @@ contains
           do g = 1, self % nG
             scalarVec(g) = scalarVec(g) + delta(g) 
           end do
-
-          self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length * 2
+          self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length 
           call OMP_unset_lock(self % locks(cIdx))
         end if
 
         if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
 
-        if (hitVacuum) then
-          vacBack(segCount) = .true.
-        end if 
+        vacBack(segCount + 1) = hitVacuum
       
       end if
 
@@ -847,34 +855,31 @@ contains
           fluxVec(g) = 0.0_defFlt
         end do
       end if 
-
     end do
 
-
-    !set source for adjFlux calc
-
-    cIdx = cIdxBack(i)
+    !flux for new deadlength
     do g = 1, self % nG
       idx = (cIdx - 1) * self % nG + g
       fluxVec(g) = self % source(idx)
     end do
 
-    do i = segCount, 1, -1
 
-      if (vacBack(i)) then
-        !$omp simd
-        do g = 1, self % nG
-          fluxVec(g) = 0.0_defFlt
-        end do
-      end if
+    !could trim arrays, (attback...)
+
+    !iterate over segments
+    do i = segCount, 1, -1
 
       cIdx = cIdxBack(i)
       baseIdx = (cIdx - 1) * self % nG
       sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
 
-      !$omp simd aligned(totVec)
+      !$omp simd
       do g = 1, self % nG
         delta(g) = (fluxVec(g) - sourceVec(g)) * attBack((segCount - 1) * self % nG + g)
+      end do
+
+      !$omp simd
+      do g = 1, self % nG
         fluxVec(g) = fluxVec(g) + delta(g)
       end do
 
@@ -891,12 +896,17 @@ contains
         end do
         call OMP_unset_lock(self % locks(cIdx))
 
-
       end if  
-  
+
+      if (vacBack(i)) then
+        !$omp simd
+        do g = 1, self % nG
+          fluxVec(g) = 0.0_defFlt
+        end do
+      end if
 
      end do
-
+     
   end subroutine transportSweep
 
   !!
