@@ -745,7 +745,7 @@ contains
       if (totalLength >= self % dead) then
         length = self % termination - totalLength 
         activeRay = .true.
-      elseif (totalLength >= self % termination)
+      elseif (totalLength >= self % termination) then
         tally = .false.
         length = self % termination + self % dead - totalLength
       else
@@ -786,10 +786,7 @@ contains
         attenuate(g) = exponential(totVec(g) * lenFlt)
         delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
         fluxVec(g) = fluxVec(g) - delta(g)
-
       end do
-
-      if 
 
       ! Accumulate to scalar flux
       if (activeRay) then
@@ -814,8 +811,6 @@ contains
           allocate(vacBackBuffer(size(vacBack) * 2))   !check vacuum
           vacBackBuffer(1:size(vacBack)) = vacBack
           call move_alloc(vacBackBuffer, vacBack)
-
-
         end if
         !$omp end critical
         
@@ -832,6 +827,7 @@ contains
           do g = 1, self % nG
             scalarVec(g) = scalarVec(g) + delta(g) 
           end do
+
           self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length * 2
           call OMP_unset_lock(self % locks(cIdx))
         end if
