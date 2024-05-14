@@ -19,6 +19,7 @@ module physicsPackageFactory_func
   use fixedSourceTRRMPhysicsPackage_class,  only : fixedSourceTRRMPhysicsPackage
   use fixedSourceCADISPhysicsPackage_class, only : fixedSourceCADISPhysicsPackage
   use LSFixedPackage_class,                 only : LSFixedPackage
+  use LSUncollidedPackage_class,            only : LSUncollidedPackage
 !  use dynamPhysicsPackage_class, only : dynamPhysicsPackage
 
   implicit none
@@ -36,6 +37,7 @@ module physicsPackageFactory_func
                                                                              'rayVolPhysicsPackage          ',&
                                                                              'fixedSourceTRRMPhysicsPackage ',&
                                                                              'LSFixedPackage                ',&
+                                                                             'LSUncollidedPackage           ',&
                                                                              'fixedSourceCADISPhysicsPackage']
 
   !!
@@ -104,6 +106,11 @@ contains
       case('LSFixedPackage')
         ! Allocate and initialise
         allocate( LSFixedPackage :: new)
+        call new % init(dict)
+
+      case('LSUncollidedPackage')
+        ! Allocate and initialise
+        allocate( LSUncollidedPackage :: new)
         call new % init(dict)
 
       case('fixedSourceTRRMPhysicsPackage')

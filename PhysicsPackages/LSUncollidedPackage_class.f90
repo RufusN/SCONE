@@ -1,4 +1,4 @@
-module LSFixedPackage_class
+module LSUncollidedPackage_class
 
   use numPrecision
   use universalVariables
@@ -204,7 +204,7 @@ module LSFixedPackage_class
   !! Interface:
   !!   physicsPackage interface
   !!
-  type, public, extends(physicsPackage) :: LSFixedPackage
+  type, public, extends(physicsPackage) :: LSUncollidedPackage
     private
     ! Components
     class(geometryStd), pointer           :: geom
@@ -354,7 +354,7 @@ module LSFixedPackage_class
     procedure, private :: uncollidedCalculation
     procedure, private :: initCADIS
 
-  end type LSFixedPackage
+  end type LSUncollidedPackage
 
 contains
 
@@ -364,7 +364,7 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine init(self,dict)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     class(dictionary), intent(inout)                    :: dict
     integer(shortInt)                                   :: seed_temp, n, nPoints, i, m, g, g1
     integer(longInt)                                    :: seed
@@ -382,7 +382,7 @@ contains
     class(baseMgNeutronMaterial), pointer               :: mat
     class(materialHandle), pointer                      :: matPtr
     logical(defBool)                                    :: cellCheck
-    character(100), parameter :: Here = 'init (LSFixedPackage_class.f90)'
+    character(100), parameter :: Here = 'init (LSUncollidedPackage_class.f90)'
 
     call cpu_time(self % CPU_time_start)
 
@@ -809,7 +809,7 @@ contains
   !! Also sets options for uncollided flux calculations
   !!
   subroutine initialiseSource(self, dict)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     class(dictionary), intent(inout)                    :: dict
     character(nameLen),dimension(:), allocatable        :: names
     real(defReal), dimension(:), allocatable            :: sourceStrength
@@ -818,7 +818,7 @@ contains
     logical(defBool)                                    :: found
     character(nameLen)                                  :: sourceName
     character(nameLen), save                            :: localName
-    character(100), parameter :: Here = 'initialiseSource (LSFixedPackage_class.f90)'
+    character(100), parameter :: Here = 'initialiseSource (LSUncollidedPackage_class.f90)'
     !$omp threadprivate(matIdx, localName, idx, g, id)
 
     call dict % keys(names)
@@ -877,7 +877,7 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine initCADIS(self)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     real(defFlt), dimension(:), allocatable             :: xsBuffer
     integer(shortInt)                                   :: g1, m, i
     integer(shortInt), save                             :: id, idx, matIdx, g
@@ -1006,7 +1006,7 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine run(self)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
 
     call self % printSettings()
     if (self % nVolRays > 0) call self % volumeCalculation()
@@ -1029,7 +1029,7 @@ contains
   !! Rays are tracked until they reach some specified termination length.
   !!
   subroutine cellMapCalculation(self)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     type(ray), save                                     :: r
     type(RNG), target, save                             :: pRNG
     real(defReal)                                       :: hitRate
@@ -1103,7 +1103,7 @@ contains
   !! scoring to volume estimates.
   !!
   subroutine volumeCalculation(self)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     type(ray), save                                     :: r
     type(RNG), target, save                             :: pRNG
     real(defReal)                                       :: hitRate
@@ -1161,7 +1161,7 @@ contains
   !! During tracking, fluxes are attenuated (and adjusted according to BCs).
   !!
   subroutine uncollidedCalculation(self)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     type(ray), save                                     :: r
     type(RNG), target, save                             :: pRNG
     real(defReal)                                       :: hitRate
@@ -1274,7 +1274,7 @@ contains
   !! given criteria or when a fixed number of iterations has been passed.
   !!
   subroutine cycles(self)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     type(ray), save                                     :: r
     type(RNG), target, save                             :: pRNG
     real(defReal)                                       :: hitRate
@@ -1434,12 +1434,12 @@ contains
   !! and performs the build operation
   !!
   subroutine initialiseRay(self, r)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     type(ray), intent(inout)                            :: r
     real(defReal)                                       :: mu, phi
     real(defReal), dimension(3)                         :: u, rand3, x
     integer(shortInt)                                   :: i, matIdx, id, cIdx
-    character(100), parameter :: Here = 'initialiseRay (LSFixedPackage_class.f90)'
+    character(100), parameter :: Here = 'initialiseRay (LSUncollidedPackage_class.f90)'
 
     i = 0
     mu = TWO * r % pRNG % get() - ONE
@@ -1482,7 +1482,7 @@ contains
   !! Also used for constructing the cell map
   !!
   subroutine volumeSweep(self, r, maxLength, doVolume)
-    class(LSFixedPackage), target, intent(inout) :: self
+    class(LSUncollidedPackage), target, intent(inout) :: self
     type(ray), intent(inout)                            :: r
     real(defReal), intent(in)                           :: maxLength
     logical(defBool), intent(in)                        :: doVolume
@@ -1615,7 +1615,7 @@ contains
   !!
   !!
   subroutine uncollidedSweep(self, r, ints)
-    class(LSFixedPackage), target, intent(inout) :: self
+    class(LSUncollidedPackage), target, intent(inout) :: self
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, event, matIdx0, &
@@ -1633,7 +1633,7 @@ contains
     real(defReal), dimension(3)                           :: r0, mu0, u, x0, rand3, rC, r0Norm, rNorm
     real(defReal), pointer                                :: volTrack
     real(defFlt), dimension(3)                            :: muFlt, rNormFlt, r0NormFlt
-    character(100), parameter :: Here = 'uncollidedSweep (LSFixedPackage_class.f90)'
+    character(100), parameter :: Here = 'uncollidedSweep (LSUncollidedPackage_class.f90)'
 
     ! If point source, position and direction sample is straightforward
     ! Flux is determined by source
@@ -1909,7 +1909,7 @@ contains
   !! Records the number of integrations/ray movements.
   !!
   subroutine transportSweep(self, r, ints)
-    class(LSFixedPackage), target, intent(inout) :: self
+    class(LSUncollidedPackage), target, intent(inout) :: self
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, event, matIdx0, &
@@ -2229,7 +2229,7 @@ contains
   !! Normalise flux from uncollided calculation
   !!
   subroutine normaliseFluxUncollided(self, norm)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     real(defReal), intent(in)                           :: norm
     real(defFlt)                                        :: normFlt
     real(defFlt), save                                  :: total
@@ -2271,7 +2271,7 @@ contains
   !! the flux by the neutron source
   !!
   subroutine normaliseFluxAndVolume(self, lengthPerIt, it)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     real(defReal), intent(in)                           :: lengthPerIt
     integer(shortInt), intent(in)                       :: it
     real(defReal)                                       :: normVol
@@ -2432,7 +2432,7 @@ contains
   !! Kernel to update sources given a cell index
   !!
   subroutine sourceUpdateKernel(self, cIdx, it)
-    class(LSFixedPackage), target, intent(inout) :: self
+    class(LSUncollidedPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
     integer(shortInt), intent(in)                         :: it
     real(defFlt)                                          :: scatter, xScatter, yScatter, zScatter, &
@@ -2560,7 +2560,7 @@ contains
   !! Overwrites any existing fixed source
   !!
   subroutine firstCollidedSourceKernel(self, cIdx)
-    class(LSFixedPackage), target, intent(inout) :: self
+    class(LSUncollidedPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
     real(defFlt)                                          :: scatter, xScatter, yScatter, zScatter, &
                                                              fission, xFission, yFission, zFission, &
@@ -2568,8 +2568,8 @@ contains
     real(defFlt)                                          :: invMxx, invMxy, invMxz, invMyy, invMyz, invMzz
     real(defFlt), dimension(:), pointer                   :: nuFission, total, chi, scatterXS 
     integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, id
-    real(defFlt), pointer, dimension(:)                   :: fluxVec, scatterVec, xFluxVec, yFluxVec, zFluxVec
-    real(defReal), pointer, dimension(:)                  :: momVec
+    real(defFlt), pointer, dimension(:)                   :: scatterVec, xFluxVec, yFluxVec, zFluxVec
+    real(defReal), pointer, dimension(:)                  :: momVec,fluxVec
     real(defReal)                                         :: det, one_det 
 
     ! Identify material
@@ -2677,7 +2677,7 @@ contains
   !! Sets prevFlux to scalarFlux and zero's scalarFlux
   !!
   subroutine resetFluxes(self)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     integer(shortInt)                                   :: idx
 
     !$omp parallel do schedule(static)
@@ -2699,7 +2699,7 @@ contains
   !! Accumulate flux scores for stats
   !!
   subroutine accumulateFluxScores(self)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     real(defReal), save                                 :: flux, current
     integer(shortInt)                                   :: idx
     !$omp threadprivate(flux, current)
@@ -2729,7 +2729,7 @@ contains
   !! Finalise flux scores for stats
   !!
   subroutine finaliseFluxScores(self,it)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     integer(shortInt), intent(in)                       :: it
     integer(shortInt)                                   :: idx
     real(defReal)                                       :: N1, Nm1
@@ -2779,7 +2779,7 @@ contains
   !!   None
   !!
   subroutine printResults(self)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     type(outputFile)                                    :: out
     character(nameLen)                                  :: name
     integer(shortInt)                                   :: g1, cIdx
@@ -3089,7 +3089,7 @@ contains
   !!   None
   !!
   subroutine printSettings(self)
-    class(LSFixedPackage), intent(in) :: self
+    class(LSUncollidedPackage), intent(in) :: self
 
     print *, repeat("<>", MAX_COL/2)
     print *, "/\/\ RANDOM RAY FIXED SOURCE CALCULATION /\/\"
@@ -3116,7 +3116,7 @@ contains
   !! Return to uninitialised state
   !!
   subroutine kill(self)
-    class(LSFixedPackage), intent(inout) :: self
+    class(LSUncollidedPackage), intent(inout) :: self
     integer(shortInt) :: i
 
     ! Clean Nuclear Data, Geometry and visualisation
@@ -3225,4 +3225,4 @@ contains
 
   end subroutine kill
 
-end module LSFixedPackage_class
+end module LSUncollidedPackage_class
