@@ -1,4 +1,4 @@
-type testPackage;
+type linearPNRRPhysicsPackage;
 
 pop      6500; 
 active   2500;  
