@@ -1700,22 +1700,7 @@ contains
       totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
       !$omp simd
       do g = 1, self % nG
-        !if (totVec(g) > 0.0_defFlt) then
-          fluxVec(g) = self % fixedSource(baseIdx + g) / totVec(g)
-        !else 
-          !fluxVec(g) = 0.0_defFlt
-        !end if
-      end do
-    end if
-    
-    if (self % uncollidedType == POINT) then
-      matIdx  = r % coords % matIdx
-      matIdx0 = matIdx
-      baseIdx = (cIdx - 1) * self % nG
-      totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
-      !$omp simd
-      do g = 1, self % nG
-          fluxVec(g) = fluxVec(g) / totVec(g)
+          fluxVec(g) = self % fixedSource(baseIdx + g) !/ totVec(g)
       end do
     end if
 
@@ -1774,7 +1759,6 @@ contains
 
       baseIdx = (cIdx - 1) * self % nG
       ! No need for sourceVec when only depositing source
-      sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
       mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
 
       ! Check cell has been visited 
@@ -1794,11 +1778,11 @@ contains
       muFlt = real(mu0,defFlt)
       lenFlt  = real(length,defFlt)
 
-       ! Calculate source terms
-      !$omp simd aligned(xGradVec, yGradVec, zGradVec)
-      do g = 1, self % nG
-        flatQ(g) = flatQ(g) + sourceVec(g) / totVec(g)
-      end do
+      !  ! Calculate source terms
+      ! !$omp simd aligned(xGradVec, yGradVec, zGradVec)
+      ! do g = 1, self % nG
+      !   flatQ(g) = flatQ(g) + sourceVec(g) / totVec(g)
+      ! end do
 
       !$omp simd
       do g = 1, self % nG
@@ -1823,7 +1807,7 @@ contains
 
       !$omp simd
       do g = 1, self % nG
-        delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) * lenFlt 
+        delta(g) = (fluxVec(g)) * F1(g) * lenFlt 
       end do
 
       ! Intermediate flux variable creation or update
@@ -1850,20 +1834,19 @@ contains
     
       !$omp simd
       do g = 1, self % nG
-          G1(g) = one_two - H(g)
+          G1(g) = one_two - H(g) !not needed
       end do
 
       !$omp simd 
       do g = 1, self % nG
-        G2(g) = expG2(tau(g)) 
+        G2(g) = expG2(tau(g)) !not needed
       end do
 
       !$omp simd 
       do g = 1, self % nG
-        G1(g) = G1(g) * flatQ(g) * lenFlt
         H(g)  = H(g) * fluxVec0(g) * lenFlt
-        H(g) = (G1(g) + H(g)) * lenFlt
-        flatQ(g) = flatQ(g) * lenFlt + delta(g)
+        H(g) = (H(g)) * lenFlt
+        flatQ(g) = delta(g) !flatQ(g) * lenFlt + 
       end do
 
       !$omp simd
@@ -2612,16 +2595,16 @@ contains
 
     baseIdx = self % nG * (cIdx - 1)
     fluxVec => self % uncollidedScores((baseIdx+1):(baseIdx + self % nG),1)
-    xFluxVec => self % prevX((baseIdx + 1):(baseIdx + self % nG))
-    yFluxVec => self % prevY((baseIdx + 1):(baseIdx + self % nG))
-    zFluxVec => self % prevZ((baseIdx + 1):(baseIdx + self % nG))
+    xFluxVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG))
+    yFluxVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
+    zFluxVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))
 
     ! Calculate fission source
     fission = 0.0_defFlt
     xFission = 0.0_defFlt
     yFission = 0.0_defFlt
     zFission = 0.0_defFlt
-    !$omp simd reduction(+:fission)
+    !$omp simd 
     do gIn = 1, self % nG
       fission = fission + real(fluxVec(gIn),defFlt) * nuFission(gIn)
       xFission = xFission + xFluxVec(gIn) * nuFission(gIn)
@@ -2640,7 +2623,7 @@ contains
       zScatter = 0.0_defFlt
 
       ! Sum contributions from all energies
-      !$omp simd reduction(+:scatter)
+      !$omp simd 
       do gIn = 1, self % nG
         scatter = scatter + real(fluxVec(gIn),defFlt) * scatterVec(gIn)
         xScatter = xScatter + xFluxVec(gIn) * scatterVec(gIn)
@@ -2653,7 +2636,7 @@ contains
 
       ! Don't scale by 1/SigmaT - that occurs in the sourceUpdateKernel
       self % fixedSource(idx) = chi(g) * fission + scatter
-      self % fixedSource(idx) = self % fixedSource(idx) !/ total(idx)
+      !self % fixedSource(idx) = self % fixedSource(idx) !/ total(idx)
 
       xSource = chi(g) * xFission + xScatter
       xSource = xSource 
