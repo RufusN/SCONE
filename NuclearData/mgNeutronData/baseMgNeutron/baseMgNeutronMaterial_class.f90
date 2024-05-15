@@ -17,6 +17,7 @@ module baseMgNeutronMaterial_class
   use fissionMG_class,         only : fissionMG
   use multiScatterMG_class,    only : multiScatterMG
   use multiScatterP1MG_class,  only : multiScatterP1MG
+  use multiScatterPNMG_class,  only : multiScatterPNMG
 
   implicit none
   private
@@ -219,7 +220,7 @@ contains
 
   end function getFissionXS
 
-  !!
+  !!c
   !! Return chi for energy group G
   !!
   !! See mgNeutronMaterial documentationfor details
@@ -317,10 +318,13 @@ contains
         allocate( multiScatterMG :: self % scatter)
 
       case ('P1')
-        allocate( multiScatterP1MG :: self % scatter)
+        allocate( multiScatterPNMG :: self % scatter)
+
+      case ('P3')
+        allocate( multiScatterPNMG :: self % scatter)
 
       case default
-        call fatalError(Here,'scatterKey: '//trim(scatterKey)//'is wrong. Must be P0 or P1')
+        call fatalError(Here,'scatterKey: '//trim(scatterKey)//' is wrong. Must be P0 or P1 or P3')
 
     end select
 
