@@ -1664,7 +1664,7 @@ contains
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, event, matIdx0, &
                                                              cIdx, idx, baseIdx, surfIdx, &
-                                                             mapIdxPre, mapIdxPost, SH
+                                                             SH
     real(defReal)                                         :: totalLength, length
     logical(defBool)                                      :: activeRay, hitVacuum, newRay
     type(distCache)                                       :: cache
@@ -1672,9 +1672,8 @@ contains
     real(defFlt), pointer, dimension(:)                   :: totVec
     real(defFlt), pointer, dimension(:, :)                :: angularMomVec, sourceVec
     real(defFlt)                                          :: lenFlt
-    real(defReal), dimension(3)                           :: r0, mu0, dirPost, norm
+    real(defReal), dimension(3)                           :: r0, mu0
     real(defFlt), dimension(self % SHLength)              :: RCoeffs 
-    type(particleState)                                   :: state
 
     matIdx  = r % coords % matIdx
     totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
@@ -2222,9 +2221,9 @@ contains
   !!
   subroutine accumulateFluxScores(self)
     class(anisoFixedPackage), intent(inout) :: self
-    real(defReal), save                                 :: flux, current
+    real(defReal), save                                 :: flux
     integer(shortInt)                                   :: idx
-    !$omp threadprivate(flux, current)
+    !$omp threadprivate(flux)
 
     !$omp parallel do schedule(static)
     do idx = 1, self % nG * self % nCells

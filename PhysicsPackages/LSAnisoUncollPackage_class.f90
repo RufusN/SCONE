@@ -628,13 +628,6 @@ contains
       self % mapFlux = .true.
       tempDict => dict % getDictPtr('fluxMap')
       call new_tallyMap(self % fluxMap, tempDict)
-
-      ! Allocate current vector
-      allocate(self % currentIn(self % nG*self % fluxMap % bins(0)), &
-               self % currentScores(self % nG*self % fluxMap % bins(0), 2))
-      self % currentIn = ZERO
-      self % currentScores = ZERO
-
     else
       self % mapFlux = .false.
     end if
@@ -1264,7 +1257,7 @@ contains
     !$omp end parallel do
 
     self % fluxScores = ZERO
-    self % prevFlux = 0.0_defFlt
+    self % prevMoments = 0.0_defFlt
     self % scalarX = 0.0_defFlt
     self % scalarY = 0.0_defFlt
     self % scalarZ = 0.0_defFlt
@@ -1642,9 +1635,10 @@ contains
     type(distCache)                                       :: cache
     real(defFlt), dimension(self % nG)                    :: F1, F2, Gn, G1, G2, H, tau, delta, fluxVec, &
                                                               flatQ, gradQ, xInc, yInc, zInc, fluxVec0
-    real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, &
+    real(defFlt), pointer, dimension(:,:)                   :: angularMomVec, sourceVec, &
                                                               xGradVec, yGradVec, zGradVec, &
                                                               xMomVec, yMomVec, zMomVec
+    real(defFlt), pointer, dimension(:)                   :: totVec
     real(defReal), pointer, dimension(:)                  :: mid, momVec, centVec
     real(defReal), dimension(3)                           :: r0, mu0, u, x0, rand3, rC, r0Norm, rNorm
     real(defReal), pointer                                :: volTrack
@@ -1798,12 +1792,6 @@ contains
       muFlt = real(mu0,defFlt)
       lenFlt  = real(length,defFlt)
 
-      !  ! Calculate source terms
-      ! !$omp simd aligned(xGradVec, yGradVec, zGradVec)
-      ! do g = 1, self % nG
-      !   flatQ(g) = flatQ(g) + sourceVec(g) / totVec(g)
-      ! end do
-
       !$omp simd
       do g = 1, self % nG
         tau(g) = totVec(g) * lenFlt
@@ -1879,18 +1867,24 @@ contains
       ! Accumulate to scalar flux
       ! Assume no volume scoring due to non-uniform sampling!
       call OMP_set_lock(self % locks(cIdx))
-      scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
-      xMomVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG))
-      yMomVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
-      zMomVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))
+      angularMomVec => self % moments((baseIdx + 1):(baseIdx + self % nG),:)
+      xMomVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG),:)
+      yMomVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG),:)
+      zMomVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG),:)
 
-      !$omp simd aligned(scalarVec, xMomVec, yMomVec, zMomVec)
+      ! Update flux moments !aligned(angularMomVec, xMomVec, yMomVec, zMomVec)
+      !$omp simd 
       do g = 1, self % nG
-        scalarVec(g) = scalarVec(g) + delta(g) 
-        xMomVec(g) = xMomVec(g) + xInc(g) 
-        yMomVec(g) = yMomVec(g) + yInc(g)
-        zMomVec(g) = zMomVec(g) + zInc(g) 
+
+        do SH = 1, self % SHLength
+            angularMomVec(g, SH) = angularMomVec(g, SH) + delta(g) * RCoeffs(SH) 
+            xMomVec(g,SH) = xMomVec(g,SH) + xInc(g) * RCoeffs(SH)
+            yMomVec(g,SH) = yMomVec(g,SH) + yInc(g) * RCoeffs(SH) 
+            zMomVec(g,Sh) = zMomVec(g,SH) + zInc(g) * RCoeffs(SH) 
+        end do
+
       end do
+    
 
       call OMP_unset_lock(self % locks(cIdx))
 
@@ -1921,12 +1915,14 @@ contains
     real(defReal)                                         :: totalLength, length, len2_12
     logical(defBool)                                      :: activeRay, hitVacuum
     type(distCache)                                       :: cache
-    real(defFlt), dimension(self % nG)                    :: delta, fluxVec, tau, avgFluxVec, &
-                                                              F1, F2, Gn, G1, G2, H, flatQ, gradQ, &
-                                                              xInc, yInc, zInc, fluxVec0
-    real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, &
+    real(defFlt), dimension(self % nG)                    ::  F1, F2, G1, G2, Gn, H, H2, tau, delta, fluxVec, &
+                                                              flatQ, gradQ, xInc, yInc, zInc, fluxVec0, &
+                                                              currentSource, currentXLS, &
+                                                              currentYLS, currentZLS
+    real(defFlt), pointer, dimension(:,:)                 :: angularMomVec, sourceVec, &
                                                             xGradVec, yGradVec, zGradVec, &
                                                             xMomVec, yMomVec, zMomVec
+    real(defFlt), pointer, dimension(:)                   :: totVec
     real(defFlt)                                          :: lenFlt, lenFlt2_2
     real(defReal), dimension(3)                           :: r0, mu0, dirPre, posPre, dirPost, &
                                                              norm, rC, r0Norm, rNorm
@@ -1944,7 +1940,7 @@ contains
     if (cIdx > 0) then
       do g = 1, self % nG
         idx = (cIdx - 1) * self % nG + g
-        fluxVec(g) = self % source(idx) 
+        fluxVec(g) = self % source(idx,1) 
       end do
     else
       fluxVec = 0.0_defFlt
@@ -1974,9 +1970,6 @@ contains
       !can remove one set
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
-      dirPre = r % dirGlobal()
-      posPre = r % rGlobal()
-
 
       ! Set maximum flight distance and ensure ray is active
       if (totalLength >= self % dead) then
@@ -2020,10 +2013,10 @@ contains
         ints = ints + 1
 
         baseIdx = (cIdx - 1) * self % nG
-        sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
-        xGradVec => self % sourceX((baseIdx + 1):(baseIdx + self % nG))
-        yGradVec => self % sourceY((baseIdx + 1):(baseIdx + self % nG))
-        zGradVec => self % sourceZ((baseIdx + 1):(baseIdx + self % nG))
+        sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG),:)
+        xGradVec => self % sourceX((baseIdx + 1):(baseIdx + self % nG),:)
+        yGradVec => self % sourceY((baseIdx + 1):(baseIdx + self % nG),:)
+        zGradVec => self % sourceZ((baseIdx + 1):(baseIdx + self % nG),:)
         mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
 
         ! Check cell has been visited 
@@ -2044,17 +2037,43 @@ contains
         lenFlt  = real(length,defFlt)
 
         ! Calculate source terms
-    
-        !$omp simd aligned(xGradVec, yGradVec, zGradVec)
-        do g = 1, self % nG
-            flatQ(g) = rNormFlt(x) * xGradVec(g)
-            flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
-            flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
-            flatQ(g) = flatQ(g) + sourceVec(g)
 
-            gradQ(g) = muFlt(x) * xGradVec(g)
-            gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
-            gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
+        !$omp simd
+        do g = 1, self % nG
+          currentSource(g) = 0.0_defFlt
+          currentXLS(g) = 0.0_defFlt
+          currentYLS(g) = 0.0_defFlt
+          currentZLS(g) = 0.0_defFlt
+        end do
+
+        ! Calculates source for higher order moments.
+        do SH = 1, self % SHLength
+          !$omp simd
+          do g = 1, self % nG
+            currentSource(g) = currentSource(g) + sourceVec(g,SH) * RCoeffs(SH) 
+          end do 
+        end do
+
+        ! Calculates LS source for higher order spatial moments.
+        do SH = 1, self % SHLength
+          !$omp simd
+          do g = 1, self % nG
+              currentXLS(g) = currentXLS(g) + xGradVec(g,SH) * RCoeffs(SH) 
+              currentYLS(g) = currentYLS(g) + yGradVec(g,SH) * RCoeffs(SH)
+              currentZLS(g) = currentZLS(g) + zGradVec(g,SH) * RCoeffs(SH) 
+          end do 
+        end do
+    
+        !$omp simd 
+        do g = 1, self % nG
+          flatQ(g) = rNormFlt(x) * currentXLS(g)
+          flatQ(g) = flatQ(g) + rNormFlt(y) * currentYLS(g)
+          flatQ(g) = flatQ(g) + rNormFlt(z) * currentZLS(g)
+          flatQ(g) = flatQ(g) + currentSource(g)
+  
+          gradQ(g) = muFlt(x) * currentXLS(g)
+          gradQ(g) = gradQ(g) + muFlt(y) * currentYLS(g)
+          gradQ(g) = gradQ(g) + muFlt(z) * currentZLS(g)
         end do
 
         !$omp simd
@@ -2149,18 +2168,20 @@ contains
 
             call OMP_set_lock(self % locks(cIdx))
 
-              scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
-              xMomVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG))
-              yMomVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
-              zMomVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))
-
-              !$omp simd
+              angularMomVec => self % moments((baseIdx + 1):(baseIdx + self % nG), :)
+              xMomVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG), :)
+              yMomVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG), :)
+              zMomVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG), :)
+      
+              !$omp simd 
               do g = 1, self % nG
-                scalarVec(g) = scalarVec(g) + delta(g)  
-                xMomVec(g) = xMomVec(g) + xInc(g)  
-                yMomVec(g) = yMomVec(g) + yInc(g)
-                zMomVec(g) = zMomVec(g) + zInc(g)  
-              end do
+                do SH = 1, self % SHLength
+                    angularMomVec(g, SH) = angularMomVec(g, SH) + delta(g) * RCoeffs(SH) 
+                    xMomVec(g,SH) = xMomVec(g,SH) + xInc(g) * RCoeffs(SH)
+                    yMomVec(g,SH) = yMomVec(g,SH) + yInc(g) * RCoeffs(SH) 
+                    zMomVec(g,Sh) = zMomVec(g,SH) + zInc(g) * RCoeffs(SH) 
+                end do
+               end do
 
               centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
               momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
@@ -2180,29 +2201,6 @@ contains
               end do
 
             call OMP_unset_lock(self % locks(cIdx))
-
-            !!! Ingoing currents !!! Check if a new cell was entered
-            if (allocated(self % fluxMap)) then
-
-            ! Get indexes
-            state % r  = posPre + length * HALF * dirPre
-            mapIdxPre  = self % fluxMap % map(state)
-
-            state % r  = r % rGlobal() + NUDGE * r % dirGlobal()
-            mapIdxPost = self % fluxMap % map(state)
-            dirPost = r % dirGlobal()
-
-
-            !!! Accumulate currents !!!
-            if ((mapIdxPre /= mapIdxPost .or. event == BOUNDARY_EV) .and. .not. hitVacuum) then
-                do g = 1, self % nG
-                idx = (mapIdxPost - 1)*self % nG + g
-                !$omp atomic
-                self % currentIn(idx) = self % currentIn(idx) + fluxVec(g)
-                end do
-            end if
-
-            end if
 
             if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
 
