@@ -20,6 +20,7 @@ module physicsPackageFactory_func
   use fixedSourceCADISPhysicsPackage_class, only : fixedSourceCADISPhysicsPackage
   use LSFixedPackage_class,                 only : LSFixedPackage
   use LSUncollidedPackage_class,            only : LSUncollidedPackage
+  use anisoFixedPackage_class,              only : anisoFixedPackage
 !  use dynamPhysicsPackage_class, only : dynamPhysicsPackage
 
   implicit none
@@ -38,6 +39,7 @@ module physicsPackageFactory_func
                                                                              'fixedSourceTRRMPhysicsPackage ',&
                                                                              'LSFixedPackage                ',&
                                                                              'LSUncollidedPackage           ',&
+                                                                             'anisoFixedPackage             ',&
                                                                              'fixedSourceCADISPhysicsPackage']
 
   !!
@@ -112,6 +114,12 @@ contains
         ! Allocate and initialise
         allocate( LSUncollidedPackage :: new)
         call new % init(dict)
+      
+      case('anisoFixedPackage')
+        ! Allocate and initialise
+        allocate( anisoFixedPackage :: new)
+        call new % init(dict)
+
 
       case('fixedSourceTRRMPhysicsPackage')
         ! Allocate and initialise

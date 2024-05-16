@@ -11,5 +11,6 @@ add_sources( ./physicsPackage_inter.f90
 	     ./fixedSourceCADISPhysicsPackage_class.f90
          ./LSFixedPackage_class.f90
          ./LSUncollidedPackage_class.f90
+         ./anisoFixedPackage_class.f90
              )
              #./dynamPhysicsPackage_class.f90)
