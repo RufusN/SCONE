@@ -2194,7 +2194,6 @@ contains
           matIdx = self % nMatVOID 
         end if 
 
-
         dIdx = (cIdx - 1) * nDim
         mIdx = (cIdx - 1) * matSize
 
