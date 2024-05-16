@@ -712,10 +712,11 @@ contains
     ! TODO: clean nuclear database afterwards! It is no longer used
     !       and takes up memory.
     self % nMat = mm_nMat()
-    allocate(self % sigmaT(self % nMat * self % nG))
-    allocate(self % nuSigmaF(self % nMat * self % nG))
-    allocate(self % chi(self % nMat * self % nG))
-    allocate(self % sigmaS(self % nMat * self % nG * self % nG, self % SHOrder))
+    self % nMatVOID = self % nMat + 1
+    allocate(self % sigmaT(self % nMatVOID * self % nG))
+    allocate(self % nuSigmaF(self % nMatVOID * self % nG))
+    allocate(self % chi(self % nMatVOID * self % nG))
+    allocate(self % sigmaS(self % nMatVOID * self % nG * self % nG, self % SHOrder + 1 ))
 
     do m = 1, self % nMat
       matPtr  => self % mgData % getMaterial(m)
@@ -1812,9 +1813,11 @@ contains
           angularMomVec => self % moments((baseIdx + 1):(baseIdx + self % nG), :)
 
           call OMP_set_lock(self % locks(cIdx))
-          !$omp simd
-          do g = 1, self % nG
-            angularMomVec(g,SH) = angularMomVec(g,SH) + delta(g) * RCoeffs(SH)
+          do SH = 1, self % SHLength
+            !$omp simd
+            do g = 1, self % nG
+              angularMomVec(g,SH) = angularMomVec(g,SH) + delta(g) * RCoeffs(SH)
+            end do
           end do
           self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
           call OMP_unset_lock(self % locks(cIdx))
