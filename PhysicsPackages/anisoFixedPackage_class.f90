@@ -1495,7 +1495,7 @@ contains
     real(defFlt)                                          :: lenFlt
     logical(defBool)                                      :: hitVacuum
     type(distCache)                                       :: cache
-    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, currentsource
+    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
     real(defFlt), pointer, dimension(:)                   :: totVec
     real(defFlt), pointer, dimension(:, :)                :: angularMomVec
     real(defFlt), dimension(self % SHLength)              :: RCoeffs 
@@ -1668,7 +1668,7 @@ contains
     real(defReal)                                         :: totalLength, length
     logical(defBool)                                      :: activeRay, hitVacuum, newRay
     type(distCache)                                       :: cache
-    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, tau, avgFluxVec, currentsource
+    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, tau, currentSource
     real(defFlt), pointer, dimension(:)                   :: totVec
     real(defFlt), pointer, dimension(:, :)                :: angularMomVec, sourceVec
     real(defFlt)                                          :: lenFlt
@@ -1909,10 +1909,9 @@ contains
     class(anisoFixedPackage), intent(inout) :: self
     real(defReal), intent(in)                           :: norm
     real(defFlt)                                        :: normFlt
-    real(defFlt), save                                  :: total
     integer(shortInt), save                             :: g, matIdx, idx, SH
     integer(shortInt)                                   :: cIdx
-    !$omp threadprivate(total, idx, g, matIdx, SH)
+    !$omp threadprivate(idx, g, matIdx, SH)
 
     normFlt = real(norm, defFlt)
 

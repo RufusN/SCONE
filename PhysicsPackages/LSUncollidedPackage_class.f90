@@ -1609,19 +1609,17 @@ contains
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, event, matIdx0, &
-                                                             i, cIdx, baseIdx, surfIdx, centIdx, momIdx
-    real(defReal)                                         :: totalLength, length, mu, phi,  len2_12
-    real(defFlt)                                          :: lenFlt,lenFlt2_2
+                                                             i, cIdx, baseIdx, surfIdx
+    real(defReal)                                         :: totalLength, length, mu, phi
+    real(defFlt)                                          :: lenFlt, lenFlt2_2
     logical(defBool)                                      :: hitVacuum
     type(distCache)                                       :: cache
     real(defFlt), dimension(self % nG)                    :: F1, F2, Gn, G1, G2, H, tau, delta, fluxVec, &
-                                                              flatQ, gradQ, xInc, yInc, zInc, fluxVec0
-    real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, &
-                                                              xGradVec, yGradVec, zGradVec, &
+                                                              flatQ, xInc, yInc, zInc, fluxVec0
+    real(defFlt), pointer, dimension(:)                   :: scalarVec, totVec, &
                                                               xMomVec, yMomVec, zMomVec
-    real(defReal), pointer, dimension(:)                  :: mid, momVec, centVec
+    real(defReal), pointer, dimension(:)                  :: mid
     real(defReal), dimension(3)                           :: r0, mu0, u, x0, rand3, rC, r0Norm, rNorm
-    real(defReal), pointer                                :: volTrack
     real(defFlt), dimension(3)                            :: muFlt, rNormFlt, r0NormFlt
     character(100), parameter :: Here = 'uncollidedSweep (LSUncollidedPackage_class.f90)'
 
@@ -1713,7 +1711,6 @@ contains
 
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
-
 
       ! Set maximum flight distance
       length = self % uncollidedLength - totalLength
@@ -1891,7 +1888,7 @@ contains
     real(defReal)                                         :: totalLength, length, len2_12
     logical(defBool)                                      :: activeRay, hitVacuum
     type(distCache)                                       :: cache
-    real(defFlt), dimension(self % nG)                    :: delta, fluxVec, tau, avgFluxVec, &
+    real(defFlt), dimension(self % nG)                    :: delta, fluxVec, tau, &
                                                               F1, F2, Gn, G1, G2, H, flatQ, gradQ, &
                                                               xInc, yInc, zInc, fluxVec0
     real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, &
@@ -1943,9 +1940,6 @@ contains
       !can remove one set
         r0 = r % rGlobal()
         mu0 = r % dirGlobal()
-        dirPre = r % dirGlobal()
-        posPre = r % rGlobal()
-
 
       ! Set maximum flight distance and ensure ray is active
       if (totalLength >= self % dead) then
@@ -2182,9 +2176,10 @@ contains
     real(defReal), intent(in)                           :: norm
     real(defFlt)                                        :: normFlt
     real(defFlt), save                                  :: total
-    integer(shortInt), save                             :: g, matIdx, idx
+    real(defReal), save                                 :: invVol
+    integer(shortInt), save                             :: g, matIdx, idx, dIdx, mIdx
     integer(shortInt)                                   :: cIdx
-    !$omp threadprivate(total, idx, g, matIdx)
+    !$omp threadprivate(total, idx, g, matIdx, mIdx, dIdx, invVol)
 
     normFlt = real(norm, defFlt)
 
@@ -2198,6 +2193,40 @@ contains
         if (matIdx >= UNDEF_MAT) then !come back and check/complete
           matIdx = self % nMatVOID 
         end if 
+
+
+        dIdx = (cIdx - 1) * nDim
+        mIdx = (cIdx - 1) * matSize
+
+        if (self % volume(cIdx) > volume_tolerance) then
+          invVol = ONE / self % volumeTracks(cIdx)
+          
+          ! Update centroids
+          self % centroid(dIdx + x) =  self % centroidTracks(dIdx + x) * invVol
+          self % centroid(dIdx + y) =  self % centroidTracks(dIdx + y) * invVol
+          self % centroid(dIdx + z) =  self % centroidTracks(dIdx + z) * invVol
+        
+          ! Update spatial moments
+          self % momMat(mIdx + xx) = self % momTracks(mIdx + xx) * invVol
+          self % momMat(mIdx + xy) = self % momTracks(mIdx + xy) * invVol
+          self % momMat(mIdx + xz) = self % momTracks(mIdx + xz) * invVol
+          self % momMat(mIdx + yy) = self % momTracks(mIdx + yy) * invVol
+          self % momMat(mIdx + yz) = self % momTracks(mIdx + yz) * invVol
+          self % momMat(mIdx + zz) = self % momTracks(mIdx + zz) * invVol
+  
+        else
+          self % centroid(dIdx + x) =  ZERO
+          self % centroid(dIdx + y) =  ZERO
+          self % centroid(dIdx + z) =  ZERO
+  
+          self % momMat(mIdx + xx) = ZERO
+          self % momMat(mIdx + xy) = ZERO
+          self % momMat(mIdx + xz) = ZERO
+          self % momMat(mIdx + yy) = ZERO
+          self % momMat(mIdx + yz) = ZERO
+          self % momMat(mIdx + zz) = ZERO
+  
+        end if  
 
         do g = 1, self % nG
           total = self % sigmaT((matIdx - 1) * self % nG + g)

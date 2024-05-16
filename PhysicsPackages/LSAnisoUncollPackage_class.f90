@@ -291,8 +291,6 @@ module LSUncollidedPackage_class
     real(defFlt), dimension(:), allocatable     :: responseSource
     real(defReal), dimension(:), allocatable    :: volume
     real(defReal), dimension(:), allocatable    :: volumeTracks
-    real(defReal), dimension(:), allocatable    :: currentIn
-    real(defReal), dimension(:,:), allocatable  :: currentScores
     
     !LS tallies
     real(defFlt), dimension(:,:), allocatable    :: scalarX
@@ -1342,9 +1340,6 @@ contains
       call timerReset(self % timerTransport)
       call timerStart(self % timerTransport)
       intersections = 0
-
-      ! Reset currents
-      if (allocated(self % fluxMap)) self % currentIn = ZERO
 
       !$omp parallel do schedule(dynamic) reduction(+: intersections)
       do p = 1, self % pop
@@ -2701,9 +2696,9 @@ contains
   !!
   subroutine accumulateFluxScores(self)
     class(LSUncollidedPackage), intent(inout) :: self
-    real(defReal), save                                 :: flux, current
+    real(defReal), save                                 :: flux
     integer(shortInt)                                   :: idx
-    !$omp threadprivate(flux, current)
+    !$omp threadprivate(flux)
 
     !$omp parallel do schedule(static)
     do idx = 1, size(self % scalarFlux)
@@ -2713,16 +2708,7 @@ contains
     end do
     !$omp end parallel do
 
-    ! Accumulate current scores
-    if (allocated(self % fluxMap)) then
-      !$omp parallel do schedule(static)
-      do idx = 1, size(self % currentIn)
-        current = real(self % currentIn(idx),defReal)
-        self % currentScores(idx,1) = self % currentScores(idx, 1) + current
-        self % currentScores(idx,2) = self % currentScores(idx, 2) + current*current
-      end do
-      !$omp end parallel do
-    end if
+
 
   end subroutine accumulateFluxScores
 
@@ -2759,17 +2745,7 @@ contains
     end do
     !$omp end parallel do
 
-    ! Same for currents
-    if (allocated(self % fluxMap)) then
-      !$omp parallel do schedule(static)
-      do idx = 1, size(self % currentIn)
-        self % currentScores(idx,1) = self % currentScores(idx, 1) * N1
-        self % currentScores(idx,2) = self % currentScores(idx, 2) * N1
-        self % currentScores(idx,2) = Nm1 *(self % currentScores(idx,2) - &
-              self % currentScores(idx,1) * self % currentScores(idx,1))
-      end do
-      !$omp end parallel do
-    end if
+  
 
   end subroutine finaliseFluxScores
 
@@ -2945,19 +2921,6 @@ contains
       call self % fluxMap % print(out)
       call out % endBlock()
 
-      name = 'currentIn'
-      call out % startBlock(name)
-      call out % startArray(name, resArrayShape)
-      ! Add all map elements to results
-      do idx = 1, size(self % currentIn)
-        call out % addResult(real(self % currentScores(idx,1),defReal), &
-                             real(self % currentScores(idx,2),defReal))
-      end do
-      call out % endArray()
-
-      ! Output tally map
-      call self % fluxMap % print(out)
-      call out % endBlock()
 
       deallocate(flxOut)
       deallocate(flxOutSTD)
