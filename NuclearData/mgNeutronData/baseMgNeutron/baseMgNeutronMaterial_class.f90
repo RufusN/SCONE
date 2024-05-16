@@ -320,11 +320,14 @@ contains
       case ('P1')
         allocate( multiScatterPNMG :: self % scatter)
 
+      case ('P2')
+        allocate( multiScatterPNMG :: self % scatter)
+
       case ('P3')
         allocate( multiScatterPNMG :: self % scatter)
 
       case default
-        call fatalError(Here,'scatterKey: '//trim(scatterKey)//' is wrong. Must be P0 or P1 or P3')
+        call fatalError(Here,'scatterKey: '//trim(scatterKey)//' is wrong. Must be P0 or P1 or P2 or P3')
 
     end select
 

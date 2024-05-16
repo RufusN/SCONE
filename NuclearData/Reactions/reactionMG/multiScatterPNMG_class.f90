@@ -142,6 +142,8 @@ contains
       self % order = 5
     elseif (dict % isPresent('P3')) then
       self % order = 3
+    elseif (dict % isPresent('P2')) then
+      self % order = 2
     elseif (dict % isPresent('P1')) then
       self % order = 1
     else
