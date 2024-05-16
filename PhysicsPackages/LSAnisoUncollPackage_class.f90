@@ -982,28 +982,28 @@ contains
     self % centroidTracks = 0.0_defReal
     ! Modify local nuclear data appropriately
 
-    ! Fission source
-    allocate(xsBuffer(self % nMat * self % nG))
-    xsBuffer = self % nuSigmaF
-    self % nuSigmaF = self % chi
-    self % chi      = xsBuffer
-    deallocate(xsBuffer)
+    ! ! Fission source
+    ! allocate(xsBuffer(self % nMat * self % nG))
+    ! xsBuffer = self % nuSigmaF
+    ! self % nuSigmaF = self % chi
+    ! self % chi      = xsBuffer
+    ! deallocate(xsBuffer)
 
-    ! Scattering matrix
-    allocate(xsBuffer(self % nMat * self % nG * self % nG))
-    xsBuffer = self % sigmaS
+    ! ! Scattering matrix
+    ! allocate(xsBuffer(self % nMat * self % nG * self % nG))
+    ! xsBuffer = self % sigmaS
 
-    do m = 1, self % nMat
-      do g = 1, self % nG
-        do g1 = 1, self % nG
-          self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g1 - 1) + g)  = &
-                  xsBuffer(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1)
-        end do
-      end do
-    end do
-      !add in VOID XS for CADIS !!!!!!!!!!
-    ! CADIS flag
-    self % adjointRes = .true.
+    ! do m = 1, self % nMat
+    !   do g = 1, self % nG
+    !     do g1 = 1, self % nG
+    !       self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g1 - 1) + g)  = &
+    !               xsBuffer(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1)
+    !     end do
+    !   end do
+    ! end do
+    !   !add in VOID XS for CADIS !!!!!!!!!!
+    ! ! CADIS flag
+    ! self % adjointRes = .true.
 
   end subroutine initCADIS
 
@@ -1630,8 +1630,7 @@ contains
     type(distCache)                                       :: cache
     real(defFlt), dimension(self % nG)                    :: F1, F2, Gn, G1, G2, H, tau, delta, fluxVec, &
                                                               flatQ, gradQ, xInc, yInc, zInc, fluxVec0
-    real(defFlt), pointer, dimension(:,:)                   :: angularMomVec, sourceVec, &
-                                                              xGradVec, yGradVec, zGradVec, &
+    real(defFlt), pointer, dimension(:,:)                 :: angularMomVec, &
                                                               xMomVec, yMomVec, zMomVec
     real(defFlt), pointer, dimension(:)                   :: totVec
     real(defReal), pointer, dimension(:)                  :: mid, momVec, centVec
@@ -1849,7 +1848,7 @@ contains
       do g = 1, self % nG
         H(g)  = H(g) * fluxVec0(g) * lenFlt
         H(g) = (H(g)) * lenFlt
-        flatQ(g) = delta(g) !flatQ(g) * lenFlt + 
+        flatQ(g) = delta(g)
       end do
 
       !$omp simd
@@ -1870,14 +1869,12 @@ contains
       ! Update flux moments !aligned(angularMomVec, xMomVec, yMomVec, zMomVec)
       !$omp simd 
       do g = 1, self % nG
-
         do SH = 1, self % SHLength
             angularMomVec(g, SH) = angularMomVec(g, SH) + delta(g) * RCoeffs(SH) 
             xMomVec(g,SH) = xMomVec(g,SH) + xInc(g) * RCoeffs(SH)
             yMomVec(g,SH) = yMomVec(g,SH) + yInc(g) * RCoeffs(SH) 
             zMomVec(g,Sh) = zMomVec(g,SH) + zInc(g) * RCoeffs(SH) 
         end do
-
       end do
     
 
@@ -1906,7 +1903,7 @@ contains
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, event, matIdx0, &
                                                              cIdx, idx, baseIdx, surfIdx, &
-                                                             mapIdxPre, mapIdxPost,centIdx, momIdx
+                                                             centIdx, momIdx
     real(defReal)                                         :: totalLength, length, len2_12
     logical(defBool)                                      :: activeRay, hitVacuum
     type(distCache)                                       :: cache
@@ -1919,8 +1916,8 @@ contains
                                                             xMomVec, yMomVec, zMomVec
     real(defFlt), pointer, dimension(:)                   :: totVec
     real(defFlt)                                          :: lenFlt, lenFlt2_2
-    real(defReal), dimension(3)                           :: r0, mu0, dirPre, posPre, dirPost, &
-                                                             norm, rC, r0Norm, rNorm
+    real(defReal), dimension(3)                           :: r0, mu0, &
+                                                              rC, r0Norm, rNorm
     type(particleState)                                   :: state                                                     
     real(defReal), dimension(matSize)                     :: matScore
     real(defReal), pointer, dimension(:)                  :: mid, momVec, centVec
@@ -2229,9 +2226,10 @@ contains
     real(defReal), intent(in)                           :: norm
     real(defFlt)                                        :: normFlt
     real(defFlt), save                                  :: total
-    integer(shortInt), save                             :: g, matIdx, idx
+    real(defReal), save                                 :: invVol
+    integer(shortInt), save                             :: g, matIdx, idx, dIdx, mIdx
     integer(shortInt)                                   :: cIdx
-    !$omp threadprivate(total, idx, g, matIdx)
+    !$omp threadprivate(total, idx, g, matIdx, invVol, dIdx, mIdx)
 
     normFlt = real(norm, defFlt)
 
@@ -2245,6 +2243,39 @@ contains
         if (matIdx >= UNDEF_MAT) then !come back and check/complete
           matIdx = self % nMatVOID 
         end if 
+
+        dIdx = (cIdx - 1) * nDim
+        mIdx = (cIdx - 1) * matSize
+
+        if (self % volume(cIdx) > volume_tolerance) then
+          invVol = ONE / self % volumeTracks(cIdx)
+          
+          ! Update centroids
+          self % centroid(dIdx + x) =  self % centroidTracks(dIdx + x) * invVol
+          self % centroid(dIdx + y) =  self % centroidTracks(dIdx + y) * invVol
+          self % centroid(dIdx + z) =  self % centroidTracks(dIdx + z) * invVol
+        
+          ! Update spatial moments
+          self % momMat(mIdx + xx) = self % momTracks(mIdx + xx) * invVol
+          self % momMat(mIdx + xy) = self % momTracks(mIdx + xy) * invVol
+          self % momMat(mIdx + xz) = self % momTracks(mIdx + xz) * invVol
+          self % momMat(mIdx + yy) = self % momTracks(mIdx + yy) * invVol
+          self % momMat(mIdx + yz) = self % momTracks(mIdx + yz) * invVol
+          self % momMat(mIdx + zz) = self % momTracks(mIdx + zz) * invVol
+  
+        else
+          self % centroid(dIdx + x) =  ZERO
+          self % centroid(dIdx + y) =  ZERO
+          self % centroid(dIdx + z) =  ZERO
+  
+          self % momMat(mIdx + xx) = ZERO
+          self % momMat(mIdx + xy) = ZERO
+          self % momMat(mIdx + xz) = ZERO
+          self % momMat(mIdx + yy) = ZERO
+          self % momMat(mIdx + yz) = ZERO
+          self % momMat(mIdx + zz) = ZERO
+  
+        end if  
 
         do g = 1, self % nG
           total = self % sigmaT((matIdx - 1) * self % nG + g)
@@ -2299,22 +2330,22 @@ contains
       !if (self % nVolRays <= 0) then
       ! Forget the above - use precomputed volumes only for first collided
 
-      if (self % itVol) then
-        ! Iteration wise approach
-        self % volume(cIdx) = self % volumeTracks(cIdx) * norm
-        self % volumeTracks(cIdx) = ZERO
-      else if (self % volCorr) then
-        ! Correct the cell volume
-        corr = self % volumeTracks(cIdx) * norm
-        self % volume(cIdx) = self % volume(cIdx) * self % lengthPerIt * (it - 1) + self % volumeTracks(cIdx)
-        self % volume(cIdx) = self % volume(cIdx) * normVol
-        corr = corr / self % volume(cIdx)
-        self % volumeTracks(cIdx) = ZERO
-        if (corr /= corr) corr = ONE
-      else
-        ! Standard volume approach
+      ! if (self % itVol) then
+      !   ! Iteration wise approach
+      !   self % volume(cIdx) = self % volumeTracks(cIdx) * norm
+      !   self % volumeTracks(cIdx) = ZERO
+      ! else if (self % volCorr) then
+      !   ! Correct the cell volume
+      !   corr = self % volumeTracks(cIdx) * norm
+      !   self % volume(cIdx) = self % volume(cIdx) * self % lengthPerIt * (it - 1) + self % volumeTracks(cIdx)
+      !   self % volume(cIdx) = self % volume(cIdx) * normVol
+      !   corr = corr / self % volume(cIdx)
+      !   self % volumeTracks(cIdx) = ZERO
+      !   if (corr /= corr) corr = ONE
+      ! else
+      !   ! Standard volume approach
         self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
-      end if
+      ! end if
 
       vol = self % volume(cIdx)
       dIdx = (cIdx - 1) * nDim
@@ -2385,36 +2416,36 @@ contains
           self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
           self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
        
-        ! Apply volume correction only to negative flux cells
-        if (self % volCorr .and. self % passive) then
-          if (self % scalarFlux(idx) < 0) then
-            self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
-                    (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-                  ! self % scalarX(idx) =  0.0_defFlt
-                  ! self % scalarY(idx) =  0.0_defFlt
-                  ! self % scalarZ(idx) =  0.0_defFlt
+        ! ! Apply volume correction only to negative flux cells
+        ! if (self % volCorr .and. self % passive) then
+        !   if (self % scalarFlux(idx) < 0) then
+        !     self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
+        !             (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+        !           ! self % scalarX(idx) =  0.0_defFlt
+        !           ! self % scalarY(idx) =  0.0_defFlt
+        !           ! self % scalarZ(idx) =  0.0_defFlt
 
-          end if 
-        ! Apply volume correction to all cells
-        elseif (self % volCorr) then
-          self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
-          ! self % scalarX(idx) =  0.0_defFlt
-          ! self % scalarY(idx) =  0.0_defFlt
-          ! self % scalarZ(idx) =  0.0_defFlt
-        end if
+        !   end if 
+        ! ! Apply volume correction to all cells
+        ! elseif (self % volCorr) then
+        !   self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+        !   ! self % scalarX(idx) =  0.0_defFlt
+        !   ! self % scalarY(idx) =  0.0_defFlt
+        !   ! self % scalarZ(idx) =  0.0_defFlt
+        ! end if
 
-        ! This will probably affect things like neutron conservation...
-        if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) then
-          self % scalarFlux(idx) = 0.0_defFlt
-          self % scalarX(idx) =  0.0_defFlt
-          self % scalarY(idx) =  0.0_defFlt
-          self % scalarZ(idx) =  0.0_defFlt
-        end if
+        ! ! This will probably affect things like neutron conservation...
+        ! if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) then
+        !   self % scalarFlux(idx) = 0.0_defFlt
+        !   self % scalarX(idx) =  0.0_defFlt
+        !   self % scalarY(idx) =  0.0_defFlt
+        !   self % scalarZ(idx) =  0.0_defFlt
+        ! end if
 
 
-        ! NaN check - kill calculation
-        if (self % scalarFlux(idx) /= self % scalarFlux(idx)) &
-                call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(g))
+        ! ! NaN check - kill calculation
+        ! if (self % scalarFlux(idx) /= self % scalarFlux(idx)) &
+        !         call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(g))
 
       end do
 
@@ -2432,12 +2463,14 @@ contains
     integer(shortInt), intent(in)                         :: cIdx
     integer(shortInt), intent(in)                         :: it
     real(defFlt)                                          :: scatter, xScatter, yScatter, zScatter, &
-                                                             fission, xFission, yFission, zFission, &
-                                                             xSource, ySource, zSource
+                                                             fission, xFission, yFission, zFission
+    real(defFlt), dimension(self % SHLength)              :: xSource, ySource, zSource
+    real(defFlt), dimension(:), pointer                   :: nuFission, total, chi
+    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, SH, SHidx
+    real(defFlt), pointer, dimension(:,:)                 :: scatterVec, scatterXS
+    real(defFlt), pointer, dimension(:,:)                 :: angularMomVec
     real(defFlt)                                          :: invMxx, invMxy, invMxz, invMyy, invMyz, invMzz
-    real(defFlt), dimension(:), pointer                   :: nuFission, total, chi, scatterXS 
-    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, id
-    real(defFlt), pointer, dimension(:)                   :: fluxVec, scatterVec, xFluxVec, yFluxVec, zFluxVec
+    real(defFlt), pointer, dimension(:,:)                 :: xFluxVec, yFluxVec, zFluxVec
     real(defReal), pointer, dimension(:)                  :: momVec
     real(defReal)                                         :: det, one_det 
 
@@ -2481,10 +2514,10 @@ contains
     end if
 
     baseIdx = self % nG * (cIdx - 1)
-    fluxVec => self % prevFlux((baseIdx+1):(baseIdx + self % nG))
-    xFluxVec => self % prevX((baseIdx + 1):(baseIdx + self % nG))
-    yFluxVec => self % prevY((baseIdx + 1):(baseIdx + self % nG))
-    zFluxVec => self % prevZ((baseIdx + 1):(baseIdx + self % nG))
+    angularMomVec => self % prevMoments((baseIdx + 1):(baseIdx + self % nG), :)
+    xFluxVec => self % prevX((baseIdx + 1):(baseIdx + self % nG), :)
+    yFluxVec => self % prevY((baseIdx + 1):(baseIdx + self % nG), :)
+    zFluxVec => self % prevZ((baseIdx + 1):(baseIdx + self % nG), :)
 
     ! Calculate fission source
     fission = 0.0_defFlt
@@ -2494,61 +2527,65 @@ contains
 
     !$omp simd reduction(+:fission, xFission, yFission, zFission) aligned(fluxVec, xFluxVec, yFluxVec, zFluxVec, nuFission)
     do gIn = 1, self % nG
-      fission = fission + fluxVec(gIn) * nuFission(gIn)
-      xFission = xFission + xFluxVec(gIn) * nuFission(gIn)
-      yFission = yFission + yFluxVec(gIn) * nuFission(gIn)
-      zFission = zFission + zFluxVec(gIn) * nuFission(gIn)
+      fission = fission + angularMomVec(gIn,1) * nuFission(gIn)
+      xFission = xFission + xFluxVec(gIn,1) * nuFission(gIn)
+      yFission = yFission + yFluxVec(gIn,1) * nuFission(gIn)
+      zFission = zFission + zFluxVec(gIn,1) * nuFission(gIn)
     end do
 
     do g = 1, self % nG
 
-      scatterVec => scatterXS((self % nG * (g - 1) + 1):(self % nG * self % nG))
-
-      ! Calculate scattering source
-      scatter = 0.0_defFlt
-      xScatter = 0.0_defFlt
-      yScatter = 0.0_defFlt
-      zScatter = 0.0_defFlt
-
-      ! Sum contributions from all energies
-      !$omp simd reduction(+:scatter, xScatter, yScatter, zScatter) aligned(fluxVec, xFluxVec, yFluxVec, zFluxVec, scatterVec)
-      do gIn = 1, self % nG
-        scatter = scatter + fluxVec(gIn) * scatterVec(gIn)
-        xScatter = xScatter + xFluxVec(gIn) * scatterVec(gIn)
-        yScatter = yScatter + yFluxVec(gIn) * scatterVec(gIn)
-        zScatter = zScatter + zFluxVec(gIn) * scatterVec(gIn)
-      end do
-
-      ! Output index
+      scatterVec => scatterXS((self % nG * (g - 1) + 1):(self % nG * self % nG), :)
       idx = baseIdx + g
 
-      self % source(idx) = chi(g) * fission + scatter + self % fixedSource(idx)
-      self % source(idx) = self % source(idx) / total(g)
-        
-      if ( it > 29 ) then 
-        xSource = chi(g) * xFission + xScatter + self % fixedX(idx)
-        xSource = xSource / total(g) 
-        ySource = chi(g) * yFission + yScatter + self % fixedY(idx)
-        ySource = ySource / total(g) 
-        zSource = chi(g) * zFission + zScatter + self % fixedZ(idx)
-        zSource = zSource / total(g) 
+      ! Calculate scattering source for higher order scattering
+    
+      do SH = 1, self % SHLength
 
-        ! Calculate source gradients by inverting the moment matrix
-        self % sourceX(idx) = invMxx * xSource + &
-                invMxy * ySource + invMxz * zSource 
-        self % sourceY(idx) = invMxy * xSource + & 
-                invMyy * ySource + invMyz * zSource 
-        self % sourceZ(idx) = invMxz * xSource + &
-                invMyz * ySource + invMzz * zSource 
-      else
+        SHidx = ceiling(sqrt(real(SH, defReal)) - 1) + 1
+        scatter = 0.0_defFlt
+        xScatter = 0.0_defFlt
+        yScatter = 0.0_defFlt
+        zScatter = 0.0_defFlt 
 
-        self % sourceX(idx) = 0.0_defFlt
-        self % sourceY(idx) = 0.0_defFlt
-        self % sourceZ(idx) = 0.0_defFlt
-        
+        !$omp simd 
+        do gIn = 1, self % nG
+          scatter = scatter + angularMomVec(gIn, SH) * scatterVec(gIn, SHidx)
+          xScatter = xScatter + xFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
+          yScatter = yScatter + yFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
+          zScatter = zScatter + zFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
+        end do
+
+        self % source(idx,SH) = scatter / total(g)
+        xSource(SH) = xScatter / total(g) 
+        ySource(SH) = yScatter / total(g) 
+        zSource(SH) = zScatter / total(g)
+
+      end do
+
+      ! Calculate scattering source for isotropic scattering / flat source
+      self % source(idx,1) = self % source(idx,1) + (chi(g) * fission) / total(g) 
+
+      if (it > 29) then
+ 
+
+        xSource(1) = xSource(1) + (chi(g) * xFission) / total(g) 
+        ySource(1) = ySource(1) + (chi(g) * yFission) / total(g) 
+        zSource(1) = zSource(1) + (chi(g) * zFission) / total(g) 
+      
+          
+          ! Calculate source gradients by inverting the moment matrix
+        do SH = 1, self % SHLength
+          self % sourceX(idx,SH) = invMxx * xSource(SH) + &
+                  invMxy * ySource(SH) + invMxz * zSource(SH)
+          self % sourceY(idx,SH) = invMxy * xSource(SH) + &
+                  invMyy * ySource(SH) + invMyz * zSource(SH)
+          self % sourceZ(idx,SH) = invMxz * xSource(SH) + &
+              invMyz * ySource(SH) + invMzz * zSource(SH)
+        end do
+
       end if
     end do
-
   end subroutine sourceUpdateKernel
 
   !!
@@ -2562,110 +2599,117 @@ contains
                                                              fission, xFission, yFission, zFission, &
                                                              xSource, ySource, zSource
     real(defFlt)                                          :: invMxx, invMxy, invMxz, invMyy, invMyz, invMzz
-    real(defFlt), dimension(:), pointer                   :: nuFission, total, chi, scatterXS 
+    real(defFlt), dimension(:), pointer                   :: nuFission, total, chi
     integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, id
-    real(defFlt), pointer, dimension(:)                   :: scatterVec, xFluxVec, yFluxVec, zFluxVec
+    real(defFlt), pointer, dimension(:,:)                 :: scatterVec, scatterXS, angularMomVec, xFluxVec, yFluxVec, zFluxVec
     real(defReal), pointer, dimension(:)                  :: momVec,fluxVec
     real(defReal)                                         :: det, one_det 
 
-    ! Identify material
-    matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
-    id      =  self % CellToID(cIdx)
 
-    ! Hack to guard against non-material cells
-    if (matIdx >= UNDEF_MAT) return
 
-    ! Obtain XSs
-    matIdx = (matIdx - 1) * self % nG
-    scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
-    nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
-    chi => self % chi((matIdx + 1):(matIdx + self % nG))
-    total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
+    !NEED TO COME AND  FIX
 
-    momVec => self % momMat(((cIdx - 1) * matSize + 1):(cIdx * matSize))
 
-    det = momVec(xx) * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)) &
-    - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
-    + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-    if ((abs(det) > 1E-10) .and. self % volume(cIdx) > 1E-6 ) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
-      one_det = ONE/det
-      invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
-      invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
-      invMxz = real(one_det * (momVec(xy) * momVec(yz) - momVec(yy) * momVec(xz)),defFlt)
-      invMyy = real(one_det * (momVec(xx) * momVec(zz) - momVec(xz) * momVec(xz)),defFlt)
-      invMyz = real(one_det * (momVec(xy) * momVec(xz) - momVec(xx) * momVec(yz)),defFlt)
-      invMzz = real(one_det * (momVec(xx) * momVec(yy) - momVec(xy) * momVec(xy)),defFlt)
-    else
-      invMxx = 0.0_defFlt
-      invMxy = 0.0_defFlt
-      invMxz = 0.0_defFlt
-      invMyy = 0.0_defFlt
-      invMyz = 0.0_defFlt
-      invMzz = 0.0_defFlt
-      det = ONE 
-    end if
+    ! ! Identify material
+    ! matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
+    ! id      =  self % CellToID(cIdx)
 
-    baseIdx = self % nG * (cIdx - 1)
-    fluxVec => self % uncollidedScores((baseIdx+1):(baseIdx + self % nG),1)
-    xFluxVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG))
-    yFluxVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
-    zFluxVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))
+    ! ! Hack to guard against non-material cells
+    ! if (matIdx >= UNDEF_MAT) return
 
-    ! Calculate fission source
-    fission = 0.0_defFlt
-    xFission = 0.0_defFlt
-    yFission = 0.0_defFlt
-    zFission = 0.0_defFlt
-    !$omp simd 
-    do gIn = 1, self % nG
-      fission = fission + real(fluxVec(gIn),defFlt) * nuFission(gIn)
-      xFission = xFission + xFluxVec(gIn) * nuFission(gIn)
-      yFission = yFission + yFluxVec(gIn) * nuFission(gIn)
-      zFission = zFission + zFluxVec(gIn) * nuFission(gIn)
-    end do
+    ! ! Obtain XSs
+    ! matIdx = (matIdx - 1) * self % nG
+    ! scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
+    ! nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
+    ! chi => self % chi((matIdx + 1):(matIdx + self % nG))
+    ! total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
 
-    do g = 1, self % nG
+    ! momVec => self % momMat(((cIdx - 1) * matSize + 1):(cIdx * matSize))
 
-      scatterVec => scatterXS((self % nG * (g - 1) + 1):(self % nG * (g - 1) + self % nG))
+    ! det = momVec(xx) * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)) &
+    ! - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
+    ! + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-      ! Calculate scattering source
-      scatter = 0.0_defFlt
-      xScatter = 0.0_defFlt
-      yScatter = 0.0_defFlt
-      zScatter = 0.0_defFlt
+    ! if ((abs(det) > 1E-10) .and. self % volume(cIdx) > 1E-6 ) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
+    !   one_det = ONE/det
+    !   invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
+    !   invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
+    !   invMxz = real(one_det * (momVec(xy) * momVec(yz) - momVec(yy) * momVec(xz)),defFlt)
+    !   invMyy = real(one_det * (momVec(xx) * momVec(zz) - momVec(xz) * momVec(xz)),defFlt)
+    !   invMyz = real(one_det * (momVec(xy) * momVec(xz) - momVec(xx) * momVec(yz)),defFlt)
+    !   invMzz = real(one_det * (momVec(xx) * momVec(yy) - momVec(xy) * momVec(xy)),defFlt)
+    ! else
+    !   invMxx = 0.0_defFlt
+    !   invMxy = 0.0_defFlt
+    !   invMxz = 0.0_defFlt
+    !   invMyy = 0.0_defFlt
+    !   invMyz = 0.0_defFlt
+    !   invMzz = 0.0_defFlt
+    !   det = ONE 
+    ! end if
 
-      ! Sum contributions from all energies
-      !$omp simd 
-      do gIn = 1, self % nG
-        scatter = scatter + real(fluxVec(gIn),defFlt) * scatterVec(gIn)
-        xScatter = xScatter + xFluxVec(gIn) * scatterVec(gIn)
-        yScatter = yScatter + yFluxVec(gIn) * scatterVec(gIn)
-        zScatter = zScatter + zFluxVec(gIn) * scatterVec(gIn)
-      end do
+    ! baseIdx = self % nG * (cIdx - 1)
+    ! fluxVec => self % uncollidedScores((baseIdx+1):(baseIdx + self % nG),1)
+    ! angularMomVec => self % moments((baseIdx + 1):(baseIdx + self % nG), :)
+    ! xFluxVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG),:)
+    ! yFluxVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG),:)
+    ! zFluxVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG),:)
 
-      ! Output index
-      idx = baseIdx + g
+    ! ! Calculate fission source
+    ! fission = 0.0_defFlt
+    ! xFission = 0.0_defFlt
+    ! yFission = 0.0_defFlt
+    ! zFission = 0.0_defFlt
+    ! !$omp simd 
+    ! do gIn = 1, self % nG
+    !   fission = fission + real(fluxVec(gIn),defFlt) * nuFission(gIn)
+    !   xFission = xFission + xFluxVec(gIn,1) * nuFission(gIn)
+    !   yFission = yFission + yFluxVec(gIn,1) * nuFission(gIn)
+    !   zFission = zFission + zFluxVec(gIn,1) * nuFission(gIn)
+    ! end do
 
-      ! Don't scale by 1/SigmaT - that occurs in the sourceUpdateKernel
-      self % fixedSource(idx) = chi(g) * fission + scatter
-      !self % fixedSource(idx) = self % fixedSource(idx) !/ total(idx)
+    ! do g = 1, self % nG
 
-      xSource = chi(g) * xFission + xScatter
-      xSource = xSource 
-      ySource = chi(g) * yFission + yScatter
-      ySource = ySource
-      zSource = chi(g) * zFission + zScatter
-      zSource = zSource 
+    !   scatterVec => scatterXS((self % nG * (g - 1) + 1):(self % nG * (g - 1) + self % nG))
 
-      self % fixedX(idx) = invMxx * xSource + &
-        invMxy * ySource + invMxz * zSource 
-      self % fixedY(idx) = invMxy * xSource + & 
-        invMyy * ySource + invMyz * zSource 
-      self % fixedZ(idx) = invMxz * xSource + &
-        invMyz * ySource + invMzz * zSource 
+    !   ! Calculate scattering source
+    !   scatter = 0.0_defFlt
+    !   xScatter = 0.0_defFlt
+    !   yScatter = 0.0_defFlt
+    !   zScatter = 0.0_defFlt
 
-    end do
+    !   ! Sum contributions from all energies
+    !   !$omp simd 
+    !   do gIn = 1, self % nG
+    !     scatter = scatter + real(fluxVec(gIn),defFlt) * scatterVec(gIn)
+    !     xScatter = xScatter + xFluxVec(gIn) * scatterVec(gIn)
+    !     yScatter = yScatter + yFluxVec(gIn) * scatterVec(gIn)
+    !     zScatter = zScatter + zFluxVec(gIn) * scatterVec(gIn)
+    !   end do
+
+    !   ! Output index
+    !   idx = baseIdx + g
+
+    !   ! Don't scale by 1/SigmaT - that occurs in the sourceUpdateKernel
+    !   self % fixedSource(idx) = chi(g) * fission + scatter
+    !   !self % fixedSource(idx) = self % fixedSource(idx) !/ total(idx)
+
+    !   xSource = chi(g) * xFission + xScatter
+    !   xSource = xSource 
+    !   ySource = chi(g) * yFission + yScatter
+    !   ySource = ySource
+    !   zSource = chi(g) * zFission + zScatter
+    !   zSource = zSource 
+
+    !   self % fixedX(idx) = invMxx * xSource + &
+    !     invMxy * ySource + invMxz * zSource 
+    !   self % fixedY(idx) = invMxy * xSource + & 
+    !     invMyy * ySource + invMyz * zSource 
+    !   self % fixedZ(idx) = invMxz * xSource + &
+    !     invMyz * ySource + invMzz * zSource 
+
+    ! end do
 
   end subroutine firstCollidedSourceKernel
 
@@ -2674,20 +2718,22 @@ contains
   !!
   subroutine resetFluxes(self)
     class(LSUncollidedPackage), intent(inout) :: self
-    integer(shortInt)                                   :: idx
+    integer(shortInt)                                   :: idx, Sh
 
-    !$omp parallel do schedule(static)
-    do idx = 1, size(self % scalarFlux)
-        self % prevFlux(idx) = self % scalarFlux(idx)
-        self % scalarFlux(idx) = 0.0_defFlt
-        self % prevX(idx) = self % scalarX(idx)
-        self % scalarX(idx) = 0.0_defFlt
-        self % prevY(idx) = self % scalarY(idx)
-        self % scalarY(idx) = 0.0_defFlt
-        self % prevZ(idx) = self % scalarZ(idx)
-        self % scalarZ(idx) = 0.0_defFlt
+    do SH = 1, self % SHLength
+      !$omp parallel do schedule(static)
+        do idx = 1, (self % nG * self % nCells)
+            self % prevMoments(idx,SH) = self % moments(idx,SH) 
+            self % moments(idx,SH) = 0.0_defFlt
+            self % prevX(idx,SH) = self % scalarX(idx,SH)
+            self % scalarX(idx,SH) = 0.0_defFlt
+            self % prevY(idx,SH) = self % scalarY(idx,SH)
+            self % scalarY(idx,SH) = 0.0_defFlt
+            self % prevZ(idx,SH) = self % scalarZ(idx,SH)
+            self % scalarZ(idx,SH) = 0.0_defFlt
+        end do
+        !$omp end parallel do
       end do
-      !$omp end parallel do
 
   end subroutine resetFluxes
 
