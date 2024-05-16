@@ -58,7 +58,7 @@ module fixedSourceTRRMPhysicsPackage_class
   ! Parameter for uncollided flux calculations
   integer(shortInt), parameter :: NO_UC = 0, POINT = 1, VOLUME = 2
 
-  ! Parameter for CADIS calculation
+  ! Parameter for FW-CADIS calculation
   integer(shortInt), parameter :: NO_CADIS = 0, GLOBAL = 1, DETECTOR = 2
 
   !!
@@ -231,7 +231,7 @@ module fixedSourceTRRMPhysicsPackage_class
     logical(defBool)   :: mapFlux     = .false.
     class(tallyMap), allocatable :: fluxMap
 
-    ! CADIS settings
+    ! FW-CADIS settings
     integer(shortInt)  :: cadis       = 0
     character(nameLen), dimension(:), allocatable :: detMat
 
@@ -266,8 +266,6 @@ module fixedSourceTRRMPhysicsPackage_class
     real(defFlt), dimension(:), allocatable     :: responseSource
     real(defReal), dimension(:), allocatable    :: volume
     real(defReal), dimension(:), allocatable    :: volumeTracks
-    real(defReal), dimension(:), allocatable    :: currentIn
-    real(defReal), dimension(:,:), allocatable  :: currentScores
 
     ! Tracking cell properites
     integer(shortInt), dimension(:), allocatable :: IDToCell
@@ -585,12 +583,6 @@ contains
       tempDict => dict % getDictPtr('fluxMap')
       call new_tallyMap(self % fluxMap, tempDict)
 
-      ! Allocate current vector
-      allocate(self % currentIn(self % nG*self % fluxMap % bins(0)), &
-               self % currentScores(self % nG*self % fluxMap % bins(0), 2))
-      self % currentIn = ZERO
-      self % currentScores = ZERO
-
     else
       self % mapFlux = .false.
     end if
@@ -829,7 +821,7 @@ contains
     ! Reinitialise fixed source
     self % fixedSource = 0.0_defFlt
 
-    ! Construct CADIS SOURCE from forward calculation
+    ! Construct FW - CADIS SOURCE from forward calculation
     ! This is where the different types of calculations differ
     if (self % cadis == GLOBAL) then
 
@@ -1225,9 +1217,6 @@ contains
       call timerReset(self % timerTransport)
       call timerStart(self % timerTransport)
       intersections = 0
-
-      ! Reset currents
-      if (allocated(self % fluxMap)) self % currentIn = ZERO
 
       !$omp parallel do schedule(dynamic) reduction(+: intersections)
       do p = 1, self % pop
@@ -1627,16 +1616,14 @@ contains
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, event, matIdx0, &
-                                                             cIdx, idx, baseIdx, surfIdx, &
-                                                             mapIdxPre, mapIdxPost
+                                                             cIdx, idx, baseIdx, surfIdx
     real(defReal)                                         :: totalLength, length
     logical(defBool)                                      :: activeRay, hitVacuum
     type(distCache)                                       :: cache
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, tau, avgFluxVec
     real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec
     real(defFlt)                                          :: lenFlt
-    real(defReal), dimension(3)                           :: r0, mu0, dirPre, posPre, dirPost, norm
-    type(particleState)                                   :: state
+    real(defReal), dimension(3)                           :: r0, mu0, dirPre, posPre
 
     matIdx  = r % coords % matIdx
     totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
@@ -1749,50 +1736,6 @@ contains
           end do
           self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
           call OMP_unset_lock(self % locks(cIdx))
-
-          !!! Ingoing currents !!! Check if a new cell was entered
-          if (allocated(self % fluxMap)) then
-
-            ! Get indexes
-            state % r  = posPre + length * HALF * dirPre
-            mapIdxPre  = self % fluxMap % map(state)
-
-            state % r  = r % rGlobal() + NUDGE * r % dirGlobal()
-            mapIdxPost = self % fluxMap % map(state)
-            dirPost = r % dirGlobal()
-
-            !norm = ZERO
-
-            !if (event == CROSS_EV) then
-            !  surfIdx = abs(surfIdx)
-            !  if (surfIdx == 1 .or. surfIdx == 2) norm(1) = ONE
-            !  if (surfIdx == 3 .or. surfIdx == 4) norm(2) = ONE
-            !  if (surfIdx == 5 .or. surfIdx == 6) norm(3) = ONE
-            !elseif (event == BOUNDARY_EV) then
-            !  if (dirPre(1) /= dirPost(1)) norm(1) = ONE
-            !  if (dirPre(2) /= dirPost(2)) norm(2) = ONE
-            !  if (dirPre(3) /= dirPost(3)) norm(3) = ONE
-            !end if
-
-            !!! Accumulate currents !!!
-            if ((mapIdxPre /= mapIdxPost .or. event == BOUNDARY_EV) .and. .not. hitVacuum) then
-              do g = 1, self % nG
-                idx = (mapIdxPost - 1)*self % nG + g
-                !$omp atomic
-                self % currentIn(idx) = self % currentIn(idx) + fluxVec(g)
-              end do
-            end if
-
-            !if (mapIdxPre /= 0) then
-            !  do g = 1, self % nG
-            !    idx = (mapIdxPre - 1)*self % nG + g
-            !    !$omp atomic
-            !    self % currentIn(idx) = self % currentIn(idx) + &
-            !                            avgFluxVec(g)*length*abs(dotProduct(norm, r % dirGlobal()))
-            !  end do
-            !end if
-
-          end if
 
           if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
 
@@ -1922,7 +1865,7 @@ contains
         total = self % sigmaT((matIdx - 1) * self % nG + g)
 
         if (vol > volume_tolerance) then
-          self % scalarFlux(idx) = self % scalarFlux(idx) * norm / (total * real(vol,defFlt))
+          self % scalarFlux(idx) = self % scalarFlux(idx) * norm/ (total * real(vol,defFlt))
         else
           corr = ONE
         end if
@@ -2105,9 +2048,9 @@ contains
   !!
   subroutine accumulateFluxScores(self)
     class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
-    real(defReal), save                                 :: flux, current
+    real(defReal), save                                 :: flux
     integer(shortInt)                                   :: idx
-    !$omp threadprivate(flux, current)
+    !$omp threadprivate(flux)
 
     !$omp parallel do schedule(static)
     do idx = 1, size(self % scalarFlux)
@@ -2116,17 +2059,6 @@ contains
       self % fluxScores(idx,2) = self % fluxScores(idx, 2) + flux*flux
     end do
     !$omp end parallel do
-
-    ! Accumulate current scores
-    if (allocated(self % fluxMap)) then
-      !$omp parallel do schedule(static)
-      do idx = 1, size(self % currentIn)
-        current = real(self % currentIn(idx),defReal)
-        self % currentScores(idx,1) = self % currentScores(idx, 1) + current
-        self % currentScores(idx,2) = self % currentScores(idx, 2) + current*current
-      end do
-      !$omp end parallel do
-    end if
 
   end subroutine accumulateFluxScores
 
@@ -2162,18 +2094,6 @@ contains
       end if
     end do
     !$omp end parallel do
-
-    ! Same for currents
-    if (allocated(self % fluxMap)) then
-      !$omp parallel do schedule(static)
-      do idx = 1, size(self % currentIn)
-        self % currentScores(idx,1) = self % currentScores(idx, 1) * N1
-        self % currentScores(idx,2) = self % currentScores(idx, 2) * N1
-        self % currentScores(idx,2) = Nm1 *(self % currentScores(idx,2) - &
-              self % currentScores(idx,1) * self % currentScores(idx,1))
-      end do
-      !$omp end parallel do
-    end if
 
   end subroutine finaliseFluxScores
 
@@ -2345,20 +2265,6 @@ contains
         call out % addResult(real(flxOut(idx),defReal), real(flxOutSTD(idx),defReal))
       end do
       call out % endArray()
-      ! Output tally map
-      call self % fluxMap % print(out)
-      call out % endBlock()
-
-      name = 'currentIn'
-      call out % startBlock(name)
-      call out % startArray(name, resArrayShape)
-      ! Add all map elements to results
-      do idx = 1, size(self % currentIn)
-        call out % addResult(real(self % currentScores(idx,1),defReal), &
-                             real(self % currentScores(idx,2),defReal))
-      end do
-      call out % endArray()
-
       ! Output tally map
       call self % fluxMap % print(out)
       call out % endBlock()
