@@ -1,4 +1,4 @@
-module fixedSourceTRRMPhysicsPackage_class
+module anisoFixedPackage_class
 
   use numPrecision
   use universalVariables
@@ -173,7 +173,7 @@ module fixedSourceTRRMPhysicsPackage_class
   !!   sourceStrength   -> Strength of initial source in all groups
   !!   uncollidedScores -> Stats for calculating average and std of uncollided flux
   !!
-  !!   scalarFlux   -> Array of scalar flux values of length = nG * nCells
+  !!   moments   -> Array of scalar flux values of length = nG * nCells
   !!   prevFlux     -> Array of previous scalar flux values of length = nG * nCells
   !!   fluxScores   -> Array of scalar flux values and squared values to be reported
   !!                   in results, dimension =  [nG * nCells, 2]
@@ -194,7 +194,7 @@ module fixedSourceTRRMPhysicsPackage_class
   !! Interface:
   !!   physicsPackage interface
   !!
-  type, public, extends(physicsPackage) :: fixedSourceTRRMPhysicsPackage
+  type, public, extends(physicsPackage) :: anisoFixedPackage
     private
     ! Components
     class(geometryStd), pointer           :: geom
@@ -264,7 +264,7 @@ module fixedSourceTRRMPhysicsPackage_class
     ! Data space - absorb all nuclear data for speed
     real(defFlt), dimension(:), allocatable     :: sigmaT
     real(defFlt), dimension(:), allocatable     :: nuSigmaF
-    real(defFlt), dimension(:), allocatable     :: sigmaS
+    real(defFlt), dimension(:,:), allocatable     :: sigmaS
     real(defFlt), dimension(:), allocatable     :: chi
 
     ! Results space
@@ -329,7 +329,7 @@ module fixedSourceTRRMPhysicsPackage_class
     procedure, private :: uncollidedCalculation
     procedure, private :: initCADIS
 
-  end type fixedSourceTRRMPhysicsPackage
+  end type anisoFixedPackage
 
 contains
 
@@ -339,9 +339,9 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine init(self,dict)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     class(dictionary), intent(inout)                    :: dict
-    integer(shortInt)                                   :: seed_temp, n, nPoints, i, m, g, g1
+    integer(shortInt)                                   :: seed_temp, n, nPoints, i, m, g, g1, SH
     integer(longInt)                                    :: seed
     character(10)                                       :: time
     character(8)                                        :: date
@@ -357,7 +357,7 @@ contains
     class(baseMgNeutronMaterial), pointer               :: mat
     class(materialHandle), pointer                      :: matPtr
     logical(defBool)                                    :: cellCheck
-    character(100), parameter :: Here = 'init (fixedSourceTRRMPhysicsPackage_class.f90)'
+    character(100), parameter :: Here = 'init (anisoFixedPackage_class.f90)'
 
     call cpu_time(self % CPU_time_start)
 
@@ -715,7 +715,7 @@ contains
     allocate(self % sigmaT(self % nMat * self % nG))
     allocate(self % nuSigmaF(self % nMat * self % nG))
     allocate(self % chi(self % nMat * self % nG))
-    allocate(self % sigmaS(self % nMat * self % nG * self % nG))
+    allocate(self % sigmaS(self % nMat * self % nG * self % nG, self % SHOrder))
 
     do m = 1, self % nMat
       matPtr  => self % mgData % getMaterial(m)
@@ -762,7 +762,7 @@ contains
   !! Also sets options for uncollided flux calculations
   !!
   subroutine initialiseSource(self, dict)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     class(dictionary), intent(inout)                    :: dict
     character(nameLen),dimension(:), allocatable        :: names
     real(defReal), dimension(:), allocatable            :: sourceStrength
@@ -771,7 +771,7 @@ contains
     logical(defBool)                                    :: found
     character(nameLen)                                  :: sourceName
     character(nameLen), save                            :: localName
-    character(100), parameter :: Here = 'initialiseSource (fixedSourceTRRMPhysicsPackage_class.f90)'
+    character(100), parameter :: Here = 'initialiseSource (anisoFixedPackage_class.f90)'
     !$omp threadprivate(matIdx, localName, idx, g, id)
 
     call dict % keys(names)
@@ -830,7 +830,7 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine initCADIS(self)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     real(defFlt), dimension(:), allocatable             :: xsBuffer
     integer(shortInt)                                   :: g1, m, i
     integer(shortInt), save                             :: id, idx, matIdx, g
@@ -861,7 +861,7 @@ contains
 
     ! Save fixed source
     allocate(self % responseSource(self % nCells * self % nG))
-    self % responseSource = self % fixedSource
+    self % responseSource = self % fixedSource(idx,1)
 
     ! Reinitialise fixed source
     self % fixedSource = 0.0_defFlt
@@ -918,28 +918,28 @@ contains
 
     !needs updates for anisotropy 
 
-    ! Fission source
-    allocate(xsBuffer(self % nMat * self % nG))
-    xsBuffer = self % nuSigmaF
-    self % nuSigmaF = self % chi
-    self % chi      = xsBuffer
-    deallocate(xsBuffer)
+    ! ! Fission source
+    ! allocate(xsBuffer(self % nMat * self % nG))
+    ! xsBuffer = self % nuSigmaF
+    ! self % nuSigmaF = self % chi
+    ! self % chi      = xsBuffer
+    ! deallocate(xsBuffer)
 
-    ! Scattering matrix
-    allocate(xsBuffer(self % nMat * self % nG * self % nG))
-    xsBuffer = self % sigmaS
+    ! ! Scattering matrix
+    ! allocate(xsBuffer(self % nMat * self % nG * self % nG))
+    ! xsBuffer = self % sigmaS
 
-    do m = 1, self % nMat
-      do g = 1, self % nG
-        do g1 = 1, self % nG
-          self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g1 - 1) + g)  = &
-                  xsBuffer(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1)
-        end do
-      end do
-    end do
+    ! do m = 1, self % nMat
+    !   do g = 1, self % nG
+    !     do g1 = 1, self % nG
+    !       self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g1 - 1) + g)  = &
+    !               xsBuffer(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1)
+    !     end do
+    !   end do
+    ! end do
 
-    ! CADIS flag
-    self % adjointRes = .true.
+    ! ! CADIS flag
+    ! self % adjointRes = .true.
 
   end subroutine initCADIS
 
@@ -949,7 +949,7 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine run(self)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
 
     call self % printSettings()
     if (self % nVolRays > 0) call self % volumeCalculation()
@@ -972,7 +972,7 @@ contains
   !! Rays are tracked until they reach some specified termination length.
   !!
   subroutine cellMapCalculation(self)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     type(ray), save                                     :: r
     type(RNG), target, save                             :: pRNG
     real(defReal)                                       :: hitRate
@@ -1046,7 +1046,7 @@ contains
   !! scoring to volume estimates.
   !!
   subroutine volumeCalculation(self)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     type(ray), save                                     :: r
     type(RNG), target, save                             :: pRNG
     real(defReal)                                       :: hitRate
@@ -1104,7 +1104,7 @@ contains
   !! During tracking, fluxes are attenuated (and adjusted according to BCs).
   !!
   subroutine uncollidedCalculation(self)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     type(ray), save                                     :: r
     type(RNG), target, save                             :: pRNG
     real(defReal)                                       :: hitRate
@@ -1208,7 +1208,7 @@ contains
   !! given criteria or when a fixed number of iterations has been passed.
   !!
   subroutine cycles(self)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     type(ray), save                                     :: r
     type(RNG), target, save                             :: pRNG
     real(defReal)                                       :: hitRate
@@ -1347,7 +1347,7 @@ contains
     ! Add collided and uncollided results
     if (self % uncollidedType > NO_UC) then
       !$omp parallel do schedule(static)
-      do idx = 1, size(self % scalarFlux)
+      do idx = 1, self % nG * self % nCells
         self % fluxScores(idx,2) = sqrt(self % fluxScores(idx,2)**2 * self % fluxScores(idx,1)**2 + &
               self % uncollidedScores(idx,2)**2 * self % uncollidedScores(idx,1)**2)
         self % fluxScores(idx,1) = self % fluxScores(idx,1) + self % uncollidedScores(idx,1)
@@ -1367,12 +1367,12 @@ contains
   !! and performs the build operation
   !!
   subroutine initialiseRay(self, r)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     type(ray), intent(inout)                            :: r
     real(defReal)                                       :: mu, phi
     real(defReal), dimension(3)                         :: u, rand3, x
     integer(shortInt)                                   :: i, matIdx, id, cIdx
-    character(100), parameter :: Here = 'initialiseRay (fixedSourceTRRMPhysicsPackage_class.f90)'
+    character(100), parameter :: Here = 'initialiseRay (anisoFixedPackage_class.f90)'
 
     i = 0
     mu = TWO * r % pRNG % get() - ONE
@@ -1415,7 +1415,7 @@ contains
   !! Also used for constructing the cell map
   !!
   subroutine volumeSweep(self, r, maxLength, doVolume)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     type(ray), intent(inout)                            :: r
     real(defReal), intent(in)                           :: maxLength
     logical(defBool), intent(in)                        :: doVolume
@@ -1496,19 +1496,21 @@ contains
   !!
   !!
   subroutine uncollidedSweep(self, r, ints)
-    class(fixedSourceTRRMPhysicsPackage), target, intent(inout) :: self
+    class(anisoFixedPackage), target, intent(inout) :: self
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, event, matIdx0, &
-                                                             i, cIdx, baseIdx, surfIdx
+                                                             i, cIdx, baseIdx, surfIdx, SH
     real(defReal)                                         :: totalLength, length, mu, phi
     real(defFlt)                                          :: lenFlt
     logical(defBool)                                      :: hitVacuum
     type(distCache)                                       :: cache
-    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
-    real(defFlt), pointer, dimension(:)                   :: scalarVec, totVec
+    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, currentsource
+    real(defFlt), pointer, dimension(:)                   :: totVec
+    real(defFlt), pointer, dimension(:, :)                :: angularMomVec
+    real(defFlt), dimension(self % SHLength)              :: RCoeffs 
     real(defReal), dimension(3)                           :: r0, mu0, u, x0, rand3
-    character(100), parameter :: Here = 'uncollidedSweep (fixedSourceTRRMPhysicsPackage_class.f90)'
+    character(100), parameter :: Here = 'uncollidedSweep (anisoFixedPackage_class.f90)'
 
     ! If point source, position and direction sample is straightforward
     ! Flux is determined by source
@@ -1667,19 +1669,21 @@ contains
   !! Records the number of integrations/ray movements.
   !!
   subroutine transportSweep(self, r, ints)
-    class(fixedSourceTRRMPhysicsPackage), target, intent(inout) :: self
+    class(anisoFixedPackage), target, intent(inout) :: self
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, event, matIdx0, &
                                                              cIdx, idx, baseIdx, surfIdx, &
-                                                             mapIdxPre, mapIdxPost
+                                                             mapIdxPre, mapIdxPost, SH
     real(defReal)                                         :: totalLength, length
-    logical(defBool)                                      :: activeRay, hitVacuum
+    logical(defBool)                                      :: activeRay, hitVacuum, newRay
     type(distCache)                                       :: cache
-    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, tau, avgFluxVec
-    real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec
+    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, tau, avgFluxVec, currentsource
+    real(defFlt), pointer, dimension(:)                   :: totVec
+    real(defFlt), pointer, dimension(:, :)                :: angularMomVec, sourceVec
     real(defFlt)                                          :: lenFlt
     real(defReal), dimension(3)                           :: r0, mu0, dirPost, norm
+    real(defFlt), dimension(self % SHLength)              :: RCoeffs 
     type(particleState)                                   :: state
 
     matIdx  = r % coords % matIdx
@@ -1885,7 +1889,7 @@ contains
 
   subroutine SphericalHarmonicCalculator(self, mu, RCoeffs)
     ! angle: x = r sin θ cos φ, y = r sin θ sin φ, and z = r cos θ
-    class(fixedSourceTRRMPhysicsPackage), intent(inout)       :: self
+    class(anisoFixedPackage), intent(inout)       :: self
     real(defFlt), dimension(self % SHLength), intent(out)   :: RCoeffs ! Array to store harmonic coefficients
     real(defReal)                                           :: dirX, dirY, dirZ, dirX2, dirY2, dirZ2
     real(defReal), dimension(3), intent(in)                 :: mu
@@ -1955,13 +1959,13 @@ contains
   !! Normalise flux from uncollided calculation
   !!
   subroutine normaliseFluxUncollided(self, norm)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     real(defReal), intent(in)                           :: norm
     real(defFlt)                                        :: normFlt
     real(defFlt), save                                  :: total
-    integer(shortInt), save                             :: g, matIdx, idx
+    integer(shortInt), save                             :: g, matIdx, idx, SH
     integer(shortInt)                                   :: cIdx
-    !$omp threadprivate(total, idx, g, matIdx)
+    !$omp threadprivate(total, idx, g, matIdx, SH)
 
     normFlt = real(norm, defFlt)
 
@@ -1996,16 +2000,16 @@ contains
   !! the flux by the neutron source
   !!
   subroutine normaliseFluxAndVolume(self, lengthPerIt, it)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     real(defReal), intent(in)                           :: lengthPerIt
     integer(shortInt), intent(in)                       :: it
     real(defReal)                                       :: normVol
     real(defFlt)                                        :: norm
     real(defFlt), save                                  :: total, sigGG, D
     real(defReal), save                                 :: vol, corr
-    integer(shortInt), save                             :: g, matIdx, idx
+    integer(shortInt), save                             :: g, matIdx, idx, SH
     integer(shortInt)                                   :: cIdx
-    !$omp threadprivate(total, idx, g, matIdx, vol, corr, sigGG, D)
+    !$omp threadprivate(total, idx, g, matIdx, vol, corr, sigGG, D, SH)
 
     norm = real(ONE / lengthPerIt, defFlt)
     normVol = ONE / ( lengthPerIt * it)
@@ -2048,7 +2052,7 @@ contains
         if (self % SHOrder > 0) then
         do SH = 1, self % SHLength
           if (vol > volume_tolerance) then
-            self % scalarFlux(idx) = self % scalarFlux(idx) * norm / (real(vol,defFlt))
+            self % moments(idx, SH) = self % moments(idx,SH) * norm / (real(vol,defFlt))
           else
             corr = ONE
           end if
@@ -2078,20 +2082,20 @@ contains
         
         ! Apply volume correction only to negative flux cells
         if (self % volCorr .and. self % passive) then
-          if (self % scalarFlux(idx) < 0) self % scalarFlux(idx) = real(self % scalarFlux(idx) + &
-                  (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+          if (self % moments(idx,1) < 0) self % moments(idx,1) = real(self % moments(idx,1) + &
+                  (corr - 1.0_defFlt) * self % source(idx,1) / total, defFlt)
         ! Apply volume correction to all cells
         elseif (self % volCorr) then
-          self % scalarFlux(idx) = real(self % scalarFlux(idx) + (corr - 1.0_defFlt) * self % source(idx) / total, defFlt)
+          self % moments(idx,1) = real(self % moments(idx,1) + (corr - 1.0_defFlt) * self % source(idx,1) / total, defFlt)
         end if
 
         ! This will probably affect things like neutron conservation...
-        if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) self % scalarFlux(idx) = 0.0_defFlt
+        if ((self % moments(idx,1) < 0) .and. self % zeroNeg) self % moments(idx,1) = 0.0_defFlt
         ! DELETE THIS MAYBE?
-        !if ((self % scalarFlux(idx) < 0) .and. self % zeroNeg) self % scalarFlux(idx) = self % source(idx) / total
+        !if ((self % moments(idx,SH) < 0) .and. self % zeroNeg) self % moments(idx,SH) = self % source(idx,1) / total
 
         ! NaN check - kill calculation
-        if (self % scalarFlux(idx) /= self % scalarFlux(idx)) &
+        if (self % moments(idx,1) /= self % moments(idx,1)) &
                 call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(g))
 
       end do
@@ -2106,12 +2110,13 @@ contains
   !! Kernel to update sources given a cell index
   !!
   subroutine sourceUpdateKernel(self, cIdx)
-    class(fixedSourceTRRMPhysicsPackage), target, intent(inout) :: self
+    class(anisoFixedPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
     real(defFlt)                                          :: scatter, fission
-    real(defFlt), dimension(:), pointer                   :: nuFission, total, chi, scatterXS
-    integer(shortInt)                                     :: matIdx, g, gIn, id, baseIdx, idx
-    real(defFlt), pointer, dimension(:)                   :: fluxVec, scatterVec
+    real(defFlt), dimension(:), pointer                   :: nuFission, total, chi
+    real(defFlt), dimension(:, :), pointer                :: scatterXS, scatterVec
+    integer(shortInt)                                     :: matIdx, g, gIn, id, baseIdx, idx, SH, SHidx
+    real(defFlt), pointer, dimension(:, :)                :: angularMomVec
 
     ! Identify material
     id      =  self % CellToID(cIdx)
@@ -2144,7 +2149,7 @@ contains
     fission = 0.0_defFlt
     !$omp simd reduction(+:fission)
     do gIn = 1, self % nG
-      fission = fission + fluxVec(gIn) * nuFission(gIn)
+      fission = fission + angularMomVec(gIn,1) * nuFission(gIn)
     end do
 
     do g = 1, self % nG
@@ -2178,15 +2183,15 @@ contains
   !! Overwrites any existing fixed source
   !!
   subroutine firstCollidedSourceKernel(self, cIdx)
-    class(fixedSourceTRRmPhysicsPackage), target, intent(inout) :: self
+    class(anisoFixedPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
     real(defFlt)                                          :: scatter, fission
-    real(defFlt), dimension(:), pointer                   :: nuFission, chi, scatterXS
-    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx
-    real(defFlt), pointer, dimension(:)                   :: scatterVec
+    real(defFlt), dimension(:), pointer                   :: nuFission, chi
+    real(defFlt), pointer, dimension(:,:)                 :: scatterVec, scatterXS, angularMomVec
+    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, SH, SHidx 
     real(defReal), pointer, dimension(:)                  :: fluxVec
 
-    ! Identify material
+    !Identify material
     matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
 
     ! Hack to guard against non-material cells
@@ -2199,7 +2204,7 @@ contains
     chi => self % chi((matIdx + 1):(matIdx + self % nG))
 
     baseIdx = self % nG * (cIdx - 1)
-    fluxVec => self % uncollidedScores((baseIdx+1):(baseIdx + self % nG))
+    fluxVec => self % uncollidedScores((baseIdx+1):(baseIdx + self % nG),1)
     angularMomVec => self % moments((baseIdx + 1):(baseIdx + self % nG), :)
 
     ! Calculate fission source
@@ -2219,7 +2224,7 @@ contains
       ! Sum contributions from all energies
       !$omp simd reduction(+:scatter) aligned(angularMomVec)
       do gIn = 1, self % nG
-        scatter = scatter + fluxVec(gIn, SH) * scatterVec(gIn, SHidx)
+        scatter = scatter + real(fluxVec(gIn),defFlt) * scatterVec(gIn, 1)
       end do
 
       self % fixedSource(idx, 1) = scatter !/ total(g)
@@ -2248,11 +2253,9 @@ contains
 
   end subroutine firstCollidedSourceKernel
 
-  !!
-  !! Sets prevFlux to scalarFlux and zero's scalarFlux
-  !!
+
   subroutine resetFluxes(self)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     integer(shortInt)                                   :: idx, SH
 
     do SH = 1, self % SHLength
@@ -2270,14 +2273,14 @@ contains
   !! Accumulate flux scores for stats
   !!
   subroutine accumulateFluxScores(self)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     real(defReal), save                                 :: flux, current
     integer(shortInt)                                   :: idx
     !$omp threadprivate(flux, current)
 
     !$omp parallel do schedule(static)
-    do idx = 1, size(self % scalarFlux)
-      flux = real(self % scalarFlux(idx),defReal)
+    do idx = 1, self % nG * self % nCells
+      flux = real(self % moments(idx,1),defReal)
       self % fluxScores(idx,1) = self % fluxScores(idx, 1) + flux
       self % fluxScores(idx,2) = self % fluxScores(idx, 2) + flux*flux
     end do
@@ -2300,7 +2303,7 @@ contains
   !! Finalise flux scores for stats
   !!
   subroutine finaliseFluxScores(self,it)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     integer(shortInt), intent(in)                       :: it
     integer(shortInt)                                   :: idx
     real(defReal)                                       :: N1, Nm1
@@ -2313,7 +2316,7 @@ contains
     N1 = ONE/it
 
     !$omp parallel do schedule(static)
-    do idx = 1, size(self % scalarFlux)
+    do idx = 1, self % nG * self % nCells
       self % fluxScores(idx,1) = self % fluxScores(idx, 1) * N1
       self % fluxScores(idx,2) = self % fluxScores(idx, 2) * N1
       self % fluxScores(idx,2) = Nm1 *(self % fluxScores(idx,2) - &
@@ -2350,7 +2353,7 @@ contains
   !!   None
   !!
   subroutine printResults(self)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     type(outputFile)                                    :: out
     character(nameLen)                                  :: name
     integer(shortInt)                                   :: g1, cIdx
@@ -2622,7 +2625,7 @@ contains
         !$omp parallel do schedule(static)
         do cIdx = 1, self % nCells
           idx = (cIdx - 1)* self % nG + g1
-          groupFlux(cIdx) = self % source(idx)
+          groupFlux(cIdx) = self % source(idx, 1)
         end do
         !$omp end parallel do
         call self % viz % addVTKData(groupFlux,name)
@@ -2660,7 +2663,7 @@ contains
   !!   None
   !!
   subroutine printSettings(self)
-    class(fixedSourceTRRMPhysicsPackage), intent(in) :: self
+    class(anisoFixedPackage), intent(in) :: self
 
     print *, repeat("<>", MAX_COL/2)
     print *, "/\/\ RANDOM RAY FIXED SOURCE CALCULATION /\/\"
@@ -2687,7 +2690,7 @@ contains
   !! Return to uninitialised state
   !!
   subroutine kill(self)
-    class(fixedSourceTRRMPhysicsPackage), intent(inout) :: self
+    class(anisoFixedPackage), intent(inout) :: self
     integer(shortInt) :: i
 
     ! Clean Nuclear Data, Geometry and visualisation
@@ -2752,8 +2755,8 @@ contains
     self % sourceTop        = ZERO
     self % sourceBottom     = ZERO
 
-    if(allocated(self % scalarFlux)) deallocate(self % scalarFlux)
-    if(allocated(self % prevFlux)) deallocate(self % prevFlux)
+    if(allocated(self % moments)) deallocate(self % moments)
+    if(allocated(self % prevMoments)) deallocate(self % prevMoments)
     if(allocated(self % fluxScores)) deallocate(self % fluxScores)
     if(allocated(self % source)) deallocate(self % source)
     if(allocated(self % fixedSource)) deallocate(self % fixedSource)
@@ -2778,4 +2781,4 @@ contains
 
   end subroutine kill
 
-end module fixedSourceTRRMPhysicsPackage_class
+end module anisoFixedPackage_class
