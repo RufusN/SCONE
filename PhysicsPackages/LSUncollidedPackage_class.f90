@@ -1477,7 +1477,7 @@ contains
     real(defReal), intent(in)                           :: maxLength
     logical(defBool), intent(in)                        :: doVolume
     integer(shortInt)                                   :: event, cIdx, surfIdx, &
-                                                            centIdx, g, momIdx, baseIdx
+                                                            centIdx, g, momIdx
     integer(longInt)                                    :: ints
     real(defReal)                                       :: totalLength, length, len2_12
     type(distCache)                                     :: cache
