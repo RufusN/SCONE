@@ -6,7 +6,7 @@ module LSUncollidedPackage_class
                                              printFishLineR, dotProduct
   use hashFunctions_func,             only : FNV_1
   use charMap_class,                  only : charMap
-  use exponentialRA_func,             only : exponential, f1, expG2, expG
+  use exponentialRA_func,             only : exponential, expG2, expG
   use dictionary_class,               only : dictionary
   use outputFile_class,               only : outputFile
   use rng_class,                      only : RNG
@@ -1582,9 +1582,7 @@ contains
         call OMP_unset_lock(self % locks(cIdx))
       end if
 
-
     end do
-
 
   end subroutine volumeSweep
 
@@ -2186,6 +2184,39 @@ contains
     !$omp parallel do schedule(static)
     do cIdx = 1, self % nCells
 
+      dIdx = (cIdx - 1) * nDim
+      mIdx = (cIdx - 1) * matSize
+
+      if (self % volume(cIdx) > volume_tolerance) then
+        invVol = ONE / self % volumeTracks(cIdx)
+        
+        ! Update centroids
+        self % centroid(dIdx + x) =  self % centroidTracks(dIdx + x) * invVol
+        self % centroid(dIdx + y) =  self % centroidTracks(dIdx + y) * invVol
+        self % centroid(dIdx + z) =  self % centroidTracks(dIdx + z) * invVol
+      
+        ! Update spatial moments
+        self % momMat(mIdx + xx) = self % momTracks(mIdx + xx) * invVol
+        self % momMat(mIdx + xy) = self % momTracks(mIdx + xy) * invVol
+        self % momMat(mIdx + xz) = self % momTracks(mIdx + xz) * invVol
+        self % momMat(mIdx + yy) = self % momTracks(mIdx + yy) * invVol
+        self % momMat(mIdx + yz) = self % momTracks(mIdx + yz) * invVol
+        self % momMat(mIdx + zz) = self % momTracks(mIdx + zz) * invVol
+
+      else
+        self % centroid(dIdx + x) =  ZERO
+        self % centroid(dIdx + y) =  ZERO
+        self % centroid(dIdx + z) =  ZERO
+
+        self % momMat(mIdx + xx) = ZERO
+        self % momMat(mIdx + xy) = ZERO
+        self % momMat(mIdx + xz) = ZERO
+        self % momMat(mIdx + yy) = ZERO
+        self % momMat(mIdx + yz) = ZERO
+        self % momMat(mIdx + zz) = ZERO
+
+      end if  
+
       ! Presume that volumes are known otherwise this may go badly!
       if (self % volume(cIdx) > volume_tolerance) then
         matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
@@ -2193,39 +2224,6 @@ contains
         if (matIdx >= UNDEF_MAT) then !come back and check/complete
           matIdx = self % nMatVOID 
         end if 
-
-        dIdx = (cIdx - 1) * nDim
-        mIdx = (cIdx - 1) * matSize
-
-        if (self % volume(cIdx) > volume_tolerance) then
-          invVol = ONE / self % volumeTracks(cIdx)
-          
-          ! Update centroids
-          self % centroid(dIdx + x) =  self % centroidTracks(dIdx + x) * invVol
-          self % centroid(dIdx + y) =  self % centroidTracks(dIdx + y) * invVol
-          self % centroid(dIdx + z) =  self % centroidTracks(dIdx + z) * invVol
-        
-          ! Update spatial moments
-          self % momMat(mIdx + xx) = self % momTracks(mIdx + xx) * invVol
-          self % momMat(mIdx + xy) = self % momTracks(mIdx + xy) * invVol
-          self % momMat(mIdx + xz) = self % momTracks(mIdx + xz) * invVol
-          self % momMat(mIdx + yy) = self % momTracks(mIdx + yy) * invVol
-          self % momMat(mIdx + yz) = self % momTracks(mIdx + yz) * invVol
-          self % momMat(mIdx + zz) = self % momTracks(mIdx + zz) * invVol
-  
-        else
-          self % centroid(dIdx + x) =  ZERO
-          self % centroid(dIdx + y) =  ZERO
-          self % centroid(dIdx + z) =  ZERO
-  
-          self % momMat(mIdx + xx) = ZERO
-          self % momMat(mIdx + xy) = ZERO
-          self % momMat(mIdx + xz) = ZERO
-          self % momMat(mIdx + yy) = ZERO
-          self % momMat(mIdx + yz) = ZERO
-          self % momMat(mIdx + zz) = ZERO
-  
-        end if  
 
         do g = 1, self % nG
           total = self % sigmaT((matIdx - 1) * self % nG + g)
@@ -2516,11 +2514,11 @@ contains
 
         ! Calculate source gradients by inverting the moment matrix
         self % sourceX(idx) = invMxx * xSource + &
-                invMxy * ySource + invMxz * zSource 
+                invMxy * ySource + invMxz * zSource !+ self % fixedX(idx) / total(g)
         self % sourceY(idx) = invMxy * xSource + & 
-                invMyy * ySource + invMyz * zSource 
+                invMyy * ySource + invMyz * zSource !+ self % fixedY(idx) / total(g)
         self % sourceZ(idx) = invMxz * xSource + &
-                invMyz * ySource + invMzz * zSource 
+                invMyz * ySource + invMzz * zSource !+ self % fixedZ(idx) / total(g)
       else
 
         self % sourceX(idx) = 0.0_defFlt
@@ -2589,9 +2587,9 @@ contains
 
     baseIdx = self % nG * (cIdx - 1)
     fluxVec => self % uncollidedScores((baseIdx+1):(baseIdx + self % nG),1)
-    xFluxVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG))
-    yFluxVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
-    zFluxVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))
+    xFluxVec => self % prevX((baseIdx + 1):(baseIdx + self % nG))
+    yFluxVec => self % prevY((baseIdx + 1):(baseIdx + self % nG))
+    zFluxVec => self % prevZ((baseIdx + 1):(baseIdx + self % nG))
 
     ! Calculate fission source
     fission = 0.0_defFlt
@@ -2639,12 +2637,17 @@ contains
       zSource = chi(g) * zFission + zScatter
       zSource = zSource 
 
-      self % fixedX(idx) = invMxx * xSource + &
-        invMxy * ySource + invMxz * zSource 
-      self % fixedY(idx) = invMxy * xSource + & 
-        invMyy * ySource + invMyz * zSource 
-      self % fixedZ(idx) = invMxz * xSource + &
-        invMyz * ySource + invMzz * zSource 
+      ! self % fixedX(idx) = invMxx * xSource + &
+      !   invMxy * ySource + invMxz * zSource 
+      ! self % fixedY(idx) = invMxy * xSource + & 
+      !   invMyy * ySource + invMyz * zSource 
+      ! self % fixedZ(idx) = invMxz * xSource + &
+      !   invMyz * ySource + invMzz * zSource 
+      
+      self % fixedX(idx) = xSource 
+      self % fixedY(idx) = YSource 
+      self % fixedZ(idx) = ZSource 
+
 
     end do
 
