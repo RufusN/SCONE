@@ -2111,14 +2111,16 @@ contains
     integer(shortInt), save                             :: matIdx, g, idx, i
     real(defReal), save                                 :: vol
     type(particleState), save                           :: s
-    type(ray), save                                     :: point
+    type(ray), save                                     :: pointRay
     real(defReal)                                       :: res, std, totalVol, response
     integer(shortInt),dimension(:),allocatable          :: resArrayShape
     real(defReal), dimension(:), allocatable            :: groupFlux, flxOut, flxOutSTD
-    !$omp threadprivate(idx, matIdx, i, vol, s, g)
+    !$omp threadprivate(idx, matIdx, i, vol, s, g, pointRay)
 
     call out % init(self % outputFormat)
 
+    print *, self % rand % getSeed(), type(self % rand % getSeed())
+    
     name = 'seed'
     call out % printValue(self % rand % getSeed(),name)
 
@@ -2281,9 +2283,9 @@ contains
         call out % startBlock(name)
         call out % startArray(name, resArrayShape)
         s % r = self % samplePoints(1+3*(i-1):3*i)
-        point = s
-        call self % geom % placeCoord(point % coords)
-        cIdx = self % IDToCell(point % coords % uniqueID)
+        pointRay = s
+        call self % geom % placeCoord(pointRay % coords)
+        cIdx = self % IDToCell(pointRay % coords % uniqueID)
         do g = 1, self % nG
           idx = (cIdx - 1)* self % nG + g
           res = self % fluxScores(idx,1)

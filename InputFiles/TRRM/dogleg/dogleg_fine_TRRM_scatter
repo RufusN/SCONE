@@ -19,7 +19,7 @@ printFlux 0;
 volume 360000;
 //cellCheck 1;
 outputFormat asciiJSON;
-seed -1369706621;
+seed 1274829405;
 
 volRays 500000; volLength 800;
 
