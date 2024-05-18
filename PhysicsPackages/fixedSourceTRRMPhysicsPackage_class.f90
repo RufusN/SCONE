@@ -2119,8 +2119,6 @@ contains
     !$omp threadprivate(idx, matIdx, i, vol, s, g, pointRay)
 
     call out % init(self % outputFormat)
-
-    print *, self % rand % getSeed()
     
     seed = self % rand % getSeed()
     
