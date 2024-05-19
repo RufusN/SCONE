@@ -830,82 +830,82 @@ contains
     character(nameLen), save                            :: localName
     !$omp threadprivate(id, idx, matIdx, g, localName)
 
-    ! Restart timer
-    call cpu_time(self % CPU_time_start)
+  !   ! Restart timer
+  !   call cpu_time(self % CPU_time_start)
 
-    ! Clean visualisation
-    call self % viz % kill()
+  !   ! Clean visualisation
+  !   call self % viz % kill()
 
-    ! Change some of the previous settings
-    self % plotResults    = .false.
-    self % printFlux      = .false.
-    self % printVolume    = .false.
-    self % printCells     = .false.
-    self % uncollidedType = NO_UC
-    self % nVolRays    = 0
-    self % volLength   = ZERO
+  !   ! Change some of the previous settings
+  !   self % plotResults    = .false.
+  !   self % printFlux      = .false.
+  !   self % printVolume    = .false.
+  !   self % printCells     = .false.
+  !   self % uncollidedType = NO_UC
+  !   self % nVolRays    = 0
+  !   self % volLength   = ZERO
 
-    ! Read outputfile path
-    self % outputFile = trim(self % outputFile)//'_adjoint'
+  !   ! Read outputfile path
+  !   self % outputFile = trim(self % outputFile)//'_adjoint'
 
-    ! Register timer
-    self % timerMain = registerTimer('simulationTime')
-    self % timerTransport = registerTimer('transportTime')
+  !   ! Register timer
+  !   self % timerMain = registerTimer('simulationTime')
+  !   self % timerTransport = registerTimer('transportTime')
 
-    ! Save fixed source
-    allocate(self % responseSource(self % nCells * self % nG))
-    self % responseSource = self % fixedSource(idx,1)
+  !   ! Save fixed source
+  !   allocate(self % responseSource(self % nCells * self % nG))
+  !   self % responseSource = self % fixedSource(idx,1)
 
-    ! Reinitialise fixed source
-    self % fixedSource = 0.0_defFlt
+  !   ! Reinitialise fixed source
+  !   self % fixedSource = 0.0_defFlt
 
-    ! Construct CADIS SOURCE from forward calculation
-    ! This is where the different types of calculations differ
-    if (self % cadis == GLOBAL) then
+  !   ! Construct CADIS SOURCE from forward calculation
+  !   ! This is where the different types of calculations differ
+  !   if (self % cadis == GLOBAL) then
 
-      !$omp parallel do
-      do i = 1, self % nCells * self % nG
-        if (self % fluxScores(i,1) /= ZERO) then
-          self % fixedSource(i,1) = real(ONE/self % fluxScores(i,1), defFlt)
-        end if
-      end do
-      !$omp end parallel do
+  !     !$omp parallel do
+  !     do i = 1, self % nCells * self % nG
+  !       if (self % fluxScores(i,1) /= ZERO) then
+  !         self % fixedSource(i,1) = real(ONE/self % fluxScores(i,1), defFlt)
+  !       end if
+  !     end do
+  !     !$omp end parallel do
 
-    elseif (self % cadis == DETECTOR) then
+  !   elseif (self % cadis == DETECTOR) then
 
-      !$omp parallel do
-      do i = 1, self % nCells
+  !     !$omp parallel do
+  !     do i = 1, self % nCells
 
-        id        = self % CellToID(i)
-        matIdx    = self % geom % geom % graph % getMatFromUID(id)
-        localName = mm_matName(matIdx)
+  !       id        = self % CellToID(i)
+  !       matIdx    = self % geom % geom % graph % getMatFromUID(id)
+  !       localName = mm_matName(matIdx)
 
-        if (any(localName == self % detMat)) then
-          do g = 1, self % nG
-            idx = (i - 1) * self % nG + g
+  !       if (any(localName == self % detMat)) then
+  !         do g = 1, self % nG
+  !           idx = (i - 1) * self % nG + g
 
-            if (self % fluxScores(idx,1) /= ZERO) then
-              self % fixedSource(idx,1) = real(ONE/self % fluxScores(idx,1), defFlt)
-            end if
+  !           if (self % fluxScores(idx,1) /= ZERO) then
+  !             self % fixedSource(idx,1) = real(ONE/self % fluxScores(idx,1), defFlt)
+  !           end if
 
-          end do
-        end if
+  !         end do
+  !       end if
 
-      end do
-      !$omp end parallel do
+  !     end do
+  !     !$omp end parallel do
 
-    end if
+  !   end if
 
-    ! Initialise new results
-    self % moments = 0.0_defFlt
-    self % prevMoments = 0.0_defFlt
-    self % fluxScores = ZERO
-    self % source = 0.0_defFlt
-    self % volume = ZERO
-    self % volumeTracks = ZERO
-    self % cellHit = 0
-    self % cellFound = .false.
-    self % cellPos = -INFINITY
+  !   ! Initialise new results
+  !   self % moments = 0.0_defFlt
+  !   self % prevMoments = 0.0_defFlt
+  !   self % fluxScores = ZERO
+  !   self % source = 0.0_defFlt
+  !   self % volume = ZERO
+  !   self % volumeTracks = ZERO
+  !   self % cellHit = 0
+  !   self % cellFound = .false.
+  !   self % cellPos = -INFINITY
 
     ! Modify local nuclear data appropriately
 
