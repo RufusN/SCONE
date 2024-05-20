@@ -919,7 +919,7 @@ contains
 
     ! Scattering matrix
     allocate(xsBufferS(self % nMat * self % nG * self % nG, self % SHOrder))
-    xsBuffer = self % sigmaS
+    xsBufferS = self % sigmaS
 
     do SH = 1, self % SHOrder
       do m = 1, self % nMat
