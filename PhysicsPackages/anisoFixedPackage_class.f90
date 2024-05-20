@@ -855,7 +855,7 @@ contains
 
     ! Save fixed source
     allocate(self % responseSource(self % nCells * self % nG))
-    self % responseSource = self % fixedSource(idx,1)
+    self % responseSource = self % fixedSource(:,1)
 
     ! Reinitialise fixed source
     self % fixedSource = 0.0_defFlt
@@ -921,7 +921,7 @@ contains
     allocate(xsBufferS(self % nMat * self % nG * self % nG, self % SHOrder))
     xsBufferS = self % sigmaS
 
-    do SH = 1, self % SHOrder
+    do SH = 1, self % SHOrder 
       do m = 1, self % nMat
         do g = 1, self % nG
           do g1 = 1, self % nG
