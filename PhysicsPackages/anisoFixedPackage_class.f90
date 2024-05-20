@@ -217,8 +217,8 @@ module anisoFixedPackage_class
     integer(shortInt)  :: pop         = 0
     integer(shortInt)  :: inactive    = 0
     integer(shortInt)  :: active      = 0
-    integer(shortInt)  :: SHOrder  = 0
-    integer(shortInt)  :: SHLength = 1
+    integer(shortInt)  :: SHOrder     = 0
+    integer(shortInt)  :: SHLength    = 1
     real(defReal)      :: rho         = ZERO
     logical(defBool)   :: cache       = .false.
     logical(defBool)   :: itVol       = .false.
@@ -264,7 +264,7 @@ module anisoFixedPackage_class
     ! Data space - absorb all nuclear data for speed
     real(defFlt), dimension(:), allocatable     :: sigmaT
     real(defFlt), dimension(:), allocatable     :: nuSigmaF
-    real(defFlt), dimension(:,:), allocatable     :: sigmaS
+    real(defFlt), dimension(:,:), allocatable   :: sigmaS
     real(defFlt), dimension(:), allocatable     :: chi
 
     ! Results space
@@ -742,7 +742,7 @@ contains
               + self % nG * (g - 1) + g1, SH)  = 0.0_defFlt
           end do
       end do
-  end do
+    end do
 
   end subroutine init
 
@@ -1972,22 +1972,22 @@ contains
       !if (self % nVolRays <= 0) then
       ! Forget the above - use precomputed volumes only for first collided
 
-      if (self % itVol) then
-        ! Iteration wise approach
-        self % volume(cIdx) = self % volumeTracks(cIdx) * norm
-        self % volumeTracks(cIdx) = ZERO
-      else if (self % volCorr) then
-        ! Correct the cell volume
-        corr = self % volumeTracks(cIdx) * norm
-        self % volume(cIdx) = self % volume(cIdx) * self % lengthPerIt * (it - 1) + self % volumeTracks(cIdx)
-        self % volume(cIdx) = self % volume(cIdx) * normVol
-        corr = corr / self % volume(cIdx)
-        self % volumeTracks(cIdx) = ZERO
-        if (corr /= corr) corr = ONE
-      else
-        ! Standard volume approach
+      ! if (self % itVol) then
+      !   ! Iteration wise approach
+      !   self % volume(cIdx) = self % volumeTracks(cIdx) * norm
+      !   self % volumeTracks(cIdx) = ZERO
+      ! else if (self % volCorr) then
+      !   ! Correct the cell volume
+      !   corr = self % volumeTracks(cIdx) * norm
+      !   self % volume(cIdx) = self % volume(cIdx) * self % lengthPerIt * (it - 1) + self % volumeTracks(cIdx)
+      !   self % volume(cIdx) = self % volume(cIdx) * normVol
+      !   corr = corr / self % volume(cIdx)
+      !   self % volumeTracks(cIdx) = ZERO
+      !   if (corr /= corr) corr = ONE
+      ! else
+      !   ! Standard volume approach
         self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
-      end if
+      ! end if
 
       vol = self % volume(cIdx)
 
@@ -1996,53 +1996,51 @@ contains
         idx   = self % nG * (cIdx - 1) + g
 
         if (self % SHOrder > 0) then
-        do SH = 1, self % SHLength
-          if (vol > volume_tolerance) then
-            self % moments(idx, SH) = self % moments(idx,SH) * norm / (real(vol,defFlt))
-          else
-            corr = ONE
-          end if
-          self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
-        end do
+          do SH = 1, self % SHLength
+            if (vol > volume_tolerance) then
+              self % moments(idx, SH) = self % moments(idx,SH) * norm / (real(vol,defFlt))
+            else
+              corr = ONE
+            end if
+            self % moments(idx,SH) =  self % moments(idx,SH) + self % source(idx,SH) 
+          end do
 
+        else
+          total = self % sigmaT((matIdx - 1) * self % nG + g)
+          sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g, 1)
       
+          ! Presumes non-zero total XS
+          if ((sigGG < 0) .and. (total > 0)) then
+            D = -real(self % rho, defFlt) * sigGG / total
+          else
+            D = 0.0_defFlt
+          end if
 
-      else
-        total = self % sigmaT((matIdx - 1) * self % nG + g)
-        sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g, 1)
-    
-              ! Presumes non-zero total XS
-              if ((sigGG < 0) .and. (total > 0)) then
-                D = -real(self % rho, defFlt) * sigGG / total
-              else
-                D = 0.0_defFlt
-              end if
+          if (vol > volume_tolerance) then
+            self % moments(idx,1) =  self % moments(idx,1) * norm / (real(vol,defFlt))
+          end if
 
-              if (vol > volume_tolerance) then
-                self % moments(idx,1) =  self % moments(idx,1) * norm / (real(vol,defFlt))
-              end if
-
-              self % moments(idx,1) =  (self % moments(idx,1) + self % source(idx,1) + D * self % prevMoments(idx,1) ) / (1 + D)
-            
-      end if
+          self % moments(idx,1) =  (self % moments(idx,1) + self % source(idx,1) + D * self % prevMoments(idx,1) ) / (1 + D)
+              
+         end if
         
-        ! Apply volume correction only to negative flux cells
-        if (self % volCorr .and. self % passive) then
-          if (self % moments(idx,1) < 0) self % moments(idx,1) = real(self % moments(idx,1) + &
-                  (corr - 1.0_defFlt) * self % source(idx,1) / total, defFlt)
-        ! Apply volume correction to all cells
-        elseif (self % volCorr) then
-          self % moments(idx,1) = real(self % moments(idx,1) + (corr - 1.0_defFlt) * self % source(idx,1) / total, defFlt)
-        end if
+        ! ! Apply volume correction only to negative flux cells
+        ! if (self % volCorr .and. self % passive) then
+        !   if (self % moments(idx,1) < 0) self % moments(idx,1) = real(self % moments(idx,1) + &
+        !           (corr - 1.0_defFlt) * self % source(idx,1) / total, defFlt)
+        ! ! Apply volume correction to all cells
+        ! elseif (self % volCorr) then
+        !   self % moments(idx,1) = real(self % moments(idx,1) + (corr - 1.0_defFlt) * self % source(idx,1) / total, defFlt)
+        ! end if
 
-        ! This will probably affect things like neutron conservation...
-        if ((self % moments(idx,1) < 0) .and. self % zeroNeg) self % moments(idx,1) = 0.0_defFlt
-        ! DELETE THIS MAYBE?
-        !if ((self % moments(idx,SH) < 0) .and. self % zeroNeg) self % moments(idx,SH) = self % source(idx,1) / total
+        ! ! This will probably affect things like neutron conservation...
+        ! if ((self % moments(idx,1) < 0) .and. self % zeroNeg) self % moments(idx,1) = 0.0_defFlt
+        ! ! DELETE THIS MAYBE?
+        ! !if ((self % moments(idx,SH) < 0) .and. self % zeroNeg) self % moments(idx,SH) = self % source(idx,1) / total
 
-        ! NaN check - kill calculation
-        if (self % moments(idx,1) /= self % moments(idx,1)) &
-                call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(g))
+        ! ! NaN check - kill calculation
+        ! if (self % moments(idx,1) /= self % moments(idx,1)) &
+        !         call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(g))
 
       end do
 
