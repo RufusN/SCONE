@@ -6,7 +6,7 @@ module LSUncollidedPackage_class
                                              printFishLineR, dotProduct
   use hashFunctions_func,             only : FNV_1
   use charMap_class,                  only : charMap
-  use exponentialRA_func,             only : exponential, f1, expG2, expG
+  use exponentialRA_func,             only : exponential, expG2, expG
   use dictionary_class,               only : dictionary
   use outputFile_class,               only : outputFile
   use rng_class,                      only : RNG
@@ -863,7 +863,7 @@ contains
           found = .true.
           do g = 1, self % nG
             idx = (cIdx - 1) * self % nG + g
-            self % fixedSource(idx) = real(sourceStrength(g),defFlt)
+            self % fixedSource(idx,1) = real(sourceStrength(g),defFlt)
           end do
 
         end if
@@ -915,7 +915,7 @@ contains
 
     ! Save fixed source
     allocate(self % responseSource(self % nCells * self % nG))
-    self % responseSource = self % fixedSource
+    self % responseSource = self % fixedSource(:,1)
 
     ! Reinitialise fixed source
     self % fixedSource = 0.0_defFlt
@@ -982,28 +982,30 @@ contains
     self % centroidTracks = 0.0_defReal
     ! Modify local nuclear data appropriately
 
-    ! ! Fission source
-    ! allocate(xsBuffer(self % nMat * self % nG))
-    ! xsBuffer = self % nuSigmaF
-    ! self % nuSigmaF = self % chi
-    ! self % chi      = xsBuffer
-    ! deallocate(xsBuffer)
+    ! Fission source
+    allocate(xsBuffer(self % nMat * self % nG))
+    xsBuffer = self % nuSigmaF
+    self % nuSigmaF = self % chi
+    self % chi      = xsBuffer
+    deallocate(xsBuffer)
 
-    ! ! Scattering matrix
-    ! allocate(xsBuffer(self % nMat * self % nG * self % nG))
-    ! xsBuffer = self % sigmaS
+    ! Scattering matrix
+    allocate(xsBufferS(self % nMat * self % nG * self % nG, self % SHOrder))
+    xsBufferS = self % sigmaS
 
-    ! do m = 1, self % nMat
-    !   do g = 1, self % nG
-    !     do g1 = 1, self % nG
-    !       self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g1 - 1) + g)  = &
-    !               xsBuffer(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1)
-    !     end do
-    !   end do
-    ! end do
-    !   !add in VOID XS for CADIS !!!!!!!!!!
-    ! ! CADIS flag
-    ! self % adjointRes = .true.
+    do SH = 1, self % SHOrder 
+      do m = 1, self % nMat !nMatVoid are all zeroes 
+        do g = 1, self % nG
+          do g1 = 1, self % nG
+            self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g1 - 1) + g, SH)  = &
+                    xsBufferS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, SH)
+          end do
+        end do
+      end do
+    end do
+
+    ! CADIS flag
+    self % adjointRes = .true.
 
   end subroutine initCADIS
 
@@ -1545,37 +1547,12 @@ contains
         self % cellHit(cIdx) = 1
         !$omp end critical
       end if 
-
+       
       if (doVolume) then
-
-        mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
-
-        ! Check cell has been visited 
-        if (self % volume(cIdx) > volume_tolerance) then
-          ! Compute the track centroid in local co-ordinates
-          rNorm = rC - mid(1:nDim)
-          ! Compute the entry point in local co-ordinates
-          r0Norm = r0 -  mid(1:nDim) 
-        else
-          rNorm = ZERO
-          r0Norm = - mu0 * HALF * length
-        end if 
-
-        len2_12 = length * length / 12
-        matScore(xx) = length * (rnorm(x) * rnorm(x) + mu0(x) * mu0(x) * len2_12) 
-        matScore(xy) = length * (rnorm(x) * rnorm(y) + mu0(x) * mu0(y) * len2_12) 
-        matScore(xz) = length * (rnorm(x) * rnorm(z) + mu0(x) * mu0(z) * len2_12) 
-        matScore(yy) = length * (rnorm(y) * rnorm(y) + mu0(y) * mu0(y) * len2_12) 
-        matScore(yz) = length * (rnorm(y) * rnorm(z) + mu0(y) * mu0(z) * len2_12) 
-        matScore(zz) = length * (rnorm(z) * rnorm(z) + mu0(z) * mu0(z) * len2_12) 
-        centIdx = nDim * (cIdx - 1)
-        momIdx = matSize * (cIdx - 1)
-        
-        rC = rC * length
-
         centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
-        momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
         volTrack => self % volumeTracks(cIdx)
+
+        rC = rC * length
 
         ! Update centroid
         call OMP_set_lock(self % locks(cIdx))
@@ -1585,17 +1562,10 @@ contains
               centVec(g) = centVec(g) + rC(g)
           end do
 
-          ! Update spatial moment scores
-          !$omp simd aligned(momVec)
-          do g = 1, matSize
-              momVec(g) = momVec(g) + matScore(g)
-          end do
-
           volTrack = volTrack + length
 
         call OMP_unset_lock(self % locks(cIdx))
       end if
-
 
     end do
 
@@ -1804,11 +1774,6 @@ contains
 
       !$omp simd
       do g = 1, self % nG
-        F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt * lenFlt
-      end do
-
-      !$omp simd
-      do g = 1, self % nG
         delta(g) = (fluxVec(g)) * F1(g) * lenFlt 
       end do
 
@@ -1832,16 +1797,6 @@ contains
       !$omp simd
       do g = 1, self % nG
         H(g) = ( F1(g) - Gn(g) ) !expH(tau(g))
-      end do
-    
-      !$omp simd
-      do g = 1, self % nG
-          G1(g) = one_two - H(g) !not needed
-      end do
-
-      !$omp simd 
-      do g = 1, self % nG
-        G2(g) = expG2(tau(g)) !not needed
       end do
 
       !$omp simd 
@@ -2249,41 +2204,24 @@ contains
 
         if (self % volume(cIdx) > volume_tolerance) then
           invVol = ONE / self % volumeTracks(cIdx)
-          
           ! Update centroids
           self % centroid(dIdx + x) =  self % centroidTracks(dIdx + x) * invVol
           self % centroid(dIdx + y) =  self % centroidTracks(dIdx + y) * invVol
           self % centroid(dIdx + z) =  self % centroidTracks(dIdx + z) * invVol
-        
-          ! Update spatial moments
-          self % momMat(mIdx + xx) = self % momTracks(mIdx + xx) * invVol
-          self % momMat(mIdx + xy) = self % momTracks(mIdx + xy) * invVol
-          self % momMat(mIdx + xz) = self % momTracks(mIdx + xz) * invVol
-          self % momMat(mIdx + yy) = self % momTracks(mIdx + yy) * invVol
-          self % momMat(mIdx + yz) = self % momTracks(mIdx + yz) * invVol
-          self % momMat(mIdx + zz) = self % momTracks(mIdx + zz) * invVol
-  
         else
           self % centroid(dIdx + x) =  ZERO
           self % centroid(dIdx + y) =  ZERO
           self % centroid(dIdx + z) =  ZERO
-  
-          self % momMat(mIdx + xx) = ZERO
-          self % momMat(mIdx + xy) = ZERO
-          self % momMat(mIdx + xz) = ZERO
-          self % momMat(mIdx + yy) = ZERO
-          self % momMat(mIdx + yz) = ZERO
-          self % momMat(mIdx + zz) = ZERO
-  
         end if  
 
-        do g = 1, self % nG
-          total = self % sigmaT((matIdx - 1) * self % nG + g)
-          idx   = self % nG * (cIdx - 1) + g
-          self % scalarFlux(idx) = self % scalarFlux(idx) * normFlt / ( real(self % volume(cIdx),defFlt))
-          self % scalarX(idx) = self % scalarX(idx) * normFlt / ( real(self % volume(cIdx),defFlt))
-          self % scalarY(idx) = self % scalarY(idx) * normFlt / ( real(self % volume(cIdx),defFlt))
-          self % scalarZ(idx) = self % scalarZ(idx) * normFlt / ( real(self % volume(cIdx),defFlt))
+        do SH = 1, self % SHLength
+          do g = 1, self % nG
+            idx   = self % nG * (cIdx - 1) + g
+            self % scalarFlux(idx,SH) = self % scalarFlux(idx,SH) * normFlt / ( real(self % volume(cIdx),defFlt))
+            self % scalarX(idx,SH) = self % scalarX(idx,SH) * normFlt / ( real(self % volume(cIdx),defFlt))
+            self % scalarY(idx,SH) = self % scalarY(idx,SH) * normFlt / ( real(self % volume(cIdx),defFlt))
+            self % scalarZ(idx,SH) = self % scalarZ(idx,SH) * normFlt / ( real(self % volume(cIdx),defFlt))
+          end do
         end do
 
       end if
@@ -2360,13 +2298,13 @@ contains
         self % centroid(dIdx + y) =  self % centroidTracks(dIdx + y) * invVol
         self % centroid(dIdx + z) =  self % centroidTracks(dIdx + z) * invVol
       
-        ! Update spatial moments
-        self % momMat(mIdx + xx) = self % momTracks(mIdx + xx) * invVol
-        self % momMat(mIdx + xy) = self % momTracks(mIdx + xy) * invVol
-        self % momMat(mIdx + xz) = self % momTracks(mIdx + xz) * invVol
-        self % momMat(mIdx + yy) = self % momTracks(mIdx + yy) * invVol
-        self % momMat(mIdx + yz) = self % momTracks(mIdx + yz) * invVol
-        self % momMat(mIdx + zz) = self % momTracks(mIdx + zz) * invVol
+        ! ! Update spatial moments
+        ! self % momMat(mIdx + xx) = self % momTracks(mIdx + xx) * invVol
+        ! self % momMat(mIdx + xy) = self % momTracks(mIdx + xy) * invVol
+        ! self % momMat(mIdx + xz) = self % momTracks(mIdx + xz) * invVol
+        ! self % momMat(mIdx + yy) = self % momTracks(mIdx + yy) * invVol
+        ! self % momMat(mIdx + yz) = self % momTracks(mIdx + yz) * invVol
+        ! self % momMat(mIdx + zz) = self % momTracks(mIdx + zz) * invVol
 
       else
 
@@ -2374,47 +2312,61 @@ contains
         self % centroid(dIdx + y) =  ZERO
         self % centroid(dIdx + z) =  ZERO
 
-        self % momMat(mIdx + xx) = ZERO
-        self % momMat(mIdx + xy) = ZERO
-        self % momMat(mIdx + xz) = ZERO
-        self % momMat(mIdx + yy) = ZERO
-        self % momMat(mIdx + yz) = ZERO
-        self % momMat(mIdx + zz) = ZERO
+        ! self % momMat(mIdx + xx) = ZERO
+        ! self % momMat(mIdx + xy) = ZERO
+        ! self % momMat(mIdx + xz) = ZERO
+        ! self % momMat(mIdx + yy) = ZERO
+        ! self % momMat(mIdx + yz) = ZERO
+        ! self % momMat(mIdx + zz) = ZERO
 
       end if
 
       do g = 1, self % nG
 
         idx   = self % nG * (cIdx - 1) + g
+
+        if (self % SHOrder > 0) then
+          do SH = 1, self % SHLength
+
+            if (vol > volume_tolerance) then
+              self % moments(idx,SH) = self % moments(idx,SH) * norm / (real(vol,defFlt) ) 
+              self % scalarX(idx,SH) = self % scalarX(idx,SH) * norm / (real(vol,defFlt) )
+              self % scalarY(idx,SH) = self % scalarY(idx,SH) * norm / (real(vol,defFlt) )
+              self % scalarZ(idx,SH) = self % scalarZ(idx,SH) * norm / (real(vol,defFlt) )
+            else
+              corr = ONE
+            end if
+
+            self % moments(idx,SH) =  (self % moments(idx,SH) + self % source(idx,SH)) 
+          end do
+
+      else
+
         total = self % sigmaT((matIdx - 1) * self % nG + g)
-
-        if (vol > volume_tolerance) then
-          self % scalarFlux(idx) = self % scalarFlux(idx) * norm / (real(vol,defFlt) ) 
-          self % scalarX(idx) = self % scalarX(idx) * norm / (real(vol,defFlt) )
-          self % scalarY(idx) = self % scalarY(idx) * norm / (real(vol,defFlt) )
-          self % scalarZ(idx) = self % scalarZ(idx) * norm / (real(vol,defFlt) )
-        else
-          corr = ONE
-        end if
-        ! ! TODO: I think this may not work when volume correction is applied...
-        if (matIdx < UNDEF_MAT) then
-          sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
-
-          ! Assumes non-zero total XS
-          if ((sigGG < 0) .and. (total > 0)) then
-            D = -real(self % rho, defFlt) * sigGG / total
-          else
-            D = 0.0_defFlt
-          end if
+        sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g, 1)
+    
+        ! Presumes non-zero total XS
+        if ((sigGG < 0) .and. (total > 0)) then
+          D = -real(self % rho, defFlt) * sigGG / total
         else
           D = 0.0_defFlt
         end if
+        
+        if (vol > volume_tolerance) then
+          self % moments(idx,1) = self % moments(idx,1) * norm / (real(vol,defFlt) ) 
+          self % scalarX(idx,1) = self % scalarX(idx,1) * norm / (real(vol,defFlt) )
+          self % scalarY(idx,1) = self % scalarY(idx,1) * norm / (real(vol,defFlt) )
+          self % scalarZ(idx,1) = self % scalarZ(idx,1) * norm / (real(vol,defFlt) )
+        else
+          corr = ONE
+        end if
 
-          self % scalarFlux(idx) =  real((self % scalarflux(idx) + self % source(idx) &
-                                                   + D * self % prevFlux(idx) ) / (1 + D), defFlt)
-          self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
-          self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
-          self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
+        self % moments(idx,1) =  real((self % moments(idx,1) + self % source(idx,1) &
+                                                  + D * self % prevMoments(idx) ) / (1 + D), defFlt)
+        self % scalarX(idx,1) =  (self % scalarX(idx,1) + D * self % prevX(idx,1) ) / (1 + D)
+        self % scalarY(idx,1) =  (self % scalarY(idx,1) + D * self % prevY(idx,1) ) / (1 + D)
+        self % scalarZ(idx,1) =  (self % scalarZ(idx,1) + D * self % prevZ(idx,1) ) / (1 + D)
+      end if
        
         ! ! Apply volume correction only to negative flux cells
         ! if (self % volCorr .and. self % passive) then
@@ -2605,13 +2557,8 @@ contains
     real(defReal), pointer, dimension(:)                  :: momVec,fluxVec
     real(defReal)                                         :: det, one_det 
 
-
-
     !NEED TO COME AND  FIX
-
-
-
-    ! ! Identify material
+    ! Identify material
     ! matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
     ! id      =  self % CellToID(cIdx)
 
@@ -2624,30 +2571,6 @@ contains
     ! nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
     ! chi => self % chi((matIdx + 1):(matIdx + self % nG))
     ! total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
-
-    ! momVec => self % momMat(((cIdx - 1) * matSize + 1):(cIdx * matSize))
-
-    ! det = momVec(xx) * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)) &
-    ! - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
-    ! + 2 * momVec(xy) * momVec(xz) * momVec(yz)
-
-    ! if ((abs(det) > 1E-10) .and. self % volume(cIdx) > 1E-6 ) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
-    !   one_det = ONE/det
-    !   invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
-    !   invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
-    !   invMxz = real(one_det * (momVec(xy) * momVec(yz) - momVec(yy) * momVec(xz)),defFlt)
-    !   invMyy = real(one_det * (momVec(xx) * momVec(zz) - momVec(xz) * momVec(xz)),defFlt)
-    !   invMyz = real(one_det * (momVec(xy) * momVec(xz) - momVec(xx) * momVec(yz)),defFlt)
-    !   invMzz = real(one_det * (momVec(xx) * momVec(yy) - momVec(xy) * momVec(xy)),defFlt)
-    ! else
-    !   invMxx = 0.0_defFlt
-    !   invMxy = 0.0_defFlt
-    !   invMxz = 0.0_defFlt
-    !   invMyy = 0.0_defFlt
-    !   invMyz = 0.0_defFlt
-    !   invMzz = 0.0_defFlt
-    !   det = ONE 
-    ! end if
 
     ! baseIdx = self % nG * (cIdx - 1)
     ! fluxVec => self % uncollidedScores((baseIdx+1):(baseIdx + self % nG),1)
@@ -2671,45 +2594,41 @@ contains
 
     ! do g = 1, self % nG
 
-    !   scatterVec => scatterXS((self % nG * (g - 1) + 1):(self % nG * (g - 1) + self % nG))
-
-    !   ! Calculate scattering source
-    !   scatter = 0.0_defFlt
-    !   xScatter = 0.0_defFlt
-    !   yScatter = 0.0_defFlt
-    !   zScatter = 0.0_defFlt
-
-    !   ! Sum contributions from all energies
-    !   !$omp simd 
-    !   do gIn = 1, self % nG
-    !     scatter = scatter + real(fluxVec(gIn),defFlt) * scatterVec(gIn)
-    !     xScatter = xScatter + xFluxVec(gIn) * scatterVec(gIn)
-    !     yScatter = yScatter + yFluxVec(gIn) * scatterVec(gIn)
-    !     zScatter = zScatter + zFluxVec(gIn) * scatterVec(gIn)
-    !   end do
-
-    !   ! Output index
+    !   scatterVec => scatterXS((self % nG * (g - 1) + 1):(self % nG * self % nG), :)
     !   idx = baseIdx + g
 
-    !   ! Don't scale by 1/SigmaT - that occurs in the sourceUpdateKernel
-    !   self % fixedSource(idx) = chi(g) * fission + scatter
-    !   !self % fixedSource(idx) = self % fixedSource(idx) !/ total(idx)
+    !   ! Calculate scattering source for higher order scattering
+    !   do SH = 1, self % SHLength
 
-    !   xSource = chi(g) * xFission + xScatter
-    !   xSource = xSource 
-    !   ySource = chi(g) * yFission + yScatter
-    !   ySource = ySource
-    !   zSource = chi(g) * zFission + zScatter
-    !   zSource = zSource 
+    !     SHidx = ceiling(sqrt(real(SH, defReal)) - 1) + 1
+    !     scatter = 0.0_defFlt
+    !     xScatter = 0.0_defFlt
+    !     yScatter = 0.0_defFlt
+    !     zScatter = 0.0_defFlt 
 
-    !   self % fixedX(idx) = invMxx * xSource + &
-    !     invMxy * ySource + invMxz * zSource 
-    !   self % fixedY(idx) = invMxy * xSource + & 
-    !     invMyy * ySource + invMyz * zSource 
-    !   self % fixedZ(idx) = invMxz * xSource + &
-    !     invMyz * ySource + invMzz * zSource 
+    !     ! Sum contributions from all energies
+    !     !$omp simd 
+    !     do gIn = 1, self % nG
+    !       scatter = scatter + real(fluxVec(gIn),defFlt) * scatterVec(gIn,SHidx)
+    !       xScatter = xScatter + xFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
+    !       yScatter = yScatter + yFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
+    !       zScatter = zScatter + zFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
+    !     end do
 
-    ! end do
+    !     ! Don't scale by 1/SigmaT - that occurs in the sourceUpdateKernel
+    !     self % fixedSource(idx,SH) = chi(g) * fission + scatter
+    !     !self % fixedSource(idx) = self % fixedSource(idx) !/ total(idx)
+
+    !     xSource = chi(g) * xFission + xScatter
+    !     ySource = chi(g) * yFission + yScatter
+    !     zSource = chi(g) * zFission + zScatter
+
+    !     self % fixedX(idx,SH) = xSource 
+    !     self % fixedY(idx,SH) = YSource 
+    !     self % fixedZ(idx,SH) = ZSource 
+    !   end do
+
+    end do
 
   end subroutine firstCollidedSourceKernel
 
@@ -2809,16 +2728,19 @@ contains
     integer(shortInt), save                             :: matIdx, g, idx, i
     real(defReal), save                                 :: vol
     type(particleState), save                           :: s
-    type(ray), save                                     :: point
+    type(ray), save                                     :: pointRay
     real(defReal)                                       :: res, std, totalVol, response
     integer(shortInt),dimension(:),allocatable          :: resArrayShape
     real(defReal), dimension(:), allocatable            :: groupFlux, flxOut, flxOutSTD
-    !$omp threadprivate(idx, matIdx, i, vol, s, g)
+    integer(longInt)                                    :: seed
+    !$omp threadprivate(idx, matIdx, i, vol, s, g, pointRay)
 
     call out % init(self % outputFormat)
 
+    seed = self % rand % getSeed()
+
     name = 'seed'
-    call out % printValue(self % rand % getSeed(),name)
+    call out % printValue(seed,name)
 
     name = 'pop'
     call out % printValue(self % pop,name)
@@ -2980,9 +2902,9 @@ contains
         call out % startBlock(name)
         call out % startArray(name, resArrayShape)
         s % r = self % samplePoints(1+3*(i-1):3*i)
-        point = s
-        call self % geom % placeCoord(point % coords)
-        cIdx = self % IDToCell(point % coords % uniqueID)
+        pointRay = s
+        call self % geom % placeCoord(pointRay % coords)
+        cIdx = self % IDToCell(pointRay % coords % uniqueID)
         do g = 1, self % nG
           idx = (cIdx - 1)* self % nG + g
           res = self % fluxScores(idx,1)
