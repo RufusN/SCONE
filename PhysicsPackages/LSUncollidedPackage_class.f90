@@ -1427,7 +1427,7 @@ contains
     class(LSUncollidedPackage), intent(inout) :: self
     type(ray), intent(inout)                            :: r
     real(defReal)                                       :: mu, phi
-    real(defReal), dimension(3)                         :: u, rand3, x
+    real(defReal), dimension(3)                         :: u, rand3, xPoint
     integer(shortInt)                                   :: i, matIdx, id, cIdx
     character(100), parameter :: Here = 'initialiseRay (LSUncollidedPackage_class.f90)'
 
@@ -1440,10 +1440,10 @@ contains
       rand3(1) = r % pRNG % get()
       rand3(2) = r % pRNG % get()
       rand3(3) = r % pRNG % get()
-      x = self % bottom + (self % top - self % bottom) * rand3
+      xPoint = self % bottom + (self % top - self % bottom) * rand3
 
       ! Exit if point is inside the geometry
-      call self % geom % whatIsAt(matIdx, id, x, u)
+      call self % geom % whatIsAt(matIdx, id, xPoint, u)
 
       cIdx = self % IDToCell(id)
       if (matIdx /= OUTSIDE_MAT .and. cIdx > 0) exit rejection
@@ -1455,13 +1455,13 @@ contains
     end do rejection
 
     ! Place in the geometry & process the ray
-    call r % build(x, u, 1, ONE)
+    call r % build(xPoint, u, 1, ONE)
     call self % geom % placeCoord(r % coords)
 
     if (.NOT. self % cellFound(cIdx)) then
       !$omp critical
       self % cellFound(cIdx) = .true.
-      self % cellPos(cIdx,:) = x
+      self % cellPos(cIdx,:) = xPoint
       !$omp end critical
     end if
 
