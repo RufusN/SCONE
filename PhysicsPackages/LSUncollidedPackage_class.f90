@@ -1533,35 +1533,10 @@ contains
       end if 
 
       if (doVolume) then
-
-        mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
-
-        ! Check cell has been visited 
-        if (self % volume(cIdx) > volume_tolerance) then
-          ! Compute the track centroid in local co-ordinates
-          rNorm = rC - mid(1:nDim)
-          ! Compute the entry point in local co-ordinates
-          r0Norm = r0 -  mid(1:nDim) 
-        else
-          rNorm = ZERO
-          r0Norm = - mu0 * HALF * length
-        end if 
-
-        len2_12 = length * length / 12
-        matScore(xx) = length * (rnorm(x) * rnorm(x) + mu0(x) * mu0(x) * len2_12) 
-        matScore(xy) = length * (rnorm(x) * rnorm(y) + mu0(x) * mu0(y) * len2_12) 
-        matScore(xz) = length * (rnorm(x) * rnorm(z) + mu0(x) * mu0(z) * len2_12) 
-        matScore(yy) = length * (rnorm(y) * rnorm(y) + mu0(y) * mu0(y) * len2_12) 
-        matScore(yz) = length * (rnorm(y) * rnorm(z) + mu0(y) * mu0(z) * len2_12) 
-        matScore(zz) = length * (rnorm(z) * rnorm(z) + mu0(z) * mu0(z) * len2_12) 
-        centIdx = nDim * (cIdx - 1)
-        momIdx = matSize * (cIdx - 1)
-        
-        rC = rC * length
-
         centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
-        momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
         volTrack => self % volumeTracks(cIdx)
+
+        rC = rC * length
 
         ! Update centroid
         call OMP_set_lock(self % locks(cIdx))
@@ -1569,12 +1544,6 @@ contains
           !$omp simd aligned(centVec)
           do g = 1, nDim
               centVec(g) = centVec(g) + rC(g)
-          end do
-
-          ! Update spatial moment scores
-          !$omp simd aligned(momVec)
-          do g = 1, matSize
-              momVec(g) = momVec(g) + matScore(g)
           end do
 
           volTrack = volTrack + length
@@ -1763,12 +1732,6 @@ contains
       muFlt = real(mu0,defFlt)
       lenFlt  = real(length,defFlt)
 
-      !  ! Calculate source terms
-      ! !$omp simd aligned(xGradVec, yGradVec, zGradVec)
-      ! do g = 1, self % nG
-      !   flatQ(g) = flatQ(g) + sourceVec(g) / totVec(g)
-      ! end do
-
       !$omp simd
       do g = 1, self % nG
         tau(g) = totVec(g) * lenFlt
@@ -1786,11 +1749,6 @@ contains
      !$omp simd
       do g = 1, self % nG
         F1(g)  = 1.0_defFlt - tau(g) * Gn(g) !expTau(tau(g)) * lenFlt
-      end do
-
-      !$omp simd
-      do g = 1, self % nG
-        F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt * lenFlt
       end do
 
       !$omp simd
@@ -1818,16 +1776,6 @@ contains
       !$omp simd
       do g = 1, self % nG
         H(g) = ( F1(g) - Gn(g) ) !expH(tau(g))
-      end do
-    
-      !$omp simd
-      do g = 1, self % nG
-          G1(g) = one_two - H(g) !not needed
-      end do
-
-      !$omp simd 
-      do g = 1, self % nG
-        G2(g) = expG2(tau(g)) !not needed
       end do
 
       !$omp simd 
@@ -2197,27 +2145,11 @@ contains
         self % centroid(dIdx + x) =  self % centroidTracks(dIdx + x) * invVol
         self % centroid(dIdx + y) =  self % centroidTracks(dIdx + y) * invVol
         self % centroid(dIdx + z) =  self % centroidTracks(dIdx + z) * invVol
-      
-        ! Update spatial moments
-        self % momMat(mIdx + xx) = self % momTracks(mIdx + xx) * invVol
-        self % momMat(mIdx + xy) = self % momTracks(mIdx + xy) * invVol
-        self % momMat(mIdx + xz) = self % momTracks(mIdx + xz) * invVol
-        self % momMat(mIdx + yy) = self % momTracks(mIdx + yy) * invVol
-        self % momMat(mIdx + yz) = self % momTracks(mIdx + yz) * invVol
-        self % momMat(mIdx + zz) = self % momTracks(mIdx + zz) * invVol
 
       else
         self % centroid(dIdx + x) =  ZERO
         self % centroid(dIdx + y) =  ZERO
         self % centroid(dIdx + z) =  ZERO
-
-        self % momMat(mIdx + xx) = ZERO
-        self % momMat(mIdx + xy) = ZERO
-        self % momMat(mIdx + xz) = ZERO
-        self % momMat(mIdx + yy) = ZERO
-        self % momMat(mIdx + yz) = ZERO
-        self % momMat(mIdx + zz) = ZERO
-
       end if  
 
       ! Presume that volumes are known otherwise this may go badly!
@@ -2564,30 +2496,6 @@ contains
     chi => self % chi((matIdx + 1):(matIdx + self % nG))
     total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
 
-    momVec => self % momMat(((cIdx - 1) * matSize + 1):(cIdx * matSize))
-
-    det = momVec(xx) * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)) &
-    - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
-    + 2 * momVec(xy) * momVec(xz) * momVec(yz)
-
-    if ((abs(det) > 1E-10) .and. self % volume(cIdx) > 1E-6 ) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
-      one_det = ONE/det
-      invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
-      invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
-      invMxz = real(one_det * (momVec(xy) * momVec(yz) - momVec(yy) * momVec(xz)),defFlt)
-      invMyy = real(one_det * (momVec(xx) * momVec(zz) - momVec(xz) * momVec(xz)),defFlt)
-      invMyz = real(one_det * (momVec(xy) * momVec(xz) - momVec(xx) * momVec(yz)),defFlt)
-      invMzz = real(one_det * (momVec(xx) * momVec(yy) - momVec(xy) * momVec(xy)),defFlt)
-    else
-      invMxx = 0.0_defFlt
-      invMxy = 0.0_defFlt
-      invMxz = 0.0_defFlt
-      invMyy = 0.0_defFlt
-      invMyz = 0.0_defFlt
-      invMzz = 0.0_defFlt
-      det = ONE 
-    end if
-
     baseIdx = self % nG * (cIdx - 1)
     fluxVec => self % uncollidedScores((baseIdx+1):(baseIdx + self % nG),1)
     xFluxVec => self % prevX((baseIdx + 1):(baseIdx + self % nG))
@@ -2631,21 +2539,10 @@ contains
 
       ! Don't scale by 1/SigmaT - that occurs in the sourceUpdateKernel
       self % fixedSource(idx) = chi(g) * fission + scatter
-      !self % fixedSource(idx) = self % fixedSource(idx) !/ total(idx)
 
       xSource = chi(g) * xFission + xScatter
-      xSource = xSource 
       ySource = chi(g) * yFission + yScatter
-      ySource = ySource
       zSource = chi(g) * zFission + zScatter
-      zSource = zSource 
-
-      ! self % fixedX(idx) = invMxx * xSource + &
-      !   invMxy * ySource + invMxz * zSource 
-      ! self % fixedY(idx) = invMxy * xSource + & 
-      !   invMyy * ySource + invMyz * zSource 
-      ! self % fixedZ(idx) = invMxz * xSource + &
-      !   invMyz * ySource + invMzz * zSource 
       
       self % fixedX(idx) = xSource 
       self % fixedY(idx) = YSource 
@@ -2759,7 +2656,7 @@ contains
     seed = self % rand % getSeed()
 
     name = 'seed'
-    call out % printValue(self % rand % getSeed(),name)
+    call out % printValue(seed,name)
 
     name = 'pop'
     call out % printValue(self % pop,name)
