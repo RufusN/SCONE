@@ -1,4 +1,4 @@
-module LSUncollidedPackage_class
+module LSPNFixedSourcePhysicsPackage_class
 
   use numPrecision
   use universalVariables
@@ -190,8 +190,8 @@ module LSUncollidedPackage_class
   !!   sourceStrength   -> Strength of initial source in all groups
   !!   uncollidedScores -> Stats for calculating average and std of uncollided flux
   !!
-  !!   scalarFlux   -> Array of scalar flux values of length = nG * nCells
-  !!   prevFlux     -> Array of previous scalar flux values of length = nG * nCells
+  !!   moments   -> Array of scalar flux values of length = nG * nCells
+  !!   prevMoments     -> Array of previous scalar flux values of length = nG * nCells
   !!   fluxScores   -> Array of scalar flux values and squared values to be reported
   !!                   in results, dimension =  [nG * nCells, 2]
   !!   source       -> Array of neutron source values of length = nG * nCells
@@ -211,7 +211,7 @@ module LSUncollidedPackage_class
   !! Interface:
   !!   physicsPackage interface
   !!
-  type, public, extends(physicsPackage) :: LSUncollidedPackage
+  type, public, extends(physicsPackage) :: LSPNFixedSourcePhysicsPackage
     private
     ! Components
     class(geometryStd), pointer           :: geom
@@ -235,6 +235,8 @@ module LSUncollidedPackage_class
     integer(shortInt)  :: inactive    = 0
     integer(shortInt)  :: active      = 0
     real(defReal)      :: rho         = ZERO
+    integer(shortInt)  :: SHOrder     = 0
+    integer(shortInt)  :: SHLength    = 1
     logical(defBool)   :: cache       = .false.
     logical(defBool)   :: itVol       = .false.
     logical(defBool)   :: zeroNeg     = .false.
@@ -279,7 +281,7 @@ module LSUncollidedPackage_class
     ! Data space - absorb all nuclear data for speed
     real(defFlt), dimension(:), allocatable     :: sigmaT
     real(defFlt), dimension(:), allocatable     :: nuSigmaF
-    real(defFlt), dimension(:), allocatable     :: sigmaS
+    real(defFlt), dimension(:,:), allocatable   :: sigmaS
     real(defFlt), dimension(:), allocatable     :: chi
 
     ! Results space
@@ -360,7 +362,7 @@ module LSUncollidedPackage_class
     procedure, private :: uncollidedCalculation
     procedure, private :: initCADIS
 
-  end type LSUncollidedPackage
+  end type LSPNFixedSourcePhysicsPackage
 
 contains
 
@@ -370,9 +372,9 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine init(self,dict)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     class(dictionary), intent(inout)                    :: dict
-    integer(shortInt)                                   :: seed_temp, n, nPoints, i, m, g, g1
+    integer(shortInt)                                   :: seed_temp, n, nPoints, i, m, g, g1, SH
     integer(longInt)                                    :: seed
     character(10)                                       :: time
     character(8)                                        :: date
@@ -388,7 +390,7 @@ contains
     class(baseMgNeutronMaterial), pointer               :: mat
     class(materialHandle), pointer                      :: matPtr
     logical(defBool)                                    :: cellCheck
-    character(100), parameter :: Here = 'init (LSUncollidedPackage_class.f90)'
+    character(100), parameter :: Here = 'init (LSPNFixedSourcePhysicsPackage_class.f90)'
 
     call cpu_time(self % CPU_time_start)
 
@@ -422,6 +424,13 @@ contains
 
     ! Stabilisation factor for negative in-group scattering
     call dict % getOrDefault(self % rho, 'rho', ZERO)
+
+    ! Higher order scattering order
+    call dict % getOrDefault(self % SHOrder, 'SHOrder', 0)
+
+    ! Number of spherical harmonic terms for given SHOrder
+    self % SHLength = (self % SHOrder + 1 )**2
+
     ! Shouldn't need this... but need to do a bit more work to allow these to be done together
     if (self % volCorr) self % rho = ZERO
 
@@ -634,8 +643,8 @@ contains
     allocate(self % moments(self % nCells * self % nG, self % SHLength))
     allocate(self % prevMoments(self % nCells * self % nG, self % SHLength))
     allocate(self % fluxScores(self % nCells * self % nG, 2))
-    allocate(self % source(self % nCells * self % nG))
-    allocate(self % fixedSource(self % nCells * self % nG))
+    allocate(self % source(self % nCells * self % nG, self % SHLength))
+    allocate(self % fixedSource(self % nCells * self % nG, self % SHLength))
     allocate(self % volume(self % nCells))
     allocate(self % volumeTracks(self % nCells))
     allocate(self % cellHit(self % nCells))
@@ -769,7 +778,7 @@ contains
     allocate(self % sigmaT(self % nMatVOID * self % nG))
     allocate(self % nuSigmaF(self % nMatVOID * self % nG))
     allocate(self % chi(self % nMatVOID * self % nG))
-    allocate(self % sigmaS(self % nMatVOID * self % nG * self % nG))
+    allocate(self % sigmaS(self % nMatVOID * self % nG * self % nG, self % SHOrder))
 
     do m = 1, self % nMat
         matPtr  => self % mgData % getMaterial(m)
@@ -816,7 +825,7 @@ contains
   !! Also sets options for uncollided flux calculations
   !!
   subroutine initialiseSource(self, dict)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     class(dictionary), intent(inout)                    :: dict
     character(nameLen),dimension(:), allocatable        :: names
     real(defReal), dimension(:), allocatable            :: sourceStrength
@@ -825,7 +834,7 @@ contains
     logical(defBool)                                    :: found
     character(nameLen)                                  :: sourceName
     character(nameLen), save                            :: localName
-    character(100), parameter :: Here = 'initialiseSource (LSUncollidedPackage_class.f90)'
+    character(100), parameter :: Here = 'initialiseSource (LSPNFixedSourcePhysicsPackage_class.f90)'
     !$omp threadprivate(matIdx, localName, idx, g, id)
 
     call dict % keys(names)
@@ -884,12 +893,13 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine initCADIS(self)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     real(defFlt), dimension(:), allocatable             :: xsBuffer
+    real(defFlt), dimension(:,:), allocatable           :: xsBufferS
     integer(shortInt)                                   :: g1, m, i
-    integer(shortInt), save                             :: id, idx, matIdx, g
+    integer(shortInt), save                             :: id, idx, matIdx, g, SH
     character(nameLen), save                            :: localName
-    !$omp threadprivate(id, idx, matIdx, g, localName)
+    !$omp threadprivate(id, idx, matIdx, g, localName, SH)
 
     ! Restart timer
     call cpu_time(self % CPU_time_start)
@@ -958,8 +968,8 @@ contains
     end if
 
     ! Initialise new results
-    self % scalarFlux = 0.0_defFlt
-    self % prevFlux = 0.0_defFlt
+    self % moments = 0.0_defFlt
+    self % prevMoments = 0.0_defFlt
     self % fluxScores = ZERO
     self % source = 0.0_defFlt
     self % volume = ZERO
@@ -1015,7 +1025,7 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine run(self)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
 
     call self % printSettings()
     if (self % nVolRays > 0) call self % volumeCalculation()
@@ -1038,7 +1048,7 @@ contains
   !! Rays are tracked until they reach some specified termination length.
   !!
   subroutine cellMapCalculation(self)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     type(ray), save                                     :: r
     type(RNG), target, save                             :: pRNG
     real(defReal)                                       :: hitRate
@@ -1112,7 +1122,7 @@ contains
   !! scoring to volume estimates.
   !!
   subroutine volumeCalculation(self)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     type(ray), save                                     :: r
     type(RNG), target, save                             :: pRNG
     real(defReal)                                       :: hitRate
@@ -1170,7 +1180,7 @@ contains
   !! During tracking, fluxes are attenuated (and adjusted according to BCs).
   !!
   subroutine uncollidedCalculation(self)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     type(ray), save                                     :: r
     type(RNG), target, save                             :: pRNG
     real(defReal)                                       :: hitRate
@@ -1283,7 +1293,7 @@ contains
   !! given criteria or when a fixed number of iterations has been passed.
   !!
   subroutine cycles(self)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     type(ray), save                                     :: r
     type(RNG), target, save                             :: pRNG
     real(defReal)                                       :: hitRate
@@ -1420,7 +1430,7 @@ contains
     ! Add collided and uncollided results
     if (self % uncollidedType > NO_UC) then
       !$omp parallel do schedule(static)
-      do idx = 1, size(self % scalarFlux)
+      do idx = 1, size(self % moments(:,1))
         self % fluxScores(idx,2) = sqrt(self % fluxScores(idx,2)**2 * self % fluxScores(idx,1)**2 + &
               self % uncollidedScores(idx,2)**2 * self % uncollidedScores(idx,1)**2)
         self % fluxScores(idx,1) = self % fluxScores(idx,1) + self % uncollidedScores(idx,1)
@@ -1440,12 +1450,12 @@ contains
   !! and performs the build operation
   !!
   subroutine initialiseRay(self, r)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     type(ray), intent(inout)                            :: r
     real(defReal)                                       :: mu, phi
     real(defReal), dimension(3)                         :: u, rand3, xPoint
     integer(shortInt)                                   :: i, matIdx, id, cIdx
-    character(100), parameter :: Here = 'initialiseRay (LSUncollidedPackage_class.f90)'
+    character(100), parameter :: Here = 'initialiseRay (LSPNFixedSourcePhysicsPackage_class.f90)'
 
     i = 0
     mu = TWO * r % pRNG % get() - ONE
@@ -1488,19 +1498,18 @@ contains
   !! Also used for constructing the cell map
   !!
   subroutine volumeSweep(self, r, maxLength, doVolume)
-    class(LSUncollidedPackage), target, intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), target, intent(inout) :: self
     type(ray), intent(inout)                            :: r
     real(defReal), intent(in)                           :: maxLength
     logical(defBool), intent(in)                        :: doVolume
     integer(shortInt)                                   :: event, cIdx, surfIdx, &
-                                                            centIdx, g, momIdx, baseIdx
+                                                            centIdx, g
     integer(longInt)                                    :: ints
-    real(defReal)                                       :: totalLength, length, len2_12
+    real(defReal)                                       :: totalLength, length
     type(distCache)                                     :: cache
-    real(defReal), dimension(3)                         :: r0, mu0, rC, r0Norm, rNorm
+    real(defReal), dimension(3)                         :: r0, mu0, rC
     logical(defBool)                                    :: hitVacuum
-    real(defReal), pointer, dimension(:)                :: mid, momVec, centVec
-    real(defReal), dimension(matSize)                   :: matScore
+    real(defReal), pointer, dimension(:)                :: centVec
     real(defReal), pointer                              :: volTrack
 
     totalLength = ZERO
@@ -1549,6 +1558,7 @@ contains
       end if 
        
       if (doVolume) then
+        centIdx = nDim * (cIdx - 1)
         centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
         volTrack => self % volumeTracks(cIdx)
 
@@ -1589,25 +1599,25 @@ contains
   !!
   !!
   subroutine uncollidedSweep(self, r, ints)
-    class(LSUncollidedPackage), target, intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), target, intent(inout) :: self
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
-    integer(shortInt)                                     :: matIdx, g, event, matIdx0, &
-                                                             i, cIdx, baseIdx, surfIdx, centIdx, momIdx
-    real(defReal)                                         :: totalLength, length, mu, phi,  len2_12
+    integer(shortInt)                                     :: matIdx, g, event, matIdx0, SH, &
+                                                             i, cIdx, baseIdx, surfIdx
+    real(defReal)                                         :: totalLength, length, mu, phi
     real(defFlt)                                          :: lenFlt,lenFlt2_2
     logical(defBool)                                      :: hitVacuum
     type(distCache)                                       :: cache
-    real(defFlt), dimension(self % nG)                    :: F1, F2, Gn, G1, G2, H, tau, delta, fluxVec, &
-                                                              flatQ, gradQ, xInc, yInc, zInc, fluxVec0
+    real(defFlt), dimension(self % nG)                    :: F1, Gn, H, tau, delta, fluxVec, &
+                                                              flatQ, xInc, yInc, zInc, fluxVec0
     real(defFlt), pointer, dimension(:,:)                 :: angularMomVec, &
                                                               xMomVec, yMomVec, zMomVec
     real(defFlt), pointer, dimension(:)                   :: totVec
-    real(defReal), pointer, dimension(:)                  :: mid, momVec, centVec
+    real(defReal), pointer, dimension(:)                  :: mid
     real(defReal), dimension(3)                           :: r0, mu0, u, x0, rand3, rC, r0Norm, rNorm
-    real(defReal), pointer                                :: volTrack
     real(defFlt), dimension(3)                            :: muFlt, rNormFlt, r0NormFlt
-    character(100), parameter :: Here = 'uncollidedSweep (LSUncollidedPackage_class.f90)'
+    real(defFlt), dimension(self % SHLength)              :: RCoeffs 
+    character(100), parameter :: Here = 'uncollidedSweep (LSPNFixedSourcePhysicsPackage_class.f90)'
 
     ! If point source, position and direction sample is straightforward
     ! Flux is determined by source
@@ -1698,10 +1708,10 @@ contains
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
 
-      if (newRay .or. event == BOUNDARY_EV) then
+      !if (newRay .or. event == BOUNDARY_EV) then
         call self % sphericalHarmonicCalculator(mu0, RCoeffs) !- seems to work 
-        newRay = .false.
-      end if
+        !newRay = .false.
+      !end if
 
       ! Set maximum flight distance
       length = self % uncollidedLength - totalLength
@@ -1853,16 +1863,16 @@ contains
   !! Records the number of integrations/ray movements.
   !!
   subroutine transportSweep(self, r, ints)
-    class(LSUncollidedPackage), target, intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), target, intent(inout) :: self
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, event, matIdx0, &
                                                              cIdx, idx, baseIdx, surfIdx, &
-                                                             centIdx, momIdx
+                                                             centIdx, momIdx, SH
     real(defReal)                                         :: totalLength, length, len2_12
-    logical(defBool)                                      :: activeRay, hitVacuum
+    logical(defBool)                                      :: activeRay, hitVacuum, newRay
     type(distCache)                                       :: cache
-    real(defFlt), dimension(self % nG)                    ::  F1, F2, G1, G2, Gn, H, H2, tau, delta, fluxVec, &
+    real(defFlt), dimension(self % nG)                    ::  F1, F2, G1, G2, Gn, H, tau, delta, fluxVec, &
                                                               flatQ, gradQ, xInc, yInc, zInc, fluxVec0, &
                                                               currentSource, currentXLS, &
                                                               currentYLS, currentZLS
@@ -1872,12 +1882,12 @@ contains
     real(defFlt), pointer, dimension(:)                   :: totVec
     real(defFlt)                                          :: lenFlt, lenFlt2_2
     real(defReal), dimension(3)                           :: r0, mu0, &
-                                                              rC, r0Norm, rNorm
-    type(particleState)                                   :: state                                                     
+                                                              rC, r0Norm, rNorm                                                   
     real(defReal), dimension(matSize)                     :: matScore
     real(defReal), pointer, dimension(:)                  :: mid, momVec, centVec
     real(defReal), pointer                                :: volTrack
     real(defFlt), dimension(3)                            :: muFlt, rNormFlt, r0NormFlt
+    real(defFlt), dimension(self % SHLength)              :: RCoeffs 
 
     matIdx  = r % coords % matIdx
     totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
@@ -1897,6 +1907,8 @@ contains
     matIdx0 = matIdx
     totalLength = ZERO
     activeRay = .false.
+    newRay = .true.
+
     do while (totalLength < self % termination)
 
       matIdx  = r % coords % matIdx
@@ -1917,6 +1929,11 @@ contains
       !can remove one set
       r0 = r % rGlobal()
       mu0 = r % dirGlobal()
+
+      if (newRay .or. event == BOUNDARY_EV) then
+        call self % sphericalHarmonicCalculator(mu0, RCoeffs) 
+        newRay = .false.
+      end if
 
       ! Set maximum flight distance and ensure ray is active
       if (totalLength >= self % dead) then
@@ -2173,18 +2190,86 @@ contains
 
   end subroutine transportSweep
 
+  subroutine SphericalHarmonicCalculator(self, mu, RCoeffs)
+    ! angle: x = r sin θ cos φ, y = r sin θ sin φ, and z = r cos θ
+    class(LSPNFixedSourcePhysicsPackage), intent(inout)       :: self
+    real(defFlt), dimension(self % SHLength), intent(out)   :: RCoeffs ! Array to store harmonic coefficients
+    real(defReal)                                           :: dirX, dirY, dirZ, dirX2, dirY2, dirZ2
+    real(defReal), dimension(3), intent(in)                 :: mu
+
+    dirX = mu(1)
+    dirY = mu(2)
+    dirZ = mu(3)
+
+    ! Assign coefficients based on SHOrder
+    select case(self % SHLength)
+    case(1)  
+        RCoeffs(1) = 1.0_defFlt 
+
+    case(4)  
+        RCoeffs(1) = 1.0_defFlt 
+
+        RCoeffs(2) = real(SQRT3 * dirY,defFlt) 
+        RCoeffs(3) = real(SQRT3 * dirZ,defFlt) 
+        RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
+
+    case(9) 
+        dirX2 = dirX*dirX
+        dirY2 = dirY*dirY
+        dirZ2 = dirZ*dirZ 
+
+        RCoeffs(1) = 1.0_defFlt
+
+        RCoeffs(2) = real(SQRT3 * dirY,defFlt)
+        RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
+        RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
+
+        RCoeffs(5) = real(SQRT15 * dirX * dirY,defFlt)
+        RCoeffs(6) = real(SQRT15 * dirZ * dirY,defFlt) 
+        RCoeffs(7) = real(SQRT5_2 * (3 * dirZ2 - 1),defFlt)
+        RCoeffs(8) = real(SQRT15 * dirX * dirZ,defFlt) 
+        RCoeffs(9) = real(SQRT15 * HALF * (dirX2 - dirY2),defFlt) 
+
+    case(16) 
+        dirX2 = dirX*dirX
+        dirY2 = dirY*dirY
+        dirZ2 = dirZ*dirZ
+
+        RCoeffs(1) = 1.0_defFlt 
+
+        RCoeffs(2) = real(SQRT3 * dirY,defFlt)
+        RCoeffs(3) = real(SQRT3 * dirZ,defFlt)
+        RCoeffs(4) = real(SQRT3 * dirX,defFlt) 
+
+        RCoeffs(5) = real(SQRT15 * dirX * dirY,defFlt)
+        RCoeffs(6) = real(SQRT15 * dirZ * dirY,defFlt) 
+        RCoeffs(7) = real(SQRT5_2 * (3 * dirZ2 - 1),defFlt)
+        RCoeffs(8) = real(SQRT15 * dirX * dirZ,defFlt) 
+        RCoeffs(9) = real(SQRT15 * HALF * (dirX2 - dirY2),defFlt) 
+         
+    
+        RCoeffs(10) = real(SQRT70_4 * dirY * (3 * dirX2 - dirY2),defFlt)
+        RCoeffs(11) = real(SQRT105 * dirZ * dirX * dirY,defFlt)
+        RCoeffs(12) = real(SQRT42_4 * dirY * (5 * dirZ2 - 1),defFlt)
+        RCoeffs(13) = real(SQRT7_2 * dirZ * (5 * dirZ2 - 3),defFlt)
+        RCoeffs(14) = real(SQRT42_4 * dirX * (5 * dirZ2 - 1),defFlt)
+        RCoeffs(15) = real(SQRT105 * dirZ * HALF * (dirX2 - dirY2),defFlt)
+        RCoeffs(16) = real(SQRT70_4 * dirX * (dirX2 - 3 * dirY2),defFlt)
+    end select
+  end subroutine SphericalHarmonicCalculator
+
+
   !!
   !! Normalise flux from uncollided calculation
   !!
   subroutine normaliseFluxUncollided(self, norm)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     real(defReal), intent(in)                           :: norm
     real(defFlt)                                        :: normFlt
-    real(defFlt), save                                  :: total
     real(defReal), save                                 :: invVol
-    integer(shortInt), save                             :: g, matIdx, idx, dIdx, mIdx
+    integer(shortInt), save                             :: g, matIdx, idx, dIdx, SH
     integer(shortInt)                                   :: cIdx
-    !$omp threadprivate(total, idx, g, matIdx, invVol, dIdx, mIdx)
+    !$omp threadprivate(idx, g, matIdx, invVol, dIdx, SH)
 
     normFlt = real(norm, defFlt)
 
@@ -2200,7 +2285,6 @@ contains
         end if 
 
         dIdx = (cIdx - 1) * nDim
-        mIdx = (cIdx - 1) * matSize
 
         if (self % volume(cIdx) > volume_tolerance) then
           invVol = ONE / self % volumeTracks(cIdx)
@@ -2217,7 +2301,7 @@ contains
         do SH = 1, self % SHLength
           do g = 1, self % nG
             idx   = self % nG * (cIdx - 1) + g
-            self % scalarFlux(idx,SH) = self % scalarFlux(idx,SH) * normFlt / ( real(self % volume(cIdx),defFlt))
+            self % moments(idx,SH) = self % moments(idx,SH) * normFlt / ( real(self % volume(cIdx),defFlt))
             self % scalarX(idx,SH) = self % scalarX(idx,SH) * normFlt / ( real(self % volume(cIdx),defFlt))
             self % scalarY(idx,SH) = self % scalarY(idx,SH) * normFlt / ( real(self % volume(cIdx),defFlt))
             self % scalarZ(idx,SH) = self % scalarZ(idx,SH) * normFlt / ( real(self % volume(cIdx),defFlt))
@@ -2236,7 +2320,7 @@ contains
   !! the flux by the neutron source
   !!
   subroutine normaliseFluxAndVolume(self, lengthPerIt, it)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     real(defReal), intent(in)                           :: lengthPerIt
     integer(shortInt), intent(in)                       :: it
     real(defReal)                                       :: normVol
@@ -2244,9 +2328,9 @@ contains
     real(defReal), save                                 :: invVol
     real(defFlt), save                                  :: total, sigGG, D
     real(defReal), save                                 :: vol, corr
-    integer(shortInt), save                             :: g, matIdx, idx,  dIdx, mIdx
+    integer(shortInt), save                             :: g, matIdx, idx,  dIdx, mIdx, SH
     integer(shortInt)                                   :: cIdx
-    !$omp threadprivate(total, idx, g, matIdx, vol, corr, sigGG, D, invVol, dIdx, mIdx)
+    !$omp threadprivate(total, idx, g, matIdx, vol, corr, sigGG, D, invVol, dIdx, mIdx, SH)
 
     norm = real(ONE / lengthPerIt, defFlt)
     normVol = ONE / ( lengthPerIt * it)
@@ -2298,13 +2382,13 @@ contains
         self % centroid(dIdx + y) =  self % centroidTracks(dIdx + y) * invVol
         self % centroid(dIdx + z) =  self % centroidTracks(dIdx + z) * invVol
       
-        ! ! Update spatial moments
-        ! self % momMat(mIdx + xx) = self % momTracks(mIdx + xx) * invVol
-        ! self % momMat(mIdx + xy) = self % momTracks(mIdx + xy) * invVol
-        ! self % momMat(mIdx + xz) = self % momTracks(mIdx + xz) * invVol
-        ! self % momMat(mIdx + yy) = self % momTracks(mIdx + yy) * invVol
-        ! self % momMat(mIdx + yz) = self % momTracks(mIdx + yz) * invVol
-        ! self % momMat(mIdx + zz) = self % momTracks(mIdx + zz) * invVol
+        ! Update spatial moments
+        self % momMat(mIdx + xx) = self % momTracks(mIdx + xx) * invVol
+        self % momMat(mIdx + xy) = self % momTracks(mIdx + xy) * invVol
+        self % momMat(mIdx + xz) = self % momTracks(mIdx + xz) * invVol
+        self % momMat(mIdx + yy) = self % momTracks(mIdx + yy) * invVol
+        self % momMat(mIdx + yz) = self % momTracks(mIdx + yz) * invVol
+        self % momMat(mIdx + zz) = self % momTracks(mIdx + zz) * invVol
 
       else
 
@@ -2312,12 +2396,12 @@ contains
         self % centroid(dIdx + y) =  ZERO
         self % centroid(dIdx + z) =  ZERO
 
-        ! self % momMat(mIdx + xx) = ZERO
-        ! self % momMat(mIdx + xy) = ZERO
-        ! self % momMat(mIdx + xz) = ZERO
-        ! self % momMat(mIdx + yy) = ZERO
-        ! self % momMat(mIdx + yz) = ZERO
-        ! self % momMat(mIdx + zz) = ZERO
+        self % momMat(mIdx + xx) = ZERO
+        self % momMat(mIdx + xy) = ZERO
+        self % momMat(mIdx + xz) = ZERO
+        self % momMat(mIdx + yy) = ZERO
+        self % momMat(mIdx + yz) = ZERO
+        self % momMat(mIdx + zz) = ZERO
 
       end if
 
@@ -2362,7 +2446,7 @@ contains
         end if
 
         self % moments(idx,1) =  real((self % moments(idx,1) + self % source(idx,1) &
-                                                  + D * self % prevMoments(idx) ) / (1 + D), defFlt)
+                                                  + D * self % prevMoments(idx,1) ) / (1 + D), defFlt)
         self % scalarX(idx,1) =  (self % scalarX(idx,1) + D * self % prevX(idx,1) ) / (1 + D)
         self % scalarY(idx,1) =  (self % scalarY(idx,1) + D * self % prevY(idx,1) ) / (1 + D)
         self % scalarZ(idx,1) =  (self % scalarZ(idx,1) + D * self % prevZ(idx,1) ) / (1 + D)
@@ -2411,14 +2495,14 @@ contains
   !! Kernel to update sources given a cell index
   !!
   subroutine sourceUpdateKernel(self, cIdx, it)
-    class(LSUncollidedPackage), target, intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
     integer(shortInt), intent(in)                         :: it
     real(defFlt)                                          :: scatter, xScatter, yScatter, zScatter, &
                                                              fission, xFission, yFission, zFission
     real(defFlt), dimension(self % SHLength)              :: xSource, ySource, zSource
     real(defFlt), dimension(:), pointer                   :: nuFission, total, chi
-    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, SH, SHidx
+    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, SH, SHidx, id
     real(defFlt), pointer, dimension(:,:)                 :: scatterVec, scatterXS
     real(defFlt), pointer, dimension(:,:)                 :: angularMomVec
     real(defFlt)                                          :: invMxx, invMxy, invMxz, invMyy, invMyz, invMzz
@@ -2437,7 +2521,7 @@ contains
     ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
     total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
-    scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
+    scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG), :)
     nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
     chi => self % chi((matIdx + 1):(matIdx + self % nG))
 
@@ -2477,7 +2561,7 @@ contains
     yFission = 0.0_defFlt
     zFission = 0.0_defFlt
 
-    !$omp simd reduction(+:fission, xFission, yFission, zFission) aligned(fluxVec, xFluxVec, yFluxVec, zFluxVec, nuFission)
+    !$omp simd reduction(+:fission, xFission, yFission, zFission) aligned(angularMomVec, xFluxVec, yFluxVec, zFluxVec, nuFission)
     do gIn = 1, self % nG
       fission = fission + angularMomVec(gIn,1) * nuFission(gIn)
       xFission = xFission + xFluxVec(gIn,1) * nuFission(gIn)
@@ -2545,98 +2629,96 @@ contains
   !! Overwrites any existing fixed source
   !!
   subroutine firstCollidedSourceKernel(self, cIdx)
-    class(LSUncollidedPackage), target, intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
     real(defFlt)                                          :: scatter, xScatter, yScatter, zScatter, &
                                                              fission, xFission, yFission, zFission, &
                                                              xSource, ySource, zSource
-    real(defFlt)                                          :: invMxx, invMxy, invMxz, invMyy, invMyz, invMzz
     real(defFlt), dimension(:), pointer                   :: nuFission, total, chi
-    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, id
+    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, id, SH, SHidx
     real(defFlt), pointer, dimension(:,:)                 :: scatterVec, scatterXS, angularMomVec, xFluxVec, yFluxVec, zFluxVec
-    real(defReal), pointer, dimension(:)                  :: momVec,fluxVec
-    real(defReal)                                         :: det, one_det 
+    real(defReal), pointer, dimension(:)                  :: fluxVec
 
     !NEED TO COME AND  FIX
     ! Identify material
-    ! matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
-    ! id      =  self % CellToID(cIdx)
+    matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
+    id      =  self % CellToID(cIdx)
 
-    ! ! Hack to guard against non-material cells
-    ! if (matIdx >= UNDEF_MAT) return
+    ! Hack to guard against non-material cells
+    if (matIdx >= UNDEF_MAT) return
 
-    ! ! Obtain XSs
-    ! matIdx = (matIdx - 1) * self % nG
-    ! scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
-    ! nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
-    ! chi => self % chi((matIdx + 1):(matIdx + self % nG))
-    ! total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
+    ! Obtain XSs
+    matIdx = (matIdx - 1) * self % nG
+    scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG), :)
+    nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
+    chi => self % chi((matIdx + 1):(matIdx + self % nG))
+    total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
 
-    ! baseIdx = self % nG * (cIdx - 1)
-    ! fluxVec => self % uncollidedScores((baseIdx+1):(baseIdx + self % nG),1)
-    ! angularMomVec => self % moments((baseIdx + 1):(baseIdx + self % nG), :)
-    ! xFluxVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG),:)
-    ! yFluxVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG),:)
-    ! zFluxVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG),:)
+    baseIdx = self % nG * (cIdx - 1)
+    fluxVec => self % uncollidedScores((baseIdx+1):(baseIdx + self % nG),1)
+    angularMomVec => self % moments((baseIdx + 1):(baseIdx + self % nG), :)
+    xFluxVec => self % scalarX((baseIdx + 1):(baseIdx + self % nG),:)
+    yFluxVec => self % scalarY((baseIdx + 1):(baseIdx + self % nG),:)
+    zFluxVec => self % scalarZ((baseIdx + 1):(baseIdx + self % nG),:)
 
-    ! ! Calculate fission source
-    ! fission = 0.0_defFlt
-    ! xFission = 0.0_defFlt
-    ! yFission = 0.0_defFlt
-    ! zFission = 0.0_defFlt
-    ! !$omp simd 
-    ! do gIn = 1, self % nG
-    !   fission = fission + real(fluxVec(gIn),defFlt) * nuFission(gIn)
-    !   xFission = xFission + xFluxVec(gIn,1) * nuFission(gIn)
-    !   yFission = yFission + yFluxVec(gIn,1) * nuFission(gIn)
-    !   zFission = zFission + zFluxVec(gIn,1) * nuFission(gIn)
-    ! end do
+    ! Calculate fission source
+    fission = 0.0_defFlt
+    xFission = 0.0_defFlt
+    yFission = 0.0_defFlt
+    zFission = 0.0_defFlt
+    !$omp simd 
+    do gIn = 1, self % nG
+      fission = fission + real(fluxVec(gIn),defFlt) * nuFission(gIn)
+      xFission = xFission + xFluxVec(gIn,1) * nuFission(gIn)
+      yFission = yFission + yFluxVec(gIn,1) * nuFission(gIn)
+      zFission = zFission + zFluxVec(gIn,1) * nuFission(gIn)
+    end do
 
-    ! do g = 1, self % nG
+    do g = 1, self % nG
 
-    !   scatterVec => scatterXS((self % nG * (g - 1) + 1):(self % nG * self % nG), :)
-    !   idx = baseIdx + g
+      scatterVec => scatterXS((self % nG * (g - 1) + 1):(self % nG * self % nG), :)
+      idx = baseIdx + g
 
-    !   ! Calculate scattering source for higher order scattering
-    !   do SH = 1, self % SHLength
+      ! Calculate scattering source for higher order scattering
+      do SH = 1, self % SHLength
 
-    !     SHidx = ceiling(sqrt(real(SH, defReal)) - 1) + 1
-    !     scatter = 0.0_defFlt
-    !     xScatter = 0.0_defFlt
-    !     yScatter = 0.0_defFlt
-    !     zScatter = 0.0_defFlt 
+        SHidx = ceiling(sqrt(real(SH, defReal)) - 1) + 1
+        scatter = 0.0_defFlt
+        xScatter = 0.0_defFlt
+        yScatter = 0.0_defFlt
+        zScatter = 0.0_defFlt 
 
-    !     ! Sum contributions from all energies
-    !     !$omp simd 
-    !     do gIn = 1, self % nG
-    !       scatter = scatter + real(fluxVec(gIn),defFlt) * scatterVec(gIn,SHidx)
-    !       xScatter = xScatter + xFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
-    !       yScatter = yScatter + yFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
-    !       zScatter = zScatter + zFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
-    !     end do
+        ! Sum contributions from all energies
+        !$omp simd 
+        do gIn = 1, self % nG
+          scatter = scatter + real(fluxVec(gIn),defFlt) * scatterVec(gIn,SHidx)
+          xScatter = xScatter + xFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
+          yScatter = yScatter + yFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
+          zScatter = zScatter + zFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
+        end do
 
-    !     ! Don't scale by 1/SigmaT - that occurs in the sourceUpdateKernel
-    !     self % fixedSource(idx,SH) = chi(g) * fission + scatter
-    !     !self % fixedSource(idx) = self % fixedSource(idx) !/ total(idx)
+        ! Don't scale by 1/SigmaT - that occurs in the sourceUpdateKernel
+        self % fixedSource(idx,SH) = chi(g) * fission + scatter
+        !self % fixedSource(idx) = self % fixedSource(idx) !/ total(idx)
 
-    !     xSource = chi(g) * xFission + xScatter
-    !     ySource = chi(g) * yFission + yScatter
-    !     zSource = chi(g) * zFission + zScatter
+        xSource = chi(g) * xFission + xScatter
+        ySource = chi(g) * yFission + yScatter
+        zSource = chi(g) * zFission + zScatter
 
-    !     self % fixedX(idx,SH) = xSource 
-    !     self % fixedY(idx,SH) = YSource 
-    !     self % fixedZ(idx,SH) = ZSource 
-    !   end do
+        self % fixedX(idx,SH) = xSource 
+        self % fixedY(idx,SH) = YSource 
+        self % fixedZ(idx,SH) = ZSource 
+      end do
 
     end do
 
   end subroutine firstCollidedSourceKernel
 
   !!
-  !! Sets prevFlux to scalarFlux and zero's scalarFlux
+  !! Sets prevMoments to scalarFlux and zero's scalarFlux
   !!
   subroutine resetFluxes(self)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     integer(shortInt)                                   :: idx, Sh
 
     do SH = 1, self % SHLength
@@ -2660,14 +2742,14 @@ contains
   !! Accumulate flux scores for stats
   !!
   subroutine accumulateFluxScores(self)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     real(defReal), save                                 :: flux
     integer(shortInt)                                   :: idx
     !$omp threadprivate(flux)
 
     !$omp parallel do schedule(static)
-    do idx = 1, size(self % scalarFlux)
-      flux = real(self % scalarFlux(idx),defReal)
+    do idx = 1, size(self % moments(:,1))
+      flux = real(self % moments(idx,1),defReal)
       self % fluxScores(idx,1) = self % fluxScores(idx, 1) + flux
       self % fluxScores(idx,2) = self % fluxScores(idx, 2) + flux*flux
     end do
@@ -2681,7 +2763,7 @@ contains
   !! Finalise flux scores for stats
   !!
   subroutine finaliseFluxScores(self,it)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     integer(shortInt), intent(in)                       :: it
     integer(shortInt)                                   :: idx
     real(defReal)                                       :: N1, Nm1
@@ -2694,7 +2776,7 @@ contains
     N1 = ONE/it
 
     !$omp parallel do schedule(static)
-    do idx = 1, size(self % scalarFlux)
+    do idx = 1, size(self % moments(:,1))
       self % fluxScores(idx,1) = self % fluxScores(idx, 1) * N1
       self % fluxScores(idx,2) = self % fluxScores(idx, 2) * N1
       self % fluxScores(idx,2) = Nm1 *(self % fluxScores(idx,2) - &
@@ -2721,7 +2803,7 @@ contains
   !!   None
   !!
   subroutine printResults(self)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     type(outputFile)                                    :: out
     character(nameLen)                                  :: name
     integer(shortInt)                                   :: g1, cIdx
@@ -2983,7 +3065,7 @@ contains
         !$omp parallel do schedule(static)
         do cIdx = 1, self % nCells
           idx = (cIdx - 1)* self % nG + g1
-          groupFlux(cIdx) = self % source(idx)
+          groupFlux(cIdx) = self % source(idx,1)
         end do
         !$omp end parallel do
         call self % viz % addVTKData(groupFlux,name)
@@ -3021,7 +3103,7 @@ contains
   !!   None
   !!
   subroutine printSettings(self)
-    class(LSUncollidedPackage), intent(in) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(in) :: self
 
     print *, repeat("<>", MAX_COL/2)
     print *, "/\/\ RANDOM RAY FIXED SOURCE CALCULATION /\/\"
@@ -3048,7 +3130,7 @@ contains
   !! Return to uninitialised state
   !!
   subroutine kill(self)
-    class(LSUncollidedPackage), intent(inout) :: self
+    class(LSPNFixedSourcePhysicsPackage), intent(inout) :: self
     integer(shortInt) :: i
 
     ! Clean Nuclear Data, Geometry and visualisation
@@ -3091,6 +3173,8 @@ contains
     self % inactive    = 0
     self % active      = 0
     self % rho         = ZERO
+    self % SHLength    = 1
+    self % SHOrder     = 0
     self % cache       = .false.
     self % plotResults = .false.
     self % printFlux   = .false.
@@ -3131,8 +3215,8 @@ contains
     if(allocated(self % centroid)) deallocate(self % centroid)
     if(allocated(self % centroidTracks)) deallocate(self % centroidTracks)
 
-    if(allocated(self % scalarFlux)) deallocate(self % scalarFlux)
-    if(allocated(self % prevFlux)) deallocate(self % prevFlux)
+    if(allocated(self % moments)) deallocate(self % moments)
+    if(allocated(self % prevMoments)) deallocate(self % prevMoments)
     if(allocated(self % fluxScores)) deallocate(self % fluxScores)
     if(allocated(self % source)) deallocate(self % source)
     if(allocated(self % fixedSource)) deallocate(self % fixedSource)
@@ -3157,4 +3241,4 @@ contains
 
   end subroutine kill
 
-end module LSUncollidedPackage_class
+end module LSPNFixedSourcePhysicsPackage_class

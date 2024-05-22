@@ -18,9 +18,9 @@ module physicsPackageFactory_func
   use randomRayPhysicsPackage_class,        only : randomRayPhysicsPackage
   use fixedSourceTRRMPhysicsPackage_class,  only : fixedSourceTRRMPhysicsPackage
   use fixedSourceCADISPhysicsPackage_class, only : fixedSourceCADISPhysicsPackage
-  use LSFixedPackage_class,                 only : LSFixedPackage
-  use LSUncollidedPackage_class,            only : LSUncollidedPackage
-  use anisoFixedPackage_class,              only : anisoFixedPackage
+  use LSPNFixedSourcePhysicsPackage_class,  only : LSPNFixedSourcePhysicsPackage
+  use LSFixedSourcePhysicsPackage_class,    only : LSFixedSourcePhysicsPackage
+  use PNFixedSourcePhysicsPackage_class,    only : PNFixedSourcePhysicsPackage
 !  use dynamPhysicsPackage_class, only : dynamPhysicsPackage
 
   implicit none
@@ -37,9 +37,9 @@ module physicsPackageFactory_func
                                                                              'randomRayPhysicsPackage       ',&
                                                                              'rayVolPhysicsPackage          ',&
                                                                              'fixedSourceTRRMPhysicsPackage ',&
-                                                                             'LSFixedPackage                ',&
-                                                                             'LSUncollidedPackage           ',&
-                                                                             'anisoFixedPackage             ',&
+                                                                             'PNFixedSourcePhysicsPackage   ',&
+                                                                             'LSFixedSourcePhysicsPackage   ',&
+                                                                             'LSPNFixedSourcePhysicsPackage ',&
                                                                              'fixedSourceCADISPhysicsPackage']
 
   !!
@@ -105,21 +105,20 @@ contains
         allocate( randomRayPhysicsPackage :: new)
         call new % init(dict)
 
-      case('LSFixedPackage')
+      case('LSPNFixedSourcePhysicsPackage')
         ! Allocate and initialise
-        allocate( LSFixedPackage :: new)
+        allocate( LSPNFixedSourcePhysicsPackage :: new)
         call new % init(dict)
 
-      case('LSUncollidedPackage')
+      case('LSFixedSourcePhysicsPackage')
         ! Allocate and initialise
-        allocate( LSUncollidedPackage :: new)
+        allocate( LSFixedSourcePhysicsPackage :: new)
         call new % init(dict)
       
-      case('anisoFixedPackage')
+      case('PNFixedSourcePhysicsPackage')
         ! Allocate and initialise
-        allocate( anisoFixedPackage :: new)
+        allocate( PNFixedSourcePhysicsPackage :: new)
         call new % init(dict)
-
 
       case('fixedSourceTRRMPhysicsPackage')
         ! Allocate and initialise
