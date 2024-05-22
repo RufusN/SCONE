@@ -29,9 +29,7 @@ geometry {
   graph {type extended;}
 
   surfaces {
-    !squareBound { id 1; type zSquareCylinder; origin (0.0 0.0 0.0); halfwidth (34.356 34.356 0.0);}
-    squareBound { id 1; type zSquareCylinder; origin (3.744 3.744 0.0); halfwidth (38.1 38.1 0.0);}
-    !squareBound { id 1; type zSquareCylinder; origin (0.0 0.0 0.0); halfwidth (38.1 38.1 0.0);}
+    Domain {id 1; type box; origin (3.744 3.744 0.0); halfwidth (38.1 38.1 38.1);}  
     tank { id 2; type zCylinder; origin (-34.356 -34.356 0.0); radius 76.2;}
   }
 
