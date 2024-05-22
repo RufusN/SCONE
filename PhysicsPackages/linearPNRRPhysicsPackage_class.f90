@@ -796,8 +796,8 @@ contains
     real(defReal)                                         :: totalLength, length, len2_12
     logical(defBool)                                      :: activeRay, hitVacuum, newray
     type(distCache)                                       :: cache
-    real(defFlt)                                          :: lenFlt, lenFlt2_2 !, maxtot
-    real(defFlt), dimension(self % nG)                    :: F1, F2, G1, G2, Gn, H, H2, tau, delta, fluxVec, &
+    real(defFlt)                                          :: lenFlt, lenFlt2_2, maxtot
+    real(defFlt), dimension(self % nG)                    :: F1, F2, G1, G2, Gn, H, tau, delta, fluxVec, &
                                                              flatQ, gradQ, xInc, yInc, zInc, fluxVec0, &
                                                              currentSource, currentXLS, &
                                                              currentYLS, currentZLS
@@ -857,17 +857,17 @@ contains
         length = self % dead - totalLength
       end if
 
-      ! maxtot = 0.0_defFlt
-      ! !$omp simd
-      ! do g = 1, self % nG
-      !   if (maxtot < totVec(g)) then
-      !     maxtot = totVec(g)
-      !   end if
-      ! end do
+      maxtot = 0.0_defFlt
+      !$omp simd
+      do g = 1, self % nG
+        if (maxtot < totVec(g)) then
+          maxtot = totVec(g)
+        end if
+      end do
 
-      ! if ((30.0_defFlt/maxtot) < length) then
-      !   length = real(30.0_defFlt/maxtot)
-      ! end if
+      if ((30.0_defFlt/maxtot) < length) then
+        length = real(30.0_defFlt/maxtot)
+      end if
 
       ! Move ray
       if (self % cache) then
@@ -905,7 +905,7 @@ contains
         ! Compute the entry point in local co-ordinates
         r0Norm = r0 - mid(1:nDim)
       else
-        rNorm = 0
+        rNorm = ZERO
         r0Norm = - mu0 * HALF * length
       end if 
 
@@ -942,7 +942,6 @@ contains
       end do
 
       ! Calculate linear source terms
-      !aligned(xGradVec, yGradVec, zGradVec)
       !$omp simd 
       do g = 1, self % nG
         flatQ(g) = rNormFlt(x) * currentXLS(g)
@@ -1299,7 +1298,7 @@ contains
     - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
     + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-    if ((abs(det) > 1E-10) .and. self % volume(cIdx) > 1E-6 ) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
+    if ((abs(det) > 1E-10) .and. self % volume(cIdx) > 1E-6) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
       one_det = ONE/det
       invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
       invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
@@ -1364,7 +1363,7 @@ contains
         yScatter = 0.0_defFlt
         zScatter = 0.0_defFlt 
 
-        !$omp simd reduction(+:xScatter, yScatter, zScatter) aligned(xFluxVec, yFluxVec, zFluxVec, scatterVec)
+        !$omp simd reduction(+:xScatter, yScatter, zScatter) aligned(angularMomVec, xFluxVec, yFluxVec, zFluxVec, scatterVec)
         do gIn = 1, self % nG
           scatter = scatter + angularMomVec(gIn, SH) * scatterVec(gIn, SHidx)
           xScatter = xScatter + xFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
