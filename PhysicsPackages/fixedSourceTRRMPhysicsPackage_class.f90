@@ -2115,15 +2115,12 @@ contains
     real(defReal)                                       :: res, std, totalVol, response
     integer(shortInt),dimension(:),allocatable          :: resArrayShape
     real(defReal), dimension(:), allocatable            :: groupFlux, flxOut, flxOutSTD
-    integer(longInt)                                    :: seed
     !$omp threadprivate(idx, matIdx, i, vol, s, g, pointRay)
 
     call out % init(self % outputFormat)
-    
-    seed = self % rand % getSeed()
-    
+
     name = 'seed'
-    call out % printValue(seed,name)
+    call out % printValue(self % rand % getSeed(),name)
 
     name = 'pop'
     call out % printValue(self % pop,name)
