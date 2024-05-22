@@ -1533,11 +1533,10 @@ contains
       end if 
 
       if (doVolume) then
+        centIdx = nDim * (cIdx - 1)
+        rC = rC * length
         centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
         volTrack => self % volumeTracks(cIdx)
-
-        rC = rC * length
-
         ! Update centroid
         call OMP_set_lock(self % locks(cIdx))
 
@@ -2150,6 +2149,7 @@ contains
         self % centroid(dIdx + x) =  ZERO
         self % centroid(dIdx + y) =  ZERO
         self % centroid(dIdx + z) =  ZERO
+
       end if  
 
       ! Presume that volumes are known otherwise this may go badly!
@@ -2475,12 +2475,10 @@ contains
     real(defFlt)                                          :: scatter, xScatter, yScatter, zScatter, &
                                                              fission, xFission, yFission, zFission, &
                                                              xSource, ySource, zSource
-    real(defFlt)                                          :: invMxx, invMxy, invMxz, invMyy, invMyz, invMzz
     real(defFlt), dimension(:), pointer                   :: nuFission, total, chi, scatterXS 
     integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, id
     real(defFlt), pointer, dimension(:)                   :: scatterVec, xFluxVec, yFluxVec, zFluxVec
-    real(defReal), pointer, dimension(:)                  :: momVec,fluxVec
-    real(defReal)                                         :: det, one_det 
+    real(defReal), pointer, dimension(:)                  :: fluxVec
 
     ! Identify material
     matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
@@ -2648,15 +2646,12 @@ contains
     real(defReal)                                       :: res, std, totalVol, response
     integer(shortInt),dimension(:),allocatable          :: resArrayShape
     real(defReal), dimension(:), allocatable            :: groupFlux, flxOut, flxOutSTD
-    integer(longInt)                                    :: seed
     !$omp threadprivate(idx, matIdx, i, vol, s, g, pointRay)
 
     call out % init(self % outputFormat)
-        
-    seed = self % rand % getSeed()
 
     name = 'seed'
-    call out % printValue(seed,name)
+    call out % printValue(self % rand % getSeed(),name)
 
     name = 'pop'
     call out % printValue(self % pop,name)
