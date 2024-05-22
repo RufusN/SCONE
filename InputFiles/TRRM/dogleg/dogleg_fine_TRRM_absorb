@@ -1,5 +1,5 @@
 //type fixedSourceTRRMPhysicsPackage; 
-type LSFixedPackage;
+type LSFixedSourcePhysicsPackage;
 
 // Currently no recommended settings for fixed source problems
 // but hopefully this will be updated in future!
