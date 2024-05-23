@@ -1,4 +1,4 @@
-module randomRayPhysicsPackage_class !currently forward/backward
+module adjointTRRMPhysicsPackage_class !currently forward/backward
 
   use numPrecision
   use universalVariables
@@ -78,7 +78,7 @@ module randomRayPhysicsPackage_class !currently forward/backward
   !!
   !! Sample Input Dictionary:
   !!   PP {
-  !!     type randomRayPhysicsPackage;
+  !!     type adjointTRRMPhysicsPackage;
   !!     dead 10;              // Dead length where rays do not score to scalar fluxes
   !!     termination 100;      // Length a ray travels before it is terminated
   !!     rays 1000;            // Number of rays to sample per iteration
@@ -149,7 +149,7 @@ module randomRayPhysicsPackage_class !currently forward/backward
   !! Interface:
   !!   physicsPackage interface
   !!
-  type, public, extends(physicsPackage) :: randomRayPhysicsPackage
+  type, public, extends(physicsPackage) :: adjointTRRMPhysicsPackage
     private
     ! Components
     class(geometryStd), pointer           :: geom
@@ -241,7 +241,7 @@ module randomRayPhysicsPackage_class !currently forward/backward
     procedure, private :: printResults
     procedure, private :: printSettings
 
-  end type randomRayPhysicsPackage
+  end type adjointTRRMPhysicsPackage
 
 contains
 
@@ -251,7 +251,7 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine init(self,dict)
-    class(randomRayPhysicsPackage), intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
     class(dictionary), intent(inout)              :: dict
     integer(shortInt)                             :: seed_temp, i, g, g1, m
     integer(longInt)                              :: seed
@@ -265,7 +265,7 @@ contains
     type(outputFile)                              :: test_out
     class(baseMgNeutronMaterial), pointer         :: mat
     class(materialHandle), pointer                :: matPtr
-    character(100), parameter :: Here = 'init (randomRayPhysicsPackage_class.f90)'
+    character(100), parameter :: Here = 'init (adjointTRRMPhysicsPackage_class.f90)'
 
     call cpu_time(self % CPU_time_start)
     
@@ -494,7 +494,7 @@ contains
   !! See physicsPackage_inter for details
   !!
   subroutine run(self)
-    class(randomRayPhysicsPackage), intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
 
     call self % printSettings()
     call self % cycles()
@@ -515,7 +515,7 @@ contains
   !! given criteria or when a fixed number of iterations has been passed.
   !!
   subroutine cycles(self)
-    class(randomRayPhysicsPackage), intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
     type(ray), save                               :: r
     type(RNG), target, save                       :: pRNG
     real(defFlt)                                  :: hitRate, ONE_KEFF
@@ -666,12 +666,12 @@ contains
   !! and performs the build operation
   !!
   subroutine initialiseRay(self, r)
-    class(randomRayPhysicsPackage), intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
     type(ray), intent(inout)                      :: r
     real(defReal)                                 :: mu, phi
     real(defReal), dimension(3)                   :: u, rand3, x
     integer(shortInt)                             :: i, matIdx, cIdx
-    character(100), parameter :: Here = 'initialiseRay (randomRayPhysicsPackage_class.f90)'
+    character(100), parameter :: Here = 'initialiseRay (adjointTRRMPhysicsPackage_class.f90)'
 
     i = 0
     mu = TWO * r % pRNG % get() - ONE
@@ -713,7 +713,7 @@ contains
   !! Records the number of integrations/ray movements.
   !!
   subroutine transportSweep(self, r, ints)
-    class(randomRayPhysicsPackage), target, intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), target, intent(inout) :: self
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
@@ -726,6 +726,8 @@ contains
     real(defFlt), allocatable, dimension(:)               :: attBack, attBackBuffer, cIdxBack, cIdxBackBuffer
     logical(defBool), allocatable, dimension(:)           :: vacBack, vacBackBuffer 
     real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec
+    real(defFlt), allocatable, dimension(:)               :: fluxRecord, fluxRecordBuffer 
+    real(defFlt), allocatable, dimension(:)               :: adjointRecord
     real(defReal), dimension(3)                           :: r0, mu0
         
     ! Set initial angular flux to angle average of cell source
@@ -743,8 +745,10 @@ contains
     tally = .true.
 
     allocate(attBack(self % nG * 50)) !could add some kind of termination  / average cell length to get an approx length
+    allocate(fluxRecord(self % nG * 50))
     allocate(cIdxBack(50))
     allocate(vacBack(50))
+
 
     do while (totalLength < self % termination + self % dead)
 
@@ -822,6 +826,13 @@ contains
         fluxVec(g) = fluxVec(g) - delta(g)
       end do
 
+      if (.not. activateRay .and. totalLength >= self % dead) then
+        !record flux for first active incoming
+        do g = 1, self % nG
+          fluxRecord(g) = fluxVec(g) 
+        end do
+      end if
+
       ! Accumulate to scalar flux
       if (activeRay) then
         
@@ -844,11 +855,16 @@ contains
           allocate(vacBackBuffer(size(vacBack) * 2))   !check vacuum
           vacBackBuffer(1:size(vacBack)) = vacBack
           call move_alloc(vacBackBuffer, vacBack)
+
+          allocate(fluxRecordBuffer(size(fluxRecord) * 2))   !check vacuum
+          fluxRecordBuffer(1:size(fluxRecord)) = fluxRecord
+          call move_alloc(fluxRecordBuffer, fluxRecord)
         end if
         
         !$omp simd
         do g = 1, self % nG
           attBack((segCount - 1) * self % nG + g) = attenuate(g)
+          fluxRecord((segCount) * self % nG + g) = fluxVec(g)
         end do
 
         cIdxBack(segCount) = cIdx
@@ -884,8 +900,10 @@ contains
       fluxVec(g) = self % adjSource(idx)
     end do
 
+    ! allocate adjoint flux storage
+    allocate(adjointRecord(size(fluxRecord)))
 
-    !could trim arrays, (attback...)
+    !could trim arrays here, (attback...)
 
     !iterate over segments
     do i = segCount, 1, -1
@@ -904,11 +922,20 @@ contains
         fluxVec(g) = fluxVec(g) + delta(g)
       end do
 
-      scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
+      if ( segCount + 1 == segCountCrit ) then
+        !record flux for first active incoming
+        do g = 1, self % nG
+          adjointRecord(g) = fluxVec(g) 
+        end do
+      end if
     
       if (segCount <= segCountCrit) then
+        scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
 
-        !this would be record adjAF for inner product or tally adj flux 
+        !$omp simd
+        do g = 1, self % nG
+          adjointRecord((segCount) * self % nG + g) = fluxVec(g)
+        end do
 
         call OMP_set_lock(self % locks(cIdx))
         !$omp simd aligned(scalarVec)
@@ -927,6 +954,8 @@ contains
       end if
 
      end do
+
+     !use records to computer inner product etc - seperate subroutine? 
      
   end subroutine transportSweep
 
@@ -935,7 +964,7 @@ contains
   !! the flux by the neutron source
   !!
   subroutine normaliseFluxAndVolume(self, it)
-    class(randomRayPhysicsPackage), intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
     integer(shortInt), intent(in)                 :: it
     real(defFlt)                                  :: norm
     real(defReal)                                 :: normVol
@@ -988,7 +1017,7 @@ contains
   end subroutine normaliseFluxAndVolume
 
   subroutine adjointNormaliseFluxAndVolume(self, it)
-    class(randomRayPhysicsPackage), intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
     integer(shortInt), intent(in)                 :: it
     real(defFlt)                                  :: norm
     real(defReal)                                 :: normVol
@@ -1046,7 +1075,7 @@ contains
   !! Kernel to update sources given a cell index
   !!
   subroutine sourceUpdateKernel(self, cIdx, ONE_KEFF)
-    class(randomRayPhysicsPackage), target, intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
     real(defFlt), intent(in)                              :: ONE_KEFF
     real(defFlt)                                          :: scatter, fission
@@ -1109,7 +1138,7 @@ contains
   end subroutine sourceUpdateKernel
 
   subroutine adjointSourceUpdateKernel(self, cIdx, ONE_KEFF)
-    class(randomRayPhysicsPackage), target, intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
     real(defFlt), intent(in)                              :: ONE_KEFF
     real(defFlt)                                          :: scatter, fission
@@ -1175,7 +1204,7 @@ contains
   !! Calculate keff
   !!
   subroutine calculateKeff(self)
-    class(randomRayPhysicsPackage), intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
     real(defFlt)                                  :: fissionRate, prevFissionRate
     real(defFlt), save                            :: fissLocal, prevFissLocal, vol
     integer(shortInt), save                       :: matIdx, g, idx, mIdx
@@ -1228,7 +1257,7 @@ contains
   !! Sets prevFlux to scalarFlux and zero's scalarFlux
   !!
   subroutine resetFluxes(self)
-    class(randomRayPhysicsPackage), intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
     integer(shortInt)                             :: idx
 
     !$omp parallel do schedule(static)
@@ -1246,7 +1275,7 @@ contains
   !! Accumulate flux scores for stats
   !!
   subroutine accumulateFluxAndKeffScores(self)
-    class(randomRayPhysicsPackage), intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
     real(defReal), save                            :: flux
     integer(shortInt)                              :: idx
     !$omp threadprivate(flux)
@@ -1268,7 +1297,7 @@ contains
   !! Finalise flux scores for stats
   !!
   subroutine finaliseFluxAndKeffScores(self,it)
-    class(randomRayPhysicsPackage), intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
     integer(shortInt), intent(in)                 :: it
     integer(shortInt)                             :: idx
     real(defReal)                                 :: N1, Nm1
@@ -1308,7 +1337,7 @@ contains
   !!   None
   !!
   subroutine printResults(self)
-    class(randomRayPhysicsPackage), intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
     type(outputFile)                              :: out
     character(nameLen)                            :: name
     integer(shortInt)                             :: cIdx, g1
@@ -1548,7 +1577,7 @@ contains
   !!   None
   !!
   subroutine printSettings(self)
-    class(randomRayPhysicsPackage), intent(in) :: self
+    class(adjointTRRMPhysicsPackage), intent(in) :: self
 
     print *, repeat("<>", MAX_COL/2)
     print *, "/\/\ RANDOM RAY EIGENVALUE CALCULATION /\/\"
@@ -1573,7 +1602,7 @@ contains
   !! Return to uninitialised state
   !!
   subroutine kill(self)
-    class(randomRayPhysicsPackage), intent(inout) :: self
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
     integer(shortInt) :: i
 
     ! Clean Nuclear Data, Geometry and visualisation
@@ -1648,4 +1677,4 @@ contains
 
   end subroutine kill
 
-end module randomRayPhysicsPackage_class
+end module adjointTRRMPhysicsPackage_class
