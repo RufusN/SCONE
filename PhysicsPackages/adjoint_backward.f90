@@ -198,6 +198,8 @@ module randomRayPhysicsPackage_class !currently forward/backward
     real(defReal), dimension(2)                :: keffScore
     real(defFlt), dimension(:), allocatable    :: scalarFlux
     real(defFlt), dimension(:), allocatable    :: prevFlux
+    real(defFlt), dimension(:), allocatable    :: adjScalarFlux
+    real(defFlt), dimension(:), allocatable    :: adjPrevFlux
     real(defReal), dimension(:,:), allocatable :: fluxScores
     real(defFlt), dimension(:), allocatable    :: source
     real(defFlt), dimension(:), allocatable    :: adjSource
@@ -465,6 +467,25 @@ contains
         end do
       end do
     end do
+
+    allocate(self % adjSigmaT(self % nMat * self % nG))
+    allocate(self % adjNuSigmaF(self % nMat * self % nG))
+    allocate(self % adjChi(self % nMat * self % nG))
+    allocate(self % adjSigmaS(self % nMat * self % nG * self % nG))
+
+    ! Adjoint fission source
+    self % adjNuSigmaF = self % chi
+    self % adjChi      = self % nuSigmaF
+
+    do m = 1, self % nMat
+      do g = 1, self % nG
+        do g1 = 1, self % nG
+          self % adjSigmaS(self % nG * self % nG * (m - 1) + self % nG * (g1 - 1) + g)  = &
+                  self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1)
+        end do
+      end do
+    end do
+
   end subroutine init
 
   !!
@@ -812,7 +833,7 @@ contains
         end if
  
         if (segCount > size(cIdxBack) - 1) then
-          allocate(attBackBuffer(size(attBack) * 2)) !record expoentials 
+          allocate(attBackBuffer(size(attBack) * 2))   !record expoentials 
           attBackBuffer(1:size(attBack)) = attBack
           call move_alloc(attBackBuffer, attBack)
 
@@ -857,10 +878,10 @@ contains
       end if 
     end do
 
-    !flux for new deadlength
+    !flux for new adjoint deadlength
     do g = 1, self % nG
       idx = (cIdx - 1) * self % nG + g
-      fluxVec(g) = self % source(idx)
+      fluxVec(g) = self % adjSource(idx)
     end do
 
 
@@ -871,7 +892,7 @@ contains
 
       cIdx = cIdxBack(i)
       baseIdx = (cIdx - 1) * self % nG
-      sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
+      sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
 
       !$omp simd
       do g = 1, self % nG
@@ -883,7 +904,7 @@ contains
         fluxVec(g) = fluxVec(g) + delta(g)
       end do
 
-      scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
+      scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
     
       if (segCount <= segCountCrit) then
 
@@ -965,6 +986,61 @@ contains
     !$omp end parallel do
 
   end subroutine normaliseFluxAndVolume
+
+  subroutine adjointNormaliseFluxAndVolume(self, it)
+    class(randomRayPhysicsPackage), intent(inout) :: self
+    integer(shortInt), intent(in)                 :: it
+    real(defFlt)                                  :: norm
+    real(defReal)                                 :: normVol
+    real(defFlt), save                            :: total, vol ! sigGG, D
+    integer(shortInt), save                       :: g, matIdx, idx
+    integer(shortInt)                             :: cIdx
+    !$omp threadprivate(total, vol, idx, g, matIdx)
+
+    norm = real(ONE / self % lengthPerIt, defFlt)
+    normVol = ONE / (self % lengthPerIt * it)
+
+    !$omp parallel do schedule(static)
+    do cIdx = 1, self % nCells
+      matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
+      
+      ! Update volume due to additional rays
+      self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
+      vol = real(self % volume(cIdx),defFlt)
+
+      do g = 1, self % nG
+
+        total = self % sigmaT((matIdx - 1) * self % nG + g)
+        idx   = self % nG * (cIdx - 1) + g
+
+        if (vol > volume_tolerance) then
+          self % adjScalarFlux(idx) = self % adjScalarFlux(idx) * norm / ( total * vol)
+        end if
+
+        self % adjScalarFlux(idx) = self % adjScalarFlux(idx) + self % adjSource(idx)
+        
+        ! ! Apply stabilisation for negative XSs
+        ! if (matIdx < VOID_MAT) then
+        !   sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
+
+        !   ! Presumes non-zero total XS
+        !   if ((sigGG < 0) .and. (total > 0)) then
+        !     D = -real(self % rho, defFlt) * sigGG / total
+        !   else
+        !     D = 0.0_defFlt
+        !   end if
+        ! else
+        !   D = 0.0_defFlt
+        ! end if
+
+        ! self % scalarFlux(idx) =  (self % scalarflux(idx) + self % source(idx) + D * self % prevFlux(idx) ) / (1 + D)
+
+      end do
+
+    end do
+    !$omp end parallel do
+
+  end subroutine adjointNormaliseFluxAndVolume
   
   !!
   !! Kernel to update sources given a cell index
@@ -1027,6 +1103,69 @@ contains
 
       self % source(idx) = chi(g) * fission + scatter
       self % source(idx) = self % source(idx) / total(g)
+
+    end do
+
+  end subroutine sourceUpdateKernel
+
+  subroutine adjointSourceUpdateKernel(self, cIdx, ONE_KEFF)
+    class(randomRayPhysicsPackage), target, intent(inout) :: self
+    integer(shortInt), intent(in)                         :: cIdx
+    real(defFlt), intent(in)                              :: ONE_KEFF
+    real(defFlt)                                          :: scatter, fission
+    real(defFlt), dimension(:), pointer                   :: nuFission, total, chi, scatterXS 
+    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx
+    real(defFlt), pointer, dimension(:)                   :: fluxVec, scatterVec
+
+    ! Identify material
+    matIdx  =  self % geom % geom % graph % getMatFromUID(cIdx) 
+    
+    ! Guard against void cells
+    if (matIdx >= VOID_MAT) then
+      baseIdx = self % ng * (cIdx - 1)
+      do g = 1, self % nG
+        idx = baseIdx + g
+        self % adjSource(idx) = 0.0_defFlt
+      end do
+      return
+    end if
+
+    ! Obtain XSs
+    matIdx = (matIdx - 1) * self % nG
+    total => self % adjSigmaT((matIdx + 1):(matIdx + self % nG))
+    scatterXS => self % adjSigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
+    nuFission => self % adjNuSigmaF((matIdx + 1):(matIdx + self % nG))
+    chi => self % adjChi((matIdx + 1):(matIdx + self % nG))
+
+    baseIdx = self % ng * (cIdx - 1)
+    fluxVec => self % adjPrevFlux((baseIdx+1):(baseIdx + self % nG))
+
+    ! Calculate fission source
+    fission = 0.0_defFlt
+    !$omp simd reduction(+:fission) aligned(fluxVec)
+    do gIn = 1, self % nG
+      fission = fission + fluxVec(gIn) * nuFission(gIn)
+    end do
+    fission = fission * ONE_KEFF
+
+    do g = 1, self % nG
+
+      scatterVec => scatterXS((self % nG * (g - 1) + 1):(self % nG * self % nG))
+
+      ! Calculate scattering source
+      scatter = 0.0_defFlt
+
+      ! Sum contributions from all energies
+      !$omp simd reduction(+:scatter) aligned(fluxVec)
+      do gIn = 1, self % nG
+        scatter = scatter + fluxVec(gIn) * scatterVec(gIn)
+      end do
+
+      ! Output index
+      idx = baseIdx + g
+
+      self % adjSource(idx) = chi(g) * fission + scatter
+      self % adjSource(idx) = self % adjSource(idx) / total(g)
 
     end do
 
@@ -1096,6 +1235,8 @@ contains
     do idx = 1, size(self % scalarFlux)
       self % prevFlux(idx) = self % scalarFlux(idx)
       self % scalarFlux(idx) = 0.0_defFlt
+      self % adjPrevFlux(idx) = self % adjScalarFlux(idx)
+      self % adjScalarFlux(idx) = 0.0_defFlt
     end do
     !$omp end parallel do
 
@@ -1460,8 +1601,13 @@ contains
     self % nMat      = 0
     if(allocated(self % sigmaT)) deallocate(self % sigmaT)
     if(allocated(self % sigmaS)) deallocate(self % sigmaS)
-    if(allocated(self % nusigmaF)) deallocate(self % nuSigmaF)
+    if(allocated(self % nuSigmaF)) deallocate(self % nuSigmaF)
     if(allocated(self % chi)) deallocate(self % chi)
+
+    if(allocated(self % adjSigmaT)) deallocate(self % adjSigmaT)
+    if(allocated(self % adjSigmaS)) deallocate(self % adjSigmaS)
+    if(allocated(self % adjNuSigmaF)) deallocate(self % adjNuSigmaF)
+    if(allocated(self % adjChi)) deallocate(self % adjChi)
 
     self % termination = ZERO
     self % dead        = ZERO
@@ -1483,6 +1629,11 @@ contains
     if(allocated(self % prevFlux)) deallocate(self % prevFlux)
     if(allocated(self % fluxScores)) deallocate(self % fluxScores)
     if(allocated(self % source)) deallocate(self % source)
+
+    if(allocated(self % scalarFlux)) deallocate(self % adjScalarFlux)
+    if(allocated(self % prevFlux)) deallocate(self % adjPrevFlux)
+    if(allocated(self % source)) deallocate(self % adjSource)
+
     if(allocated(self % volume)) deallocate(self % volume)
     if(allocated(self % volumeTracks)) deallocate(self % volumeTracks)
     if(allocated(self % cellHit)) deallocate(self % cellHit)
