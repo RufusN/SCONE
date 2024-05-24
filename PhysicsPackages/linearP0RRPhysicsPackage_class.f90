@@ -751,7 +751,7 @@ contains
     class(linearP0RRPhysicsPackage), intent(inout) :: self
     type(ray), intent(inout)                      :: r
     real(defReal)                                 :: mu, phi
-    real(defReal), dimension(3)                   :: u, rand3, x
+    real(defReal), dimension(3)                   :: u, rand3, xPoint
     integer(shortInt)                             :: i, matIdx, cIdx
     character(100), parameter :: Here = 'initialiseRay (linearP0RRPhysicsPackage_class.f90)'
 
@@ -764,10 +764,10 @@ contains
       rand3(1) = r % pRNG % get()
       rand3(2) = r % pRNG % get()
       rand3(3) = r % pRNG % get()
-      x = self % bottom + (self % top - self % bottom) * rand3
+      xPoint = self % bottom + (self % top - self % bottom) * rand3
 
       ! Exit if point is inside the geometry
-      call self % geom % whatIsAt(matIdx, cIdx, x, u)
+      call self % geom % whatIsAt(matIdx, cIdx, xPoint, u)
       if (matIdx /= OUTSIDE_MAT) exit rejection
 
       i = i + 1
@@ -777,13 +777,13 @@ contains
     end do rejection
 
     ! Place in the geometry & process the ray
-    call r % build(x, u, 1, ONE)
+    call r % build(xPoint, u, 1, ONE)
     call self % geom % placeCoord(r % coords)
 
     if (.not. self % cellFound(cIdx)) then
       !$omp critical 
       self % cellFound(cIdx) = .true.
-      self % cellPos(cIdx,:) = x
+      self % cellPos(cIdx,:) = xPoint
       !$omp end critical
     end if
 
@@ -803,7 +803,7 @@ contains
     real(defReal)                                         :: totalLength, length, len2_12
     logical(defBool)                                      :: activeRay, hitVacuum, newRay
     type(distCache)                                       :: cache
-    real(defFlt)                                          :: lenFlt, lenFlt2_2, maxtot, lenFlt_2 
+    real(defFlt)                                          :: lenFlt, lenFlt2_2, lenFlt_2 ! maxtot,
     real(defFlt), dimension(self % nG)                    :: F1, F2, G2, Gn, H, G1, tau, delta, fluxVec, &
                                                              flatQ, gradQ, xInc, yInc, zInc, &
                                                              fluxVec0, currentSource
