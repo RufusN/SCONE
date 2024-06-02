@@ -778,7 +778,7 @@ contains
     allocate(self % sigmaT(self % nMatVOID * self % nG))
     allocate(self % nuSigmaF(self % nMatVOID * self % nG))
     allocate(self % chi(self % nMatVOID * self % nG))
-    allocate(self % sigmaS(self % nMatVOID * self % nG * self % nG, self % SHOrder))
+    allocate(self % sigmaS(self % nMatVOID * self % nG * self % nG, self % SHOrder + 1))
 
     do m = 1, self % nMat
         matPtr  => self % mgData % getMaterial(m)
@@ -1920,10 +1920,8 @@ contains
 
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
-
         ! Cache total cross section
         totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
-
       end if
 
       !can remove one set
@@ -2140,7 +2138,7 @@ contains
               !$omp simd 
               do g = 1, self % nG
                 do SH = 1, self % SHLength
-                    angularMomVec(g, SH) = angularMomVec(g, SH) + delta(g) * RCoeffs(SH) 
+                    angularMomVec(g,SH) = angularMomVec(g,SH) + delta(g) * RCoeffs(SH) 
                     xMomVec(g,SH) = xMomVec(g,SH) + xInc(g) * RCoeffs(SH)
                     yMomVec(g,SH) = yMomVec(g,SH) + yInc(g) * RCoeffs(SH) 
                     zMomVec(g,Sh) = zMomVec(g,SH) + zInc(g) * RCoeffs(SH) 
@@ -2343,31 +2341,28 @@ contains
         matIdx = self % nMatVOID
       end if 
 
-      norm = real(ONE / lengthPerIt, defFlt)
-      normVol = ONE / ( lengthPerIt * it)
-
       !!!Volume correction not currently working with LS> 
   
       ! Update volume due to additional rays unless volume was precomputed
       !if (self % nVolRays <= 0) then
       ! Forget the above - use precomputed volumes only for first collided
 
-      ! if (self % itVol) then
-      !   ! Iteration wise approach
-      !   self % volume(cIdx) = self % volumeTracks(cIdx) * norm
-      !   self % volumeTracks(cIdx) = ZERO
-      ! else if (self % volCorr) then
-      !   ! Correct the cell volume
-      !   corr = self % volumeTracks(cIdx) * norm
-      !   self % volume(cIdx) = self % volume(cIdx) * self % lengthPerIt * (it - 1) + self % volumeTracks(cIdx)
-      !   self % volume(cIdx) = self % volume(cIdx) * normVol
-      !   corr = corr / self % volume(cIdx)
-      !   self % volumeTracks(cIdx) = ZERO
-      !   if (corr /= corr) corr = ONE
-      ! else
-      !   ! Standard volume approach
+      if (self % itVol) then
+        ! Iteration wise approach
+        self % volume(cIdx) = self % volumeTracks(cIdx) * norm
+        self % volumeTracks(cIdx) = ZERO
+      else if (self % volCorr) then
+        ! Correct the cell volume
+        corr = self % volumeTracks(cIdx) * norm
+        self % volume(cIdx) = self % volume(cIdx) * self % lengthPerIt * (it - 1) + self % volumeTracks(cIdx)
+        self % volume(cIdx) = self % volume(cIdx) * normVol
+        corr = corr / self % volume(cIdx)
+        self % volumeTracks(cIdx) = ZERO
+        if (corr /= corr) corr = ONE
+      else
+        ! Standard volume approach
         self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
-      ! end if
+      end if
 
       vol = self % volume(cIdx)
       dIdx = (cIdx - 1) * nDim
@@ -2424,33 +2419,33 @@ contains
             self % moments(idx,SH) =  (self % moments(idx,SH) + self % source(idx,SH)) 
           end do
 
-      else
-
-        total = self % sigmaT((matIdx - 1) * self % nG + g)
-        sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g, 1)
-    
-        ! Presumes non-zero total XS
-        if ((sigGG < 0) .and. (total > 0)) then
-          D = -real(self % rho, defFlt) * sigGG / total
         else
-          D = 0.0_defFlt
-        end if
-        
-        if (vol > volume_tolerance) then
-          self % moments(idx,1) = self % moments(idx,1) * norm / (real(vol,defFlt) ) 
-          self % scalarX(idx,1) = self % scalarX(idx,1) * norm / (real(vol,defFlt) )
-          self % scalarY(idx,1) = self % scalarY(idx,1) * norm / (real(vol,defFlt) )
-          self % scalarZ(idx,1) = self % scalarZ(idx,1) * norm / (real(vol,defFlt) )
-        else
-          corr = ONE
-        end if
 
-        self % moments(idx,1) =  real((self % moments(idx,1) + self % source(idx,1) &
-                                                  + D * self % prevMoments(idx,1) ) / (1 + D), defFlt)
-        self % scalarX(idx,1) =  (self % scalarX(idx,1) + D * self % prevX(idx,1) ) / (1 + D)
-        self % scalarY(idx,1) =  (self % scalarY(idx,1) + D * self % prevY(idx,1) ) / (1 + D)
-        self % scalarZ(idx,1) =  (self % scalarZ(idx,1) + D * self % prevZ(idx,1) ) / (1 + D)
-      end if
+          total = self % sigmaT((matIdx - 1) * self % nG + g)
+          sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g, 1)
+      
+          ! Presumes non-zero total XS
+          if ((sigGG < 0) .and. (total > 0)) then
+            D = -real(self % rho, defFlt) * sigGG / total
+          else
+            D = 0.0_defFlt
+          end if
+          
+          if (vol > volume_tolerance) then
+            self % moments(idx,1) = self % moments(idx,1) * norm / (real(vol,defFlt) ) 
+            self % scalarX(idx,1) = self % scalarX(idx,1) * norm / (real(vol,defFlt) )
+            self % scalarY(idx,1) = self % scalarY(idx,1) * norm / (real(vol,defFlt) )
+            self % scalarZ(idx,1) = self % scalarZ(idx,1) * norm / (real(vol,defFlt) )
+          else
+            corr = ONE
+          end if
+
+          self % moments(idx,1) =  real((self % moments(idx,1) + self % source(idx,1) &
+                                                    + D * self % prevMoments(idx,1) ) / (1 + D), defFlt)
+          self % scalarX(idx,1) =  (self % scalarX(idx,1) + D * self % prevX(idx,1) ) / (1 + D)
+          self % scalarY(idx,1) =  (self % scalarY(idx,1) + D * self % prevY(idx,1) ) / (1 + D)
+          self % scalarZ(idx,1) =  (self % scalarZ(idx,1) + D * self % prevZ(idx,1) ) / (1 + D)
+        end if
        
         ! ! Apply volume correction only to negative flux cells
         ! if (self % volCorr .and. self % passive) then
@@ -2560,8 +2555,8 @@ contains
     xFission = 0.0_defFlt
     yFission = 0.0_defFlt
     zFission = 0.0_defFlt
-
-    !$omp simd reduction(+:fission, xFission, yFission, zFission) aligned(angularMomVec, xFluxVec, yFluxVec, zFluxVec, nuFission)
+!reduction(+:fission, xFission, yFission, zFission) aligned(angularMomVec, xFluxVec, yFluxVec, zFluxVec, nuFission)
+    !$omp simd
     do gIn = 1, self % nG
       fission = fission + angularMomVec(gIn,1) * nuFission(gIn)
       xFission = xFission + xFluxVec(gIn,1) * nuFission(gIn)
@@ -2592,10 +2587,10 @@ contains
           zScatter = zScatter + zFluxVec(gIn,SH) * scatterVec(gIn,SHidx)
         end do
 
-        self % source(idx,SH) = scatter / total(g)
-        xSource(SH) = xScatter / total(g) 
-        ySource(SH) = yScatter / total(g) 
-        zSource(SH) = zScatter / total(g)
+        self % source(idx,SH) = (scatter + self % fixedSource(idx,SH))/ total(g) !need to adjust for uncollided FS
+        xSource(SH) = (xScatter)/ total(g) 
+        ySource(SH) = (yScatter)/ total(g) 
+        zSource(SH) = (zScatter)/ total(g)
 
       end do
 
@@ -2604,13 +2599,11 @@ contains
 
       if (it > 29) then
  
-
         xSource(1) = xSource(1) + (chi(g) * xFission) / total(g) 
         ySource(1) = ySource(1) + (chi(g) * yFission) / total(g) 
         zSource(1) = zSource(1) + (chi(g) * zFission) / total(g) 
-      
           
-          ! Calculate source gradients by inverting the moment matrix
+        ! Calculate source gradients by inverting the moment matrix
         do SH = 1, self % SHLength
           self % sourceX(idx,SH) = invMxx * xSource(SH) + &
                   invMxy * ySource(SH) + invMxz * zSource(SH)
@@ -2618,6 +2611,13 @@ contains
                   invMyy * ySource(SH) + invMyz * zSource(SH)
           self % sourceZ(idx,SH) = invMxz * xSource(SH) + &
               invMyz * ySource(SH) + invMzz * zSource(SH)
+        end do
+      else
+
+        do SH = 1, self % SHLength
+          self % sourceX(idx,SH) = 0.0_defFlt
+          self % sourceY(idx,SH) = 0.0_defFlt
+          self % sourceZ(idx,SH) = 0.0_defFlt
         end do
 
       end if
@@ -2666,6 +2666,7 @@ contains
     xFission = 0.0_defFlt
     yFission = 0.0_defFlt
     zFission = 0.0_defFlt
+
     !$omp simd 
     do gIn = 1, self % nG
       fission = fission + real(fluxVec(gIn),defFlt) * nuFission(gIn)
@@ -2699,7 +2700,6 @@ contains
 
         ! Don't scale by 1/SigmaT - that occurs in the sourceUpdateKernel
         self % fixedSource(idx,SH) = chi(g) * fission + scatter
-        !self % fixedSource(idx) = self % fixedSource(idx) !/ total(idx)
 
         xSource = chi(g) * xFission + xScatter
         ySource = chi(g) * yFission + yScatter
