@@ -188,7 +188,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     real(defFlt), dimension(:), allocatable     :: nuSigmaF
     real(defFlt), dimension(:), allocatable     :: sigmaS
     real(defFlt), dimension(:), allocatable     :: chi
-    real(defFlt), dimension(:), allocatable     :: adjSigmaT
+    ! real(defFlt), dimension(:), allocatable     :: adjSigmaT
     real(defFlt), dimension(:), allocatable     :: adjNuSigmaF
     real(defFlt), dimension(:), allocatable     :: adjSigmaS
     real(defFlt), dimension(:), allocatable     :: adjChi
@@ -233,8 +233,10 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     procedure, private :: initialiseRay
     procedure, private :: transportSweep
     procedure, private :: sourceUpdateKernel
+    procedure, private :: adjointSourceUpdateKernel
     procedure, private :: calculateKeff
     procedure, private :: normaliseFluxAndVolume
+    procedure, private :: adjointNormaliseFluxAndVolume
     procedure, private :: resetFluxes
     procedure, private :: accumulateFluxAndKeffScores
     procedure, private :: finaliseFluxAndKeffScores
@@ -434,6 +436,10 @@ contains
     allocate(self % cellHit(self % nCells))
     allocate(self % cellFound(self % nCells))
     allocate(self % cellPos(self % nCells, 3))
+
+    allocate(self % adjScalarFlux(self % nCells * self % nG))
+    allocate(self % adjPrevFlux(self % nCells * self % nG))
+    allocate(self % adjSource(self % nCells * self % nG))
     
     ! Set active length traveled per iteration
     self % lengthPerIt = (self % termination - self % dead) * self % pop * 2
@@ -468,7 +474,7 @@ contains
       end do
     end do
 
-    allocate(self % adjSigmaT(self % nMat * self % nG))
+    ! allocate(self % adjSigmaT(self % nMat * self % nG))
     allocate(self % adjNuSigmaF(self % nMat * self % nG))
     allocate(self % adjChi(self % nMat * self % nG))
     allocate(self % adjSigmaS(self % nMat * self % nG * self % nG))
@@ -538,6 +544,10 @@ contains
     self % keffScore  = ZERO
     self % source     = 0.0_defFlt
 
+    self % adjScalarFlux = 0.0_defFlt
+    self % adjPrevFlux   = 1.0_defFlt
+    self % adjSource     = 0.0_defFlt
+
     ! Initialise other results
     self % cellHit      = 0
     self % volume       = ZERO
@@ -570,6 +580,7 @@ contains
       !$omp parallel do schedule(static)
       do i = 1, self % nCells
         call self % sourceUpdateKernel(i, ONE_KEFF)
+        call self % adjointSourceUpdateKernel(i, ONE_KEFF)
       end do
       !$omp end parallel do
 
@@ -605,6 +616,7 @@ contains
 
       ! Normalise flux estimate and combines with source
       call self % normaliseFluxAndVolume(it)
+      call self % adjointNormaliseFluxAndVolume(it)
 
       ! Calculate new k
       call self % calculateKeff()
@@ -719,7 +731,7 @@ contains
     integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
                                                                segCount, i, segCountCrit
     real(defReal)                                         :: totalLength, length
-    logical(defBool)                                      :: activeRay, hitVacuum
+    logical(defBool)                                      :: activeRay, hitVacuum, tally
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
@@ -826,7 +838,7 @@ contains
         fluxVec(g) = fluxVec(g) - delta(g)
       end do
 
-      if (.not. activateRay .and. totalLength >= self % dead) then
+      if (.not. activeRay .and. totalLength >= self % dead) then
         !record flux for first active incoming
         do g = 1, self % nG
           fluxRecord(g) = fluxVec(g) 
@@ -894,16 +906,32 @@ contains
       end if 
     end do
 
-    !flux for new adjoint deadlength
+    ! Flux guess for new adjoint deadlength
     do g = 1, self % nG
       idx = (cIdx - 1) * self % nG + g
       fluxVec(g) = self % adjSource(idx)
     end do
 
+    ! Could trim arrays here, (attback...)
+    allocate(attBackBuffer(segCount))
+    attBackBuffer = attBack(1:segCount * self % nG)
+    call move_alloc(attBackBuffer, attBack)
+
+    allocate(cIdxBackBuffer(segCount))
+    cIdxBackBuffer = cIdxBack(1:segCount)
+    call move_alloc(cIdxBackBuffer, cIdxBack)
+
+    allocate(vacBackBuffer(segCount))
+    vacBackBuffer = vacBack(1:segCount)
+    call move_alloc(vacBackBuffer, vacBack)
+
+    allocate(fluxRecordBuffer(segCount))
+    fluxRecordBuffer = fluxRecord(1:segCount * self % nG)
+    call move_alloc(fluxRecordBuffer, fluxRecord)
+
+
     ! allocate adjoint flux storage
     allocate(adjointRecord(size(fluxRecord)))
-
-    !could trim arrays here, (attback...)
 
     !iterate over segments
     do i = segCount, 1, -1
@@ -954,6 +982,9 @@ contains
       end if
 
      end do
+
+     !print *, segCount, segCountCrit, size(fluxRecord), size(adjointRecord), size(cIdxBack)
+     !print *, fluxRecord((size(fluxRecord)-5):) , adjointRecord(1:5)
 
      !use records to computer inner product etc - seperate subroutine? 
      
@@ -1087,7 +1118,7 @@ contains
     matIdx  =  self % geom % geom % graph % getMatFromUID(cIdx) 
     
     ! Guard against void cells
-    if (matIdx >= VOID_MAT) then
+    if (matIdx >= UNDEF_MAT) then
       baseIdx = self % ng * (cIdx - 1)
       do g = 1, self % nG
         idx = baseIdx + g
@@ -1150,7 +1181,7 @@ contains
     matIdx  =  self % geom % geom % graph % getMatFromUID(cIdx) 
     
     ! Guard against void cells
-    if (matIdx >= VOID_MAT) then
+    if (matIdx >= UNDEF_MAT) then
       baseIdx = self % ng * (cIdx - 1)
       do g = 1, self % nG
         idx = baseIdx + g
@@ -1161,12 +1192,12 @@ contains
 
     ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
-    total => self % adjSigmaT((matIdx + 1):(matIdx + self % nG))
+    total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
     scatterXS => self % adjSigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
     nuFission => self % adjNuSigmaF((matIdx + 1):(matIdx + self % nG))
     chi => self % adjChi((matIdx + 1):(matIdx + self % nG))
 
-    baseIdx = self % ng * (cIdx - 1)
+    baseIdx = self % nG * (cIdx - 1)
     fluxVec => self % adjPrevFlux((baseIdx+1):(baseIdx + self % nG))
 
     ! Calculate fission source
@@ -1196,9 +1227,17 @@ contains
       self % adjSource(idx) = chi(g) * fission + scatter
       self % adjSource(idx) = self % adjSource(idx) / total(g)
 
+      if (self%adjSource(idx) /= self%adjSource(idx)) then
+        print *, "Error: adjSource",idx 
+        print *, self % adjScalarFlux(idx)
+        print *, total(g)
+        stop
+    endif
+    
+
     end do
 
-  end subroutine sourceUpdateKernel
+  end subroutine adjointSourceUpdateKernel
 
   !!
   !! Calculate keff
@@ -1633,7 +1672,7 @@ contains
     if(allocated(self % nuSigmaF)) deallocate(self % nuSigmaF)
     if(allocated(self % chi)) deallocate(self % chi)
 
-    if(allocated(self % adjSigmaT)) deallocate(self % adjSigmaT)
+    ! if(allocated(self % adjSigmaT)) deallocate(self % adjSigmaT)
     if(allocated(self % adjSigmaS)) deallocate(self % adjSigmaS)
     if(allocated(self % adjNuSigmaF)) deallocate(self % adjNuSigmaF)
     if(allocated(self % adjChi)) deallocate(self % adjChi)
@@ -1659,9 +1698,9 @@ contains
     if(allocated(self % fluxScores)) deallocate(self % fluxScores)
     if(allocated(self % source)) deallocate(self % source)
 
-    if(allocated(self % scalarFlux)) deallocate(self % adjScalarFlux)
-    if(allocated(self % prevFlux)) deallocate(self % adjPrevFlux)
-    if(allocated(self % source)) deallocate(self % adjSource)
+    if(allocated(self % adjScalarFlux)) deallocate(self % adjScalarFlux)
+    if(allocated(self % adjPrevFlux)) deallocate(self % adjPrevFlux)
+    if(allocated(self % adjSource)) deallocate(self % adjSource)
 
     if(allocated(self % volume)) deallocate(self % volume)
     if(allocated(self % volumeTracks)) deallocate(self % volumeTracks)
