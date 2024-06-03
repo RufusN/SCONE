@@ -35,7 +35,7 @@ module physicsPackageFactory_func
                                                                              'randomRayPhysicsPackage      ',&
                                                                              'linearSourceRRPhysicsPackage ',&
                                                                              'adjointTRRMPhysicsPackage    ',&
-                                                                             'adjointFWTRRMPhysicsPackage    ',&
+                                                                             'adjointFWTRRMPhysicsPackage  ',&
                                                                              'rayVolPhysicsPackage         ']
 
   !!

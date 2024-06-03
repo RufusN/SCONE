@@ -1,4 +1,4 @@
-module adjointTRRMPhysicsPackage_class !currently forward/backward
+module adjointFWTRRMPhysicsPackage_class !currently forward/backward
 
     use numPrecision
     use universalVariables
@@ -78,7 +78,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !!
     !! Sample Input Dictionary:
     !!   PP {
-    !!     type adjointTRRMPhysicsPackage;
+    !!     type adjointFWTRRMPhysicsPackage;
     !!     dead 10;              // Dead length where rays do not score to scalar fluxes
     !!     termination 100;      // Length a ray travels before it is terminated
     !!     rays 1000;            // Number of rays to sample per iteration
@@ -149,7 +149,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !! Interface:
     !!   physicsPackage interface
     !!
-    type, public, extends(physicsPackage) :: adjointTRRMPhysicsPackage
+    type, public, extends(physicsPackage) :: adjointFWTRRMPhysicsPackage
       private
       ! Components
       class(geometryStd), pointer           :: geom
@@ -243,7 +243,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
       procedure, private :: printResults
       procedure, private :: printSettings
   
-    end type adjointTRRMPhysicsPackage
+    end type adjointFWTRRMPhysicsPackage
   
   contains
   
@@ -253,7 +253,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !! See physicsPackage_inter for details
     !!
     subroutine init(self,dict)
-      class(adjointTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), intent(inout) :: self
       class(dictionary), intent(inout)              :: dict
       integer(shortInt)                             :: seed_temp, i, g, g1, m
       integer(longInt)                              :: seed
@@ -267,7 +267,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
       type(outputFile)                              :: test_out
       class(baseMgNeutronMaterial), pointer         :: mat
       class(materialHandle), pointer                :: matPtr
-      character(100), parameter :: Here = 'init (adjointTRRMPhysicsPackage_class.f90)'
+      character(100), parameter :: Here = 'init (adjointFWTRRMPhysicsPackage_class.f90)'
   
       call cpu_time(self % CPU_time_start)
       
@@ -500,7 +500,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !! See physicsPackage_inter for details
     !!
     subroutine run(self)
-      class(adjointTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), intent(inout) :: self
   
       call self % printSettings()
       call self % cycles()
@@ -521,7 +521,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !! given criteria or when a fixed number of iterations has been passed.
     !!
     subroutine cycles(self)
-      class(adjointTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), intent(inout) :: self
       type(ray), save                               :: r
       type(RNG), target, save                       :: pRNG
       real(defFlt)                                  :: hitRate, ONE_KEFF
@@ -678,12 +678,12 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !! and performs the build operation
     !!
     subroutine initialiseRay(self, r)
-      class(adjointTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), intent(inout) :: self
       type(ray), intent(inout)                      :: r
       real(defReal)                                 :: mu, phi
       real(defReal), dimension(3)                   :: u, rand3, x
       integer(shortInt)                             :: i, matIdx, cIdx
-      character(100), parameter :: Here = 'initialiseRay (adjointTRRMPhysicsPackage_class.f90)'
+      character(100), parameter :: Here = 'initialiseRay (adjointFWTRRMPhysicsPackage_class.f90)'
   
       i = 0
       mu = TWO * r % pRNG % get() - ONE
@@ -725,7 +725,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !! Records the number of integrations/ray movements.
     !!
     subroutine transportSweep(self, r, ints)
-        class(adjointTRRMPhysicsPackage), target, intent(inout) :: self
+        class(adjointFWTRRMPhysicsPackage), target, intent(inout) :: self
         type(ray), intent(inout)                              :: r
         integer(longInt), intent(out)                         :: ints
         integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx
@@ -859,7 +859,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !! the flux by the neutron source
     !!
     subroutine normaliseFluxAndVolume(self, it)
-      class(adjointTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), intent(inout) :: self
       integer(shortInt), intent(in)                 :: it
       real(defFlt)                                  :: norm
       real(defReal)                                 :: normVol
@@ -915,7 +915,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     end subroutine normaliseFluxAndVolume
   
     subroutine adjointNormaliseFluxAndVolume(self, it)
-      class(adjointTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), intent(inout) :: self
       integer(shortInt), intent(in)                 :: it
       real(defFlt)                                  :: norm
       real(defReal)                                 :: normVol
@@ -973,7 +973,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !! Kernel to update sources given a cell index
     !!
     subroutine sourceUpdateKernel(self, cIdx, ONE_KEFF)
-      class(adjointTRRMPhysicsPackage), target, intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), target, intent(inout) :: self
       integer(shortInt), intent(in)                         :: cIdx
       real(defFlt), intent(in)                              :: ONE_KEFF
       real(defFlt)                                          :: scatter, fission
@@ -1036,7 +1036,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     end subroutine sourceUpdateKernel
   
     subroutine adjointSourceUpdateKernel(self, cIdx, ONE_KEFF)
-      class(adjointTRRMPhysicsPackage), target, intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), target, intent(inout) :: self
       integer(shortInt), intent(in)                         :: cIdx
       real(defFlt), intent(in)                              :: ONE_KEFF
       real(defFlt)                                          :: scatter, fission
@@ -1110,7 +1110,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !! Calculate keff
     !!
     subroutine calculateKeff(self)
-      class(adjointTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), intent(inout) :: self
       real(defFlt)                                  :: fissionRate, prevFissionRate
       real(defFlt), save                            :: fissLocal, prevFissLocal, vol
       integer(shortInt), save                       :: matIdx, g, idx, mIdx
@@ -1163,7 +1163,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !! Sets prevFlux to scalarFlux and zero's scalarFlux
     !!
     subroutine resetFluxes(self)
-      class(adjointTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), intent(inout) :: self
       integer(shortInt)                             :: idx
   
       !$omp parallel do schedule(static)
@@ -1181,7 +1181,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !! Accumulate flux scores for stats
     !!
     subroutine accumulateFluxAndKeffScores(self)
-      class(adjointTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), intent(inout) :: self
       real(defReal), save                            :: flux
       integer(shortInt)                              :: idx
       !$omp threadprivate(flux)
@@ -1203,7 +1203,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !! Finalise flux scores for stats
     !!
     subroutine finaliseFluxAndKeffScores(self,it)
-      class(adjointTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), intent(inout) :: self
       integer(shortInt), intent(in)                 :: it
       integer(shortInt)                             :: idx
       real(defReal)                                 :: N1, Nm1
@@ -1243,7 +1243,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !!   None
     !!
     subroutine printResults(self)
-      class(adjointTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), intent(inout) :: self
       type(outputFile)                              :: out
       character(nameLen)                            :: name
       integer(shortInt)                             :: cIdx, g1
@@ -1483,7 +1483,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !!   None
     !!
     subroutine printSettings(self)
-      class(adjointTRRMPhysicsPackage), intent(in) :: self
+      class(adjointFWTRRMPhysicsPackage), intent(in) :: self
   
       print *, repeat("<>", MAX_COL/2)
       print *, "/\/\ RANDOM RAY EIGENVALUE CALCULATION /\/\"
@@ -1508,7 +1508,7 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
     !! Return to uninitialised state
     !!
     subroutine kill(self)
-      class(adjointTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointFWTRRMPhysicsPackage), intent(inout) :: self
       integer(shortInt) :: i
   
       ! Clean Nuclear Data, Geometry and visualisation
@@ -1583,5 +1583,5 @@ module adjointTRRMPhysicsPackage_class !currently forward/backward
   
     end subroutine kill
   
-  end module adjointTRRMPhysicsPackage_class
+  end module adjointFWTRRMPhysicsPackage_class
   
