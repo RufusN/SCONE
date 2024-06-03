@@ -942,7 +942,7 @@ contains
 
       !$omp simd
       do g = 1, self % nG
-        delta(g) = (fluxVec(g) - sourceVec(g)) * attBack((segCount - 1) * self % nG + g)
+        delta(g) = (fluxVec(g) - sourceVec(g)) * (attBack((segCount - 1) * self % nG + g))
       end do
 
       !$omp simd
@@ -999,10 +999,11 @@ contains
     integer(shortInt), intent(in)                 :: it
     real(defFlt)                                  :: norm
     real(defReal)                                 :: normVol
-    real(defFlt), save                            :: total, vol, sigGG, D
+    real(defFlt), save                            :: total, vol!, sigGG, D
     integer(shortInt), save                       :: g, matIdx, idx
     integer(shortInt)                             :: cIdx
-    !$omp threadprivate(total, vol, idx, g, matIdx, sigGG, D)
+    !$omp threadprivate(total, vol, idx, g, matIdx) 
+    !, sigGG, D)
 
     norm = real(ONE / self % lengthPerIt, defFlt)
     normVol = ONE / (self % lengthPerIt * it)
@@ -1023,22 +1024,24 @@ contains
         if (vol > volume_tolerance) then
           self % scalarFlux(idx) = self % scalarFlux(idx) * norm / ( total * vol)
         end if
+
+        self % scalarFlux(idx) = self % scalarflux(idx) + self % source(idx) 
         
-        ! Apply stabilisation for negative XSs
-        if (matIdx < VOID_MAT) then
-          sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
+        ! ! Apply stabilisation for negative XSs
+        ! if (matIdx < VOID_MAT) then
+        !   sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
 
-          ! Presumes non-zero total XS
-          if ((sigGG < 0) .and. (total > 0)) then
-            D = -real(self % rho, defFlt) * sigGG / total
-          else
-            D = 0.0_defFlt
-          end if
-        else
-          D = 0.0_defFlt
-        end if
+        !   ! Presumes non-zero total XS
+        !   if ((sigGG < 0) .and. (total > 0)) then
+        !     D = -real(self % rho, defFlt) * sigGG / total
+        !   else
+        !     D = 0.0_defFlt
+        !   end if
+        ! else
+        !   D = 0.0_defFlt
+        ! end if
 
-        self % scalarFlux(idx) =  (self % scalarflux(idx) + self % source(idx) + D * self % prevFlux(idx) ) / (1 + D)
+        ! self % scalarFlux(idx) =  (self % scalarflux(idx) + self % source(idx) + D * self % prevFlux(idx) ) / (1 + D)
 
       end do
 
