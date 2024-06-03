@@ -1964,25 +1964,25 @@ contains
       end if
 
       ! Update volume due to additional rays unless volume was precomputed
-      !if (self % nVolRays <= 0) then
+      ! if (self % nVolRays <= 0) then
       ! Forget the above - use precomputed volumes only for first collided
 
-      ! if (self % itVol) then
-      !   ! Iteration wise approach
-      !   self % volume(cIdx) = self % volumeTracks(cIdx) * norm
-      !   self % volumeTracks(cIdx) = ZERO
-      ! else if (self % volCorr) then
-      !   ! Correct the cell volume
-      !   corr = self % volumeTracks(cIdx) * norm
-      !   self % volume(cIdx) = self % volume(cIdx) * self % lengthPerIt * (it - 1) + self % volumeTracks(cIdx)
-      !   self % volume(cIdx) = self % volume(cIdx) * normVol
-      !   corr = corr / self % volume(cIdx)
-      !   self % volumeTracks(cIdx) = ZERO
-      !   if (corr /= corr) corr = ONE
-      ! else
-      !   ! Standard volume approach
+      if (self % itVol) then
+        ! Iteration wise approach
+        self % volume(cIdx) = self % volumeTracks(cIdx) * norm
+        self % volumeTracks(cIdx) = ZERO
+      else if (self % volCorr) then
+        ! Correct the cell volume
+        corr = self % volumeTracks(cIdx) * norm
+        self % volume(cIdx) = self % volume(cIdx) * self % lengthPerIt * (it - 1) + self % volumeTracks(cIdx)
+        self % volume(cIdx) = self % volume(cIdx) * normVol
+        corr = corr / self % volume(cIdx)
+        self % volumeTracks(cIdx) = ZERO
+        if (corr /= corr) corr = ONE
+      else
+        ! Standard volume approach
         self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
-      ! end if
+      end if
 
       vol = self % volume(cIdx)
 
@@ -2019,23 +2019,27 @@ contains
               
          end if
         
-        ! ! Apply volume correction only to negative flux cells
-        ! if (self % volCorr .and. self % passive) then
-        !   if (self % moments(idx,1) < 0) self % moments(idx,1) = real(self % moments(idx,1) + &
-        !           (corr - 1.0_defFlt) * self % source(idx,1) / total, defFlt)
-        ! ! Apply volume correction to all cells
-        ! elseif (self % volCorr) then
-        !   self % moments(idx,1) = real(self % moments(idx,1) + (corr - 1.0_defFlt) * self % source(idx,1) / total, defFlt)
-        ! end if
+        ! Apply volume correction only to negative flux cells
+        if (self % volCorr .and. self % passive) then
+          if (self % moments(idx,1) < 0) self % moments(idx,1) = real(self % moments(idx,1) + &
+                  (corr - 1.0_defFlt) * self % source(idx,1) / total, defFlt)
+        ! Apply volume correction to all cells
+        elseif (self % volCorr) then
+          self % moments(idx,1) = real(self % moments(idx,1) + (corr - 1.0_defFlt) * self % source(idx,1) / total, defFlt)
+        end if
 
-        ! ! This will probably affect things like neutron conservation...
-        ! if ((self % moments(idx,1) < 0) .and. self % zeroNeg) self % moments(idx,1) = 0.0_defFlt
-        ! ! DELETE THIS MAYBE?
-        ! !if ((self % moments(idx,SH) < 0) .and. self % zeroNeg) self % moments(idx,SH) = self % source(idx,1) / total
+        ! This will probably affect things like neutron conservation...
+        if ((self % moments(idx,1) < 0) .and. self % zeroNeg) then
+          do SH = 1, self % SHLength
+            self % moments(idx,SH) = 0.0_defFlt
+          end do
+        end if
+        ! DELETE THIS MAYBE?
+        !if ((self % moments(idx,SH) < 0) .and. self % zeroNeg) self % moments(idx,SH) = self % source(idx,1) / total
 
-        ! ! NaN check - kill calculation
-        ! if (self % moments(idx,1) /= self % moments(idx,1)) &
-        !         call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(g))
+        ! NaN check - kill calculation
+        if (self % moments(idx,1) /= self % moments(idx,1)) &
+                call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(g))
 
       end do
 

@@ -2203,9 +2203,6 @@ contains
         matIdx = self % nMatVOID
       end if 
 
-      norm = real(ONE / lengthPerIt, defFlt)
-      normVol = ONE / ( lengthPerIt * it)
-
       !!!Volume correction not currently working with LS> 
   
       ! Update volume due to additional rays unless volume was precomputed
@@ -2278,25 +2275,22 @@ contains
         else
           corr = ONE
         end if
-        ! ! TODO: I think this may not work when volume correction is applied...
-        if (matIdx < UNDEF_MAT) then
-          sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
 
-          ! Assumes non-zero total XS
-          if ((sigGG < 0) .and. (total > 0)) then
-            D = -real(self % rho, defFlt) * sigGG / total
-          else
-            D = 0.0_defFlt
-          end if
+        ! ! TODO: I think this may not work when volume correction is applied...
+        sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
+
+        ! Assumes non-zero total XS
+        if ((sigGG < 0) .and. (total > 0)) then
+          D = -real(self % rho, defFlt) * sigGG / total
         else
           D = 0.0_defFlt
         end if
 
-          self % scalarFlux(idx) =  real((self % scalarflux(idx) + self % source(idx) &
-                                                   + D * self % prevFlux(idx) ) / (1 + D), defFlt)
-          self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
-          self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
-          self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
+        self % scalarFlux(idx) =  real((self % scalarflux(idx) + self % source(idx) &
+                                                  + D * self % prevFlux(idx) ) / (1 + D), defFlt)
+        self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
+        self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
+        self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
        
         ! Apply volume correction only to negative flux cells
         if (self % volCorr .and. self % passive) then
@@ -2306,7 +2300,6 @@ contains
                   ! self % scalarX(idx) =  0.0_defFlt
                   ! self % scalarY(idx) =  0.0_defFlt
                   ! self % scalarZ(idx) =  0.0_defFlt
-
           end if 
         ! Apply volume correction to all cells
         elseif (self % volCorr) then
