@@ -1,4 +1,4 @@
-module adjointFWTRRMPhysicsPackage_class !currently forward/backward
+module adjointFWTRRMPhysicsPackage_class !currently forward
 
     use numPrecision
     use universalVariables
@@ -1188,7 +1188,7 @@ module adjointFWTRRMPhysicsPackage_class !currently forward/backward
   
       !$omp parallel do schedule(static)
       do idx = 1, size(self % scalarFlux)
-        flux = real(self % scalarFlux(idx),defReal)
+        flux = real(self % adjScalarFlux(idx),defReal)
         self % fluxScores(idx,1) = self % fluxScores(idx, 1) + flux
         self % fluxScores(idx,2) = self % fluxScores(idx, 2) + flux * flux
       end do

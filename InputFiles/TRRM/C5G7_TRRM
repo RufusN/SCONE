@@ -1,4 +1,4 @@
- type adjointTRRMPhysicsPackage;
+ type adjointFWTRRMPhysicsPackage;
 
 pop      1750; 
 active   2600;  
