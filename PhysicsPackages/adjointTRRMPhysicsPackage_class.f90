@@ -193,6 +193,8 @@ module adjointTRRMPhysicsPackage_class !currently backward
     real(defFlt), dimension(:), allocatable     :: adjSigmaS
     real(defFlt), dimension(:), allocatable     :: adjChi
 
+    real(defReal), dimension(:), allocatable   :: angularIP
+
     ! Results space
     real(defFlt)                               :: keff
     real(defReal), dimension(2)                :: keffScore
@@ -440,9 +442,11 @@ contains
     allocate(self % adjScalarFlux(self % nCells * self % nG))
     allocate(self % adjPrevFlux(self % nCells * self % nG))
     allocate(self % adjSource(self % nCells * self % nG))
+
+    allocate(self % angularIP(self % nCells * self % nG))
     
     ! Set active length traveled per iteration
-    self % lengthPerIt = (self % termination - self % dead) * self % pop * 2
+    self % lengthPerIt = (self % termination - self % dead) * self % pop 
     
     ! Initialise OMP locks
     allocate(self % locks(self % nCells))
@@ -543,6 +547,8 @@ contains
     self % fluxScores = ZERO
     self % keffScore  = ZERO
     self % source     = 0.0_defFlt
+
+    self % angularIP = 0.0_defReal
 
     self % adjScalarFlux = 0.0_defFlt
     self % adjPrevFlux   = 1.0_defFlt
@@ -873,7 +879,13 @@ contains
         !$omp simd
         do g = 1, self % nG
           attBack((segCount - 1) * self % nG + g) = attenuate(g)
-          fluxRecord((segCount) * self % nG + g)  = fluxVec(g)
+          fluxRecord((segCount) * self % nG + g)  = fluxVec(g) ! this should be average
+        end do
+
+        !$omp simd
+        do g = 1, self % nG
+          avgFluxVec(g) = (delta(g)/tau(g) + sourceVec(g))
+          avgFluxAdjoint(g) = (deltaAdjoint(g)/tau(g) + sourceAdjoint(g))
         end do
 
         cIdxBack(segCount) = cIdx
@@ -929,8 +941,8 @@ contains
     call move_alloc(fluxRecordBuffer, fluxRecord)
 
 
-    ! allocate adjoint flux storage
-    allocate(adjointRecord(size(fluxRecord)))
+    ! ! allocate adjoint flux storage
+    ! allocate(adjointRecord(size(fluxRecord)))
 
     !iterate over segments
     do i = segCount, 1, -1
@@ -958,10 +970,10 @@ contains
     
       if (i <= segCountCrit) then
 
-        !$omp simd
-        do g = 1, self % nG
-          adjointRecord((i) * self % nG + g) = fluxVec(g)
-        end do
+        ! !$omp simd
+        ! do g = 1, self % nG
+        !   adjointRecord((i) * self % nG + g) = fluxVec(g)
+        ! end do
 
         call OMP_set_lock(self % locks(cIdx))
         scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
@@ -1703,6 +1715,7 @@ contains
     if(allocated(self % adjScalarFlux)) deallocate(self % adjScalarFlux)
     if(allocated(self % adjPrevFlux)) deallocate(self % adjPrevFlux)
     if(allocated(self % adjSource)) deallocate(self % adjSource)
+    if (allocated(self % angularIP)) deallocate(self % angularIP)
 
     if(allocated(self % volume)) deallocate(self % volume)
     if(allocated(self % volumeTracks)) deallocate(self % volumeTracks)
