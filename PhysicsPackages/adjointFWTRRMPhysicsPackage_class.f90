@@ -442,7 +442,7 @@ module adjointFWTRRMPhysicsPackage_class !currently forward
       allocate(self % adjSource(self % nCells * self % nG))
       
       ! Set active length traveled per iteration
-      self % lengthPerIt = (self % termination - self % dead) * self % pop * 2
+      self % lengthPerIt = (self % termination - self % dead) * self % pop 
       
       ! Initialise OMP locks
       allocate(self % locks(self % nCells))
@@ -804,15 +804,10 @@ module adjointFWTRRMPhysicsPackage_class !currently forward
   
           sourceVec => self % source(baseIdx + 1 : baseIdx + self % nG)
           sourceAdjoint => self % adjSource(baseIdx + 1 : baseIdx + self % nG)
-
+  
           !$omp simd aligned(totVec)
           do g = 1, self % nG
-            tau(g) = totVec(g) * lenFlt
-          end do
-  
-          !$omp simd aligned(tau)
-          do g = 1, self % nG
-            attenuate(g) = exponential(tau(g))
+            attenuate(g) = exponential(totVec(g) * lenFlt)
           end do
     
           !$omp simd 
@@ -825,12 +820,6 @@ module adjointFWTRRMPhysicsPackage_class !currently forward
           do g = 1, self % nG
             deltaAdjoint(g) = (fluxAdjoint(g) - sourceAdjoint(g)) * attenuate(g)
             fluxAdjoint(g) = fluxAdjoint(g) - deltaAdjoint(g)
-          end do
-
-          !$omp simd
-          do g = 1, self % nG
-            avgFluxVec(g) = (delta(g) + lenFlt * sourceVec(g))/tau(g)
-            avgFluxAdjoint(g) = (deltaAdjoint(g) + lenFlt * sourceAdjoint(g))/tau(g)
           end do
     
           ! Accumulate to scalar flux
@@ -1216,7 +1205,7 @@ module adjointFWTRRMPhysicsPackage_class !currently forward
     subroutine finaliseFluxAndKeffScores(self,it)
       class(adjointFWTRRMPhysicsPackage), intent(inout) :: self
       integer(shortInt), intent(in)                 :: it
-      integer(shortInt)                             :: idx
+      integer(shortInt)                             :: idx 
       real(defReal)                                 :: N1, Nm1
   
       if (it /= 1) then

@@ -735,17 +735,18 @@ contains
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
-                                                               segCount, i, segCountCrit
+                                                               segCount, i, segCountCrit, segIdx
     real(defReal)                                         :: totalLength, length
     logical(defBool)                                      :: activeRay, hitVacuum, tally
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt
-    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
-    real(defFlt), allocatable, dimension(:)               :: attBack, attBackBuffer, cIdxBack, cIdxBackBuffer
+    real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, avgFluxVec, tau
+    real(defFlt), allocatable, dimension(:)               :: tauBack, tauBackBuffer, cIdxBack, cIdxBackBuffer
     logical(defBool), allocatable, dimension(:)           :: vacBack, vacBackBuffer 
     real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec
+    real(defReal), pointer, dimension(:)                  :: angularProd
     real(defFlt), allocatable, dimension(:)               :: fluxRecord, fluxRecordBuffer 
-    real(defFlt), allocatable, dimension(:)               :: adjointRecord
+    ! real(defFlt), allocatable, dimension(:)               :: adjointRecord
     real(defReal), dimension(3)                           :: r0, mu0
         
     ! Set initial angular flux to angle average of cell source
@@ -762,11 +763,10 @@ contains
     activeRay = .false.
     tally = .true.
 
-    allocate(attBack(self % nG * 50)) !could add some kind of termination  / average cell length to get an approx length
+    allocate(tauBack(self % nG * 50))         ! could add some kind of termination  / average cell length to get an approx length
     allocate(fluxRecord(self % nG * 50))
     allocate(cIdxBack(50))
     allocate(vacBack(50))
-
 
     do while (totalLength < self % termination + self % dead)
 
@@ -827,10 +827,15 @@ contains
       lenFlt = real(length,defFlt)
       baseIdx = (cIdx - 1) * self % nG
       sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
-        
+
       !$omp simd aligned(totVec)
       do g = 1, self % nG
-        attenuate(g) = exponential(totVec(g) * lenFlt)
+        tau(g) = totVec(g) * lenFlt
+      end do
+        
+      !$omp simd 
+      do g = 1, self % nG
+        attenuate(g) = exponential(tau(g))
       end do
 
       !$omp simd
@@ -858,10 +863,11 @@ contains
             segCountCrit = segCount
         end if
  
-        if (segCount > size(cIdxBack) - 1) then
-          allocate(attBackBuffer(size(attBack) * 2))   !record expoentials 
-          attBackBuffer(1:size(attBack)) = attBack
-          call move_alloc(attBackBuffer, attBack)
+        if (segCount > size(cIdxBack) - 1) then ! doubles length if needed
+
+          allocate(tauBackBuffer(size(tauBack) * 2))   !record expoentials 
+          tauBackBuffer(1:size(tauBack)) = tauBack
+          call move_alloc(tauBackBuffer, tauBack)
 
           allocate(cIdxBackBuffer(size(cIdxBack) * 2)) !add cell id for scalar flux update
           cIdxBackBuffer(1:size(cIdxBack)) = cIdxBack
@@ -871,26 +877,31 @@ contains
           vacBackBuffer(1:size(vacBack)) = vacBack
           call move_alloc(vacBackBuffer, vacBack)
 
-          allocate(fluxRecordBuffer(size(fluxRecord) * 2))   
+          allocate(fluxRecordBuffer(size(fluxRecord) * 2))   ! recording of average flux
           fluxRecordBuffer(1:size(fluxRecord)) = fluxRecord
           call move_alloc(fluxRecordBuffer, fluxRecord)
         end if
-        
-        !$omp simd
-        do g = 1, self % nG
-          attBack((segCount - 1) * self % nG + g) = attenuate(g)
-          fluxRecord((segCount) * self % nG + g)  = fluxVec(g) ! this should be average
-        end do
 
         !$omp simd
         do g = 1, self % nG
           avgFluxVec(g) = (delta(g)/tau(g) + sourceVec(g))
-          avgFluxAdjoint(g) = (deltaAdjoint(g)/tau(g) + sourceAdjoint(g))
+          ! avgFluxAdjoint(g) = (deltaAdjoint(g)/tau(g) + sourceAdjoint(g))
+        end do
+        
+        !$omp simd
+        do g = 1, self % nG
+          tauBack((segCount - 1) * self % nG + g) = tau(g)
         end do
 
         cIdxBack(segCount) = cIdx
 
         if (tally) then
+
+          !$omp simd
+          do g = 1, self % nG
+            fluxRecord((segCount - 1) * self % nG + g)  = avgFluxVec(g) 
+          end do
+
           call OMP_set_lock(self % locks(cIdx))
           scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
           !$omp simd aligned(scalarVec)
@@ -923,10 +934,10 @@ contains
       fluxVec(g) = self % adjSource(idx)
     end do
 
-    ! Could trim arrays here, (attback...)
-    allocate(attBackBuffer(segCount))
-    attBackBuffer = attBack(1:segCount * self % nG)
-    call move_alloc(attBackBuffer, attBack)
+    ! Could trim arrays here, (tauBack...)
+    allocate(tauBackBuffer(segCount))
+    tauBackBuffer = tauBack(1 : (segCount * self % nG))
+    call move_alloc(tauBackBuffer, tauBack)
 
     allocate(cIdxBackBuffer(segCount))
     cIdxBackBuffer = cIdxBack(1:segCount)
@@ -937,11 +948,10 @@ contains
     call move_alloc(vacBackBuffer, vacBack)
 
     allocate(fluxRecordBuffer(segCount))
-    fluxRecordBuffer = fluxRecord(1:segCount * self % nG)
+    fluxRecordBuffer = fluxRecord(1 : (segCount * self % nG))
     call move_alloc(fluxRecordBuffer, fluxRecord)
 
-
-    ! ! allocate adjoint flux storage
+    ! ! ! allocate adjoint flux storage
     ! allocate(adjointRecord(size(fluxRecord)))
 
     !iterate over segments
@@ -949,11 +959,12 @@ contains
       
       cIdx = cIdxBack(i)
       baseIdx = (cIdx - 1) * self % nG
+      segIdx =  (i - 1) * self % nG
       sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
 
       !$omp simd
       do g = 1, self % nG
-        delta(g) = (fluxVec(g) - sourceVec(g)) * (attBack((i - 1) * self % nG + g))
+        delta(g) = (fluxVec(g) - sourceVec(g)) * exponential(tauBack(segIdx + g))
       end do
 
       !$omp simd
@@ -970,16 +981,25 @@ contains
     
       if (i <= segCountCrit) then
 
+        !$omp simd
+        do g = 1, self % nG
+          avgFluxVec(g) = (sourceVec(g) + delta(g)/tauBack(segIdx + g))
+        end do
+
         ! !$omp simd
         ! do g = 1, self % nG
-        !   adjointRecord((i) * self % nG + g) = fluxVec(g)
+        !   adjointRecord((i - 1) * self % nG + g) = avgFluxVec(g)
         ! end do
 
         call OMP_set_lock(self % locks(cIdx))
+
         scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
+        angularProd => self % angularIP((baseIdx + 1):(baseIdx + self % nG))
+
         !$omp simd aligned(scalarVec)
         do g = 1, self % nG
             scalarVec(g) = scalarVec(g) + delta(g) 
+            angularProd(g) = avgFluxVec(g) * fluxRecord(segIdx + g)
         end do
         call OMP_unset_lock(self % locks(cIdx))
 
@@ -993,9 +1013,6 @@ contains
       end if
 
      end do
-
-     !print *, segCount, segCountCrit, size(fluxRecord), size(adjointRecord), size(cIdxBack)
-     !print *, fluxRecord((size(fluxRecord)-5):) , adjointRecord(1:5)
 
      !use records to computer inner product etc - seperate subroutine? 
      

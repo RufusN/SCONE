@@ -1,12 +1,12 @@
- //type adjointFWTRRMPhysicsPackage;
- type adjointTRRMPhysicsPackage;
+ type adjointFWTRRMPhysicsPackage;
+ //type adjointTRRMPhysicsPackage;
 
 pop      1750; 
 active   2600;  
 inactive 1000; 
 dead     20;  
 termination 220;  
-plot 0;
+plot 1;
 cache 1;
 XSdata   mg; 
 dataType mg;
