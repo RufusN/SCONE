@@ -767,9 +767,9 @@ contains
       ! Get material and cell the ray is moving through
       matIdx  = r % coords % matIdx
       cIdx    = r % coords % uniqueID
+
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
-        
         ! Cache total cross section
         totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
       end if
@@ -793,7 +793,6 @@ contains
         length = self % termination + self % dead - totalLength
         tally = .false.
       end if
-
 
       ! Move ray
       ! Use distance caching or standard ray tracing
@@ -847,8 +846,6 @@ contains
 
       ! Accumulate to scalar flux
       if (activeRay) then
-        
-        scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
         segCount = segCount + 1
 
         if (tally) then
@@ -868,7 +865,7 @@ contains
           vacBackBuffer(1:size(vacBack)) = vacBack
           call move_alloc(vacBackBuffer, vacBack)
 
-          allocate(fluxRecordBuffer(size(fluxRecord) * 2))   !check vacuum
+          allocate(fluxRecordBuffer(size(fluxRecord) * 2))   
           fluxRecordBuffer(1:size(fluxRecord)) = fluxRecord
           call move_alloc(fluxRecordBuffer, fluxRecord)
         end if
@@ -876,13 +873,14 @@ contains
         !$omp simd
         do g = 1, self % nG
           attBack((segCount - 1) * self % nG + g) = attenuate(g)
-          fluxRecord((segCount) * self % nG + g) = fluxVec(g)
+          fluxRecord((segCount) * self % nG + g)  = fluxVec(g)
         end do
 
         cIdxBack(segCount) = cIdx
 
         if (tally) then
           call OMP_set_lock(self % locks(cIdx))
+          scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
           !$omp simd aligned(scalarVec)
           do g = 1, self % nG
             scalarVec(g) = scalarVec(g) + delta(g) 
@@ -908,6 +906,7 @@ contains
 
     ! Flux guess for new adjoint deadlength
     do g = 1, self % nG
+      ! cIdx = cIdxBack(segCount)
       idx = (cIdx - 1) * self % nG + g
       fluxVec(g) = self % adjSource(idx)
     end do
@@ -935,37 +934,37 @@ contains
 
     !iterate over segments
     do i = segCount, 1, -1
-
+      
       cIdx = cIdxBack(i)
       baseIdx = (cIdx - 1) * self % nG
       sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
 
       !$omp simd
       do g = 1, self % nG
-        delta(g) = (fluxVec(g) - sourceVec(g)) * (attBack((segCount - 1) * self % nG + g))
+        delta(g) = (fluxVec(g) - sourceVec(g)) * (attBack((i - 1) * self % nG + g))
       end do
 
       !$omp simd
       do g = 1, self % nG
-        fluxVec(g) = fluxVec(g) + delta(g)
+        fluxVec(g) = fluxVec(g) - delta(g)
       end do
 
-      if ( segCount + 1 == segCountCrit ) then
-        !record flux for first active incoming
-        do g = 1, self % nG
-          adjointRecord(g) = fluxVec(g) 
-        end do
-      end if
+      ! if ( i + 1 == segCountCrit ) then
+      !   !record flux for first active incoming
+      !   do g = 1, self % nG
+      !     adjointRecord(g) = fluxVec(g) 
+      !   end do
+      ! end if
     
-      if (segCount <= segCountCrit) then
-        scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
+      if (i <= segCountCrit) then
 
         !$omp simd
         do g = 1, self % nG
-          adjointRecord((segCount) * self % nG + g) = fluxVec(g)
+          adjointRecord((i) * self % nG + g) = fluxVec(g)
         end do
 
         call OMP_set_lock(self % locks(cIdx))
+        scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
         !$omp simd aligned(scalarVec)
         do g = 1, self % nG
             scalarVec(g) = scalarVec(g) + delta(g) 
@@ -1279,8 +1278,8 @@ contains
         
         ! Source index
         idx = self % nG * (cIdx - 1) + g
-        fissLocal     = fissLocal     + self % scalarFlux(idx) * self % nuSigmaF(mIdx + g)
-        prevFissLocal = prevFissLocal + self % prevFlux(idx) * self % nuSigmaF(mIdx + g)
+        fissLocal     = fissLocal     + self % adjscalarFlux(idx) * self % adjnuSigmaF(mIdx + g)
+        prevFissLocal = prevFissLocal + self % adjprevFlux(idx) * self % adjnuSigmaF(mIdx + g)
 
       end do
 

@@ -1,4 +1,5 @@
- type adjointFWTRRMPhysicsPackage;
+ //type adjointFWTRRMPhysicsPackage;
+ type adjointTRRMPhysicsPackage;
 
 pop      1750; 
 active   2600;  

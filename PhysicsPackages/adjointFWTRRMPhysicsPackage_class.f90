@@ -804,10 +804,15 @@ module adjointFWTRRMPhysicsPackage_class !currently forward
   
           sourceVec => self % source(baseIdx + 1 : baseIdx + self % nG)
           sourceAdjoint => self % adjSource(baseIdx + 1 : baseIdx + self % nG)
-  
+
           !$omp simd aligned(totVec)
           do g = 1, self % nG
-            attenuate(g) = exponential(totVec(g) * lenFlt)
+            tau(g) = totVec(g) * lenFlt
+          end do
+  
+          !$omp simd aligned(tau)
+          do g = 1, self % nG
+            attenuate(g) = exponential(tau(g))
           end do
     
           !$omp simd 
@@ -820,6 +825,12 @@ module adjointFWTRRMPhysicsPackage_class !currently forward
           do g = 1, self % nG
             deltaAdjoint(g) = (fluxAdjoint(g) - sourceAdjoint(g)) * attenuate(g)
             fluxAdjoint(g) = fluxAdjoint(g) - deltaAdjoint(g)
+          end do
+
+          !$omp simd
+          do g = 1, self % nG
+            avgFluxVec(g) = (delta(g) + lenFlt * sourceVec(g))/tau(g)
+            avgFluxAdjoint(g) = (deltaAdjoint(g) + lenFlt * sourceAdjoint(g))/tau(g)
           end do
     
           ! Accumulate to scalar flux
@@ -1143,8 +1154,8 @@ module adjointFWTRRMPhysicsPackage_class !currently forward
           
           ! Source index
           idx = self % nG * (cIdx - 1) + g
-          fissLocal     = fissLocal     + self % adjScalarFlux(idx) * self % adjnuSigmaF(mIdx + g)
-          prevFissLocal = prevFissLocal + self % adjPrevFlux(idx) * self % adjnuSigmaF(mIdx + g)
+          fissLocal     = fissLocal     + self % adjScalarFlux(idx) * self % adjNuSigmaF(mIdx + g)
+          prevFissLocal = prevFissLocal + self % adjPrevFlux(idx) * self % adjNuSigmaF(mIdx + g)
   
         end do
   
