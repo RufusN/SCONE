@@ -78,6 +78,7 @@ module baseMgNeutronMaterial_class
     procedure :: kill
     procedure :: getMacroXSs_byG
     procedure :: getTotalXS
+    procedure :: getCaptureXS
     procedure :: getNuFissionXS
     procedure :: getFissionXS
     procedure :: getChi
@@ -87,6 +88,7 @@ module baseMgNeutronMaterial_class
     procedure :: init
     procedure :: nGroups
     procedure :: getTotalPtr
+    procedure :: getCapturePtr
     procedure :: getNuFissionPtr
     procedure :: getChiPtr
     procedure :: getScatterPtr
@@ -166,6 +168,29 @@ contains
     xs = self % data(TOTAL_XS, G)
 
   end function getTotalXS
+
+
+  !!
+  !! Return Capture XS for energy group G
+  !!
+  !! See mgNeutronMaterial documentationfor details
+  !!
+  function getCaptureXS(self, G, rand) result(xs)
+    class(baseMgNeutronMaterial), intent(in) :: self
+    integer(shortInt), intent(in)            :: G
+    class(RNG), intent(inout)                :: rand
+    real(defReal)                            :: xs
+    character(100), parameter :: Here = ' getCaptureXS (baseMgNeutronMaterial_class.f90)'
+
+    ! Verify bounds
+    if (G < 1 .or. self % nGroups() < G) then
+      call fatalError(Here,'Invalid group number: '//numToChar(G)// &
+                           ' Data has only: ' // numToChar(self % nGroups()))
+      xs = ZERO ! Avoid warning
+    end if
+    xs = self % data(CAPTURE_XS, G)
+
+  end function getCaptureXS
 
   !!
   !! Return NuFission XS for energy group G
@@ -414,6 +439,17 @@ contains
     xs => self % data(TOTAL_XS, :)
 
   end function getTotalPtr
+
+  !!
+  !! Return pointer to Capture XSs 
+  !!
+  function getCapturePtr(self) result(xs)
+    class(baseMgNeutronMaterial), intent(in), target :: self
+    real(defReal), dimension(:), pointer             :: xs
+
+    xs => self % data(CAPTURE_XS, :)
+
+  end function getCapturePtr
   
   !!
   !! Return pointer to NuFission XSs 
