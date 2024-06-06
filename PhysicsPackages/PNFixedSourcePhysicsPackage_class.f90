@@ -2028,7 +2028,7 @@ contains
           self % moments(idx,1) = real(self % moments(idx,1) + (corr - 1.0_defFlt) * self % source(idx,1) / total, defFlt)
         end if
 
-        This will probably affect things like neutron conservation...
+        ! This will probably affect things like neutron conservation...
         if ((self % moments(idx,1) < 0) .and. self % zeroNeg) then
           do SH = 1, self % SHLength
             self % moments(idx,SH) = 0.0_defFlt
