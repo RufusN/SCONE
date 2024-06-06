@@ -1,0 +1,9 @@
+rm -r ./build
+mkdir ./build
+module purge
+module load rhel7/default-ccl
+module load gcc/11
+cmake -E chdir ./build cmake ./.. -DBUILD_TESTS=OFF -DCMAKE_CXX_COMPILER=gcc -DCMAKE_C_COMPILER=gcc -DCMAKE_Fortran_COMPILER=gfortran
+cd ./build
+make -j
+
