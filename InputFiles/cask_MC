@@ -1,0 +1,143 @@
+type fixedSourcePhysicsPackage;
+
+pop      1000000;
+cycles   20;
+XSdata   ce;
+dataType ce;
+outputFile fw_cadisXXX ;
+outputFormat asciiJSON;
+
+buffer 10000;
+bufferShift 10;
+commonBufferSize 10000000;
+
+collisionOperator { neutronCE {type neutronCEimp; weightWindows 1; }  }
+
+varianceReduction { type weightWindowsField; file ./ww_XXX.txt; }
+
+transportOperator { type transportOperatorST; }
+
+source { type materialSource; mat source; E 2.0; boundingBox (180.0 -20.0 -110.0 220.0 20.0 -10.0); }
+
+tally {   fluxWW { type collisionClerk;
+          map { type multiMap; maps (map_x map_y map_z); 
+	  map_x { type spaceMap; axis x; grid lin; min -320.0; max 320.0; N 64; }
+	  map_y { type spaceMap; axis y; grid lin; min -120.0; max 120.0; N 24; }
+	  map_z { type spaceMap; axis z; grid lin; min -170.0; max 170.0; N 34; } }
+          response (flux); flux {type fluxResponse;}    }
+        }
+
+geometry {
+    type geometryStd;
+    boundary (0 0 0 0 0 0);
+    graph {type shrunk;}
+
+    surfaces
+    {
+	domain  { id 1; type box; origin ( 0.0  0.0  0.0 ); halfwidth (320.0 120.0 170.0); }
+	wall    { id 2; type box; origin ( 0.0  0.0  0.0 ); halfwidth (300.0 100.0 150.0); }
+	caskOUT { id 31; type zTruncCylinder; origin (200.0 0.0 -150.0);  halfwidth 200.0; radius 60.0; }
+	caskIN  { id 32; type zTruncCylinder; origin (200.0 0.0 -55.0);  halfwidth 75.0; radius 40.0; }
+	source  { id 4; type box; origin (200.0 0.0 -60.0);   halfwidth (20.0 20.0 50.0); }
+	target  { id 5; type zTruncCylinder; origin (-200.0 0.0 -150.0); halfwidth 160.0; radius 20.0; }
+	shieldL  {id 6; type xPlane; x0 -100.0; }
+	shieldL1 {id 7; type xPlane; x0 -50.0; }
+	shieldC  {id 8; type xPlane; x0   0.0; }
+	shieldR1 {id 9; type xPlane; x0  50.0; }
+	shieldR  {id 10; type xPlane; x0  100.0; }
+    }
+
+    cells
+    {
+	wallL   { id 11; type simpleCell; surfaces (2 -8);   filltype mat; material concrete; }
+	wallR   { id 12; type simpleCell; surfaces (2  8);   filltype mat; material concrete; }
+
+	shieldL  { id 21; type simpleCell; surfaces (6 -7 -2);  filltype mat; material concrete; }
+	shieldL1 { id 22; type simpleCell; surfaces (7 -8 -2);  filltype mat; material concrete; }
+	shieldR1 { id 23; type simpleCell; surfaces (8 -9 -2);  filltype mat; material concrete; }
+	shieldR  { id 24; type simpleCell; surfaces (9 -10 -2); filltype mat; material concrete; }
+
+	target { id 3; type simpleCell; surfaces (-5 -2);   filltype mat; material water; }
+	source { id 4; type simpleCell; surfaces (-4 );     filltype mat; material source; }
+
+	caskIN  { id 51; type simpleCell; surfaces (-32 4);       filltype mat; material concrete; }
+	caskOUT { id 52; type simpleCell; surfaces (-31 32 -2); filltype mat; material concrete; }
+
+	airL   { id 61; type simpleCell; surfaces (-6  5 -2); filltype mat; material air; }
+	airR   { id 62; type simpleCell; surfaces (10 31 -2); filltype mat; material air; }
+    }
+
+    universes  
+    {
+      all    { id 10; type cellUniverse; cells (11 12 21 22 23 24 3 4 51 52 61 62); }
+      root   { id 1; type rootUniverse; border 1; fill u<10>; }
+    }
+}
+
+viz {
+ plotY { type bmp; axis y; centre (0.0 0.0 0.0); res (700 400); what uniqueID; output geom1; }
+ plotZ { type bmp; axis z; centre (0.0 0.0 -20.0); res (700 300); what uniqueID; output geom2; }
+}
+
+nuclearData {
+
+  handles {
+     ce { type aceNeutronDatabase; aceLibrary /home/vr339/myACE/JEF311.aceXS;}
+  }
+
+
+materials {
+
+    concrete {
+      temp  273;
+      composition {
+     1001.03  1.050153E-02;
+     5010.03  3.59530E-04;
+     5011.03  1.44651E-03;
+     8016.03  3.961173E-02;
+     9019.03  2.27070E-04;
+     11023.03 9.86759E-04;
+     12024.03 1.773922E-04;
+     13027.03 4.44590E-04;
+     14028.03 2.208674E-03;
+     16032.03 5.347617E-03;
+     19039.03 4.794088E-05;
+     20040.03 2.926927E-03;
+     25055.03 6.82254E-06;
+     26056.03 7.346754E-04;
+     30064.03 1.890443E-04;
+     56138.03 5.477247E-03;
+      }
+    }
+
+     air {
+     temp 273;
+     composition {
+     7014.03  4.14861E-05;
+     8016.03  1.11693E-05;
+     18040.03 4.78686E-07;
+       }
+     }
+
+     water {
+     temp 273;
+     composition {
+     1001.03  0.0666;
+     8016.03  0.0334;
+       }
+     }
+
+     source {
+     temp 273; 
+     composition {
+     92238.03 0.02;
+      8016.03 0.04;
+	} 
+     }
+    
+}
+
+}
+
+
+
