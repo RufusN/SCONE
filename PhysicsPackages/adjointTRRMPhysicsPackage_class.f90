@@ -4,7 +4,7 @@ module adjointTRRMPhysicsPackage_class !currently backward
   use universalVariables
   use genericProcedures,              only : fatalError, numToChar, rotateVector, printFishLineR
   use hashFunctions_func,             only : FNV_1
-  use exponentialRA_func,             only : exponential
+  use exponentialRA_func,             only : exponential, F1
   use dictionary_class,               only : dictionary
   use outputFile_class,               only : outputFile
   use rng_class,                      only : RNG
@@ -183,12 +183,14 @@ module adjointTRRMPhysicsPackage_class !currently backward
     logical(defBool)   :: mapFlux     = .false.
     class(tallyMap), allocatable :: fluxMap
 
+    real(defReal)      :: sensitivity  = ZERO
+
     ! Data space - absorb all nuclear data for speed
     real(defFlt), dimension(:), allocatable     :: sigmaT
     real(defFlt), dimension(:), allocatable     :: nuSigmaF
     real(defFlt), dimension(:), allocatable     :: sigmaS
     real(defFlt), dimension(:), allocatable     :: chi
-    ! real(defFlt), dimension(:), allocatable     :: adjSigmaT
+    real(defFlt), dimension(:), allocatable     :: sigmaC
     real(defFlt), dimension(:), allocatable     :: adjNuSigmaF
     real(defFlt), dimension(:), allocatable     :: adjSigmaS
     real(defFlt), dimension(:), allocatable     :: adjChi
@@ -197,7 +199,9 @@ module adjointTRRMPhysicsPackage_class !currently backward
 
     ! Results space
     real(defFlt)                               :: keff
+    real(defFlt)                               :: adjkeff
     real(defReal), dimension(2)                :: keffScore
+    real(defReal), dimension(2)                :: adjkeffScore
     real(defFlt), dimension(:), allocatable    :: scalarFlux
     real(defFlt), dimension(:), allocatable    :: prevFlux
     real(defFlt), dimension(:), allocatable    :: adjScalarFlux
@@ -240,6 +244,7 @@ module adjointTRRMPhysicsPackage_class !currently backward
     procedure, private :: normaliseFluxAndVolume
     procedure, private :: adjointNormaliseFluxAndVolume
     procedure, private :: resetFluxes
+    procedure, private :: sensitivityCalculation
     procedure, private :: accumulateFluxAndKeffScores
     procedure, private :: finaliseFluxAndKeffScores
     procedure, private :: printResults
@@ -459,6 +464,7 @@ contains
     !       and takes up memory.
     self % nMat = mm_nMat()
     allocate(self % sigmaT(self % nMat * self % nG))
+    allocate(self % sigmaC(self % nMat * self % nG))
     allocate(self % nuSigmaF(self % nMat * self % nG))
     allocate(self % chi(self % nMat * self % nG))
     allocate(self % sigmaS(self % nMat * self % nG * self % nG))
@@ -468,6 +474,7 @@ contains
       mat     => baseMgNeutronMaterial_CptrCast(matPtr)
       do g = 1, self % nG
         self % sigmaT(self % nG * (m - 1) + g) = real(mat % getTotalXS(g, self % rand),defFlt)
+        self % sigmaC(self % nG * (m - 1) + g) = real(mat % getCaptureXS(g, self % rand),defFlt)
         self % nuSigmaF(self % nG * (m - 1) + g) = real(mat % getNuFissionXS(g, self % rand),defFlt)
         self % chi(self % nG * (m - 1) + g) = real(mat % getChi(g, self % rand),defFlt)
         ! Include scattering multiplicity
@@ -528,7 +535,7 @@ contains
     class(adjointTRRMPhysicsPackage), intent(inout) :: self
     type(ray), save                               :: r
     type(RNG), target, save                       :: pRNG
-    real(defFlt)                                  :: hitRate, ONE_KEFF
+    real(defFlt)                                  :: hitRate, ONE_KEFF, adj_KEFF
     real(defReal)                                 :: elapsed_T, end_T, T_toEnd, transport_T
     logical(defBool)                              :: keepRunning, isActive
     integer(shortInt)                             :: i, itInac, itAct, it
@@ -542,10 +549,12 @@ contains
 
     ! Initialise fluxes 
     self % keff       = 1.0_defFlt
+    self % adjkeff       = 1.0_defFlt
     self % scalarFlux = 0.0_defFlt
     self % prevFlux   = 1.0_defFlt
     self % fluxScores = ZERO
     self % keffScore  = ZERO
+    self % adjKeffScore  = ZERO
     self % source     = 0.0_defFlt
 
     self % angularIP = 0.0_defReal
@@ -583,10 +592,11 @@ contains
       it = itInac + itAct
       
       ONE_KEFF = 1.0_defFlt / self % keff
+      adj_KEFF = 1.0_defFlt / self % adjkeff
       !$omp parallel do schedule(static)
       do i = 1, self % nCells
         call self % sourceUpdateKernel(i, ONE_KEFF)
-        call self % adjointSourceUpdateKernel(i, ONE_KEFF)
+        call self % adjointSourceUpdateKernel(i, adj_KEFF)
       end do
       !$omp end parallel do
 
@@ -666,6 +676,7 @@ contains
       end if
       print *, 'Cell hit rate: ', trim(numToChar(real(hitRate,defReal)))
       print *, 'keff: ', trim(numToChar(real(self % keff,defReal)))
+      print *, 'adjoint_keff: ', trim(numToChar(real(self % adjkeff,defReal)))
       print *, 'Elapsed time: ', trim(secToChar(elapsed_T))
       print *, 'End time:     ', trim(secToChar(end_T))
       print *, 'Time to end:  ', trim(secToChar(T_toEnd))
@@ -676,6 +687,8 @@ contains
 
     ! Finalise flux scores
     call self % finaliseFluxAndKeffScores(itAct)
+
+    call self % sensitivityCalculation(ONE_KEFF, it)
 
   end subroutine cycles
 
@@ -741,7 +754,8 @@ contains
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, avgFluxVec, tau
-    real(defFlt), allocatable, dimension(:)               :: tauBack, tauBackBuffer, cIdxBack, cIdxBackBuffer
+    real(defFlt), allocatable, dimension(:)               :: tauBack, tauBackBuffer
+    real(shortInt), allocatable, dimension(:)             :: cIdxBack, cIdxBackBuffer
     logical(defBool), allocatable, dimension(:)           :: vacBack, vacBackBuffer 
     real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec
     real(defReal), pointer, dimension(:)                  :: angularProd
@@ -835,7 +849,7 @@ contains
         
       !$omp simd 
       do g = 1, self % nG
-        attenuate(g) = exponential(tau(g))
+        attenuate(g) = F1(tau(g))
       end do
 
       !$omp simd
@@ -845,15 +859,15 @@ contains
 
       !$omp simd
       do g = 1, self % nG
-        fluxVec(g) = fluxVec(g) - delta(g)
+        fluxVec(g) = fluxVec(g) - delta(g) * tau(g)
       end do
 
-      if (.not. activeRay .and. totalLength >= self % dead) then
-        !record flux for first active incoming
-        do g = 1, self % nG
-          fluxRecord(g) = fluxVec(g) 
-        end do
-      end if
+      ! if (.not. activeRay .and. totalLength >= self % dead) then
+      !   !record flux for first active incoming
+      !   do g = 1, self % nG
+      !     fluxRecord(g) = fluxVec(g) 
+      !   end do
+      ! end if
 
       ! Accumulate to scalar flux
       if (activeRay) then
@@ -884,8 +898,9 @@ contains
 
         !$omp simd
         do g = 1, self % nG
-          avgFluxVec(g) = (delta(g)/tau(g) + sourceVec(g))
+          avgFluxVec(g) = (delta(g) + sourceVec(g))
           ! avgFluxAdjoint(g) = (deltaAdjoint(g)/tau(g) + sourceAdjoint(g))
+          ! print *, fluxVec(g), avgFluxVec(g), (fluxVec(g) + delta(g)*tau(g))
         end do
         
         !$omp simd
@@ -897,16 +912,16 @@ contains
 
         if (tally) then
 
-          !$omp simd
-          do g = 1, self % nG
-            fluxRecord((segCount - 1) * self % nG + g)  = avgFluxVec(g) 
-          end do
+        !$omp simd
+        do g = 1, self % nG
+          fluxRecord((segCount - 1) * self % nG + g)  = avgFluxVec(g) 
+        end do
 
           call OMP_set_lock(self % locks(cIdx))
           scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
           !$omp simd aligned(scalarVec)
           do g = 1, self % nG
-            scalarVec(g) = scalarVec(g) + delta(g) 
+            scalarVec(g) = scalarVec(g) + delta(g) * tau(g)
           end do
           self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length 
           call OMP_unset_lock(self % locks(cIdx))
@@ -929,7 +944,7 @@ contains
 
     ! Flux guess for new adjoint deadlength
     do g = 1, self % nG
-      ! cIdx = cIdxBack(segCount)
+      ! cIdx = cIdxBack(segCount) - should carry over 
       idx = (cIdx - 1) * self % nG + g
       fluxVec(g) = self % adjSource(idx)
     end do
@@ -951,7 +966,7 @@ contains
     fluxRecordBuffer = fluxRecord(1 : (segCount * self % nG))
     call move_alloc(fluxRecordBuffer, fluxRecord)
 
-    ! ! ! allocate adjoint flux storage
+    ! ! allocate adjoint flux storage
     ! allocate(adjointRecord(size(fluxRecord)))
 
     !iterate over segments
@@ -964,12 +979,17 @@ contains
 
       !$omp simd
       do g = 1, self % nG
-        delta(g) = (fluxVec(g) - sourceVec(g)) * exponential(tauBack(segIdx + g))
+        attenuate(g) = F1(tauBack(segIdx + g))
       end do
 
       !$omp simd
       do g = 1, self % nG
-        fluxVec(g) = fluxVec(g) - delta(g)
+        delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
+      end do
+
+      !$omp simd
+      do g = 1, self % nG
+        fluxVec(g) = fluxVec(g) - delta(g) * tauBack(segIdx + g)
       end do
 
       ! if ( i + 1 == segCountCrit ) then
@@ -983,7 +1003,7 @@ contains
 
         !$omp simd
         do g = 1, self % nG
-          avgFluxVec(g) = (sourceVec(g) + delta(g)/tauBack(segIdx + g))
+          avgFluxVec(g) = (sourceVec(g) + delta(g))
         end do
 
         ! !$omp simd
@@ -995,11 +1015,10 @@ contains
 
         scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
         angularProd => self % angularIP((baseIdx + 1):(baseIdx + self % nG))
-
-        !$omp simd aligned(scalarVec)
+        !$omp simd 
         do g = 1, self % nG
-            scalarVec(g) = scalarVec(g) + delta(g) 
-            angularProd(g) = avgFluxVec(g) * fluxRecord(segIdx + g)
+            scalarVec(g) = scalarVec(g) + delta(g) * tauBack(segIdx + g)
+            angularProd(g) = angularProd(g) + avgFluxVec(g) * fluxRecord(segIdx + g)   
         end do
         call OMP_unset_lock(self % locks(cIdx))
 
@@ -1027,11 +1046,10 @@ contains
     integer(shortInt), intent(in)                 :: it
     real(defFlt)                                  :: norm
     real(defReal)                                 :: normVol
-    real(defFlt), save                            :: total, vol!, sigGG, D
+    real(defFlt), save                            :: total, vol, sigGG, D
     integer(shortInt), save                       :: g, matIdx, idx
     integer(shortInt)                             :: cIdx
-    !$omp threadprivate(total, vol, idx, g, matIdx) 
-    !, sigGG, D)
+    !$omp threadprivate(total, vol, idx, g, matIdx, sigGG, D)
 
     norm = real(ONE / self % lengthPerIt, defFlt)
     normVol = ONE / (self % lengthPerIt * it)
@@ -1053,23 +1071,23 @@ contains
           self % scalarFlux(idx) = self % scalarFlux(idx) * norm / ( total * vol)
         end if
 
-        self % scalarFlux(idx) = self % scalarflux(idx) + self % source(idx) 
+        ! self % scalarFlux(idx) = self % scalarflux(idx) + self % source(idx) 
         
-        ! ! Apply stabilisation for negative XSs
-        ! if (matIdx < VOID_MAT) then
-        !   sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
+        ! Apply stabilisation for negative XSs
+        if (matIdx < UNDEF_MAT) then
+          sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
 
-        !   ! Presumes non-zero total XS
-        !   if ((sigGG < 0) .and. (total > 0)) then
-        !     D = -real(self % rho, defFlt) * sigGG / total
-        !   else
-        !     D = 0.0_defFlt
-        !   end if
-        ! else
-        !   D = 0.0_defFlt
-        ! end if
+          ! Presumes non-zero total XS
+          if ((sigGG < 0) .and. (total > 0)) then
+            D = -real(self % rho, defFlt) * sigGG / total
+          else
+            D = 0.0_defFlt
+          end if
+        else
+          D = 0.0_defFlt
+        end if
 
-        ! self % scalarFlux(idx) =  (self % scalarflux(idx) + self % source(idx) + D * self % prevFlux(idx) ) / (1 + D)
+        self % scalarFlux(idx) =  (self % scalarflux(idx) + self % source(idx) + D * self % prevFlux(idx) ) / (1 + D)
 
       end do
 
@@ -1083,10 +1101,10 @@ contains
     integer(shortInt), intent(in)                 :: it
     real(defFlt)                                  :: norm
     real(defReal)                                 :: normVol
-    real(defFlt), save                            :: total, vol ! sigGG, D
+    real(defFlt), save                            :: total, vol, sigGG, D
     integer(shortInt), save                       :: g, matIdx, idx
     integer(shortInt)                             :: cIdx
-    !$omp threadprivate(total, vol, idx, g, matIdx)
+    !$omp threadprivate(total, vol, idx, g, matIdx, sigGG, D)
 
     norm = real(ONE / self % lengthPerIt, defFlt)
     normVol = ONE / (self % lengthPerIt * it)
@@ -1108,23 +1126,24 @@ contains
           self % adjScalarFlux(idx) = self % adjScalarFlux(idx) * norm / ( total * vol)
         end if
 
-        self % adjScalarFlux(idx) = self % adjScalarFlux(idx) + self % adjSource(idx)
+        ! self % adjScalarFlux(idx) = self % adjScalarFlux(idx) + self % adjSource(idx)
         
-        ! ! Apply stabilisation for negative XSs
-        ! if (matIdx < VOID_MAT) then
-        !   sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
+        ! Apply stabilisation for negative XSs
+        if (matIdx < UNDEF_MAT) then
 
-        !   ! Presumes non-zero total XS
-        !   if ((sigGG < 0) .and. (total > 0)) then
-        !     D = -real(self % rho, defFlt) * sigGG / total
-        !   else
-        !     D = 0.0_defFlt
-        !   end if
-        ! else
-        !   D = 0.0_defFlt
-        ! end if
+          sigGG = self % adjSigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
 
-        ! self % scalarFlux(idx) =  (self % scalarflux(idx) + self % source(idx) + D * self % prevFlux(idx) ) / (1 + D)
+          ! Presumes non-zero total XS
+          if ((sigGG < 0) .and. (total > 0)) then
+            D = -real(self % rho, defFlt) * sigGG / total
+          else
+            D = 0.0_defFlt
+          end if
+        else
+          D = 0.0_defFlt
+        end if
+
+        self % adjScalarFlux(idx) =  (self % adjScalarflux(idx) + self % adjSource(idx) + D * self % adjPrevFlux(idx) ) / (1 + D)
 
       end do
 
@@ -1258,14 +1277,6 @@ contains
       self % adjSource(idx) = chi(g) * fission + scatter
       self % adjSource(idx) = self % adjSource(idx) / total(g)
 
-      if (self%adjSource(idx) /= self%adjSource(idx)) then
-        print *, "Error: adjSource",idx 
-        print *, self % adjScalarFlux(idx)
-        print *, total(g)
-        stop
-    endif
-    
-
     end do
 
   end subroutine adjointSourceUpdateKernel
@@ -1275,8 +1286,8 @@ contains
   !!
   subroutine calculateKeff(self)
     class(adjointTRRMPhysicsPackage), intent(inout) :: self
-    real(defFlt)                                  :: fissionRate, prevFissionRate
-    real(defFlt), save                            :: fissLocal, prevFissLocal, vol
+    real(defFlt)                                  :: fissionRate, prevFissionRate,adjfissionRate, adjprevFissionRate
+    real(defFlt), save                            :: fissLocal, prevFissLocal, vol, adjfissLocal, adjprevFissLocal
     integer(shortInt), save                       :: matIdx, g, idx, mIdx
     integer(shortInt)                             :: cIdx
     class(baseMgNeutronMaterial), pointer, save   :: mat
@@ -1302,24 +1313,34 @@ contains
 
       fissLocal = 0.0_defFlt
       prevFissLocal = 0.0_defFlt
+      adjfissLocal = 0.0_defFlt
+      adjprevFissLocal = 0.0_defFlt
       mIdx = (matIdx - 1) * self % nG
       do g = 1, self % nG
         
         ! Source index
         idx = self % nG * (cIdx - 1) + g
-        fissLocal     = fissLocal     + self % adjscalarFlux(idx) * self % adjnuSigmaF(mIdx + g)
-        prevFissLocal = prevFissLocal + self % adjprevFlux(idx) * self % adjnuSigmaF(mIdx + g)
+        fissLocal     = fissLocal     + self % scalarFlux(idx) * self % NuSigmaF(mIdx + g)
+        prevFissLocal = prevFissLocal + self % prevFlux(idx) * self % NuSigmaF(mIdx + g)
+
+        adjfissLocal     = adjfissLocal     + self % adjscalarFlux(idx) * self % adjNuSigmaF(mIdx + g)
+        adjprevFissLocal = adjprevFissLocal + self % adjprevFlux(idx) * self % adjNuSigmaF(mIdx + g)
 
       end do
 
       fissionRate     = fissionRate     + fissLocal * vol
       prevFissionRate = prevFissionRate + prevFissLocal * vol
 
+      adjfissionRate     = adjfissionRate     + adjfissLocal * vol
+      adjprevFissionRate = adjprevFissionRate + adjprevFissLocal * vol
+
     end do
     !$omp end parallel do
 
     ! Update k
     self % keff = self % keff * fissionRate / prevFissionRate
+
+    self % adjkeff = self % adjkeff * adjfissionRate / adjprevFissionRate
 
   end subroutine calculateKeff
   
@@ -1341,6 +1362,105 @@ contains
 
   end subroutine resetFluxes
 
+  subroutine sensitivityCalculation(self, ONE_KEFF, it)
+    class(adjointTRRMPhysicsPackage), target, intent(inout) :: self
+    real(defFlt), intent(in)                      :: ONE_KEFF
+    integer(shortInt), intent(in)                 :: it
+    real(defReal)                                 :: normVol
+    real(defFlt)                                  :: XSchange, deltaXS
+    real(defReal)                                 :: delta, fission
+    integer(shortInt)                             :: cIdx, baseIdx, idx, matIdx, g, gIn, mat
+    real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture
+    real(defReal), dimension(:), pointer          :: IPVec
+    real(defReal), dimension(size(self % source)) :: num, den
+
+    !change in XS
+    XSchange = 0.01 ! 1 % change to 
+    normVol = ONE / (self % lengthPerIt * it)
+
+    do cIdx = 1, self % nCells
+      do g = 1, self % nG
+        idx = (cIdx - 1) * self % nG + g
+        if (self % volume(cIdx) > volume_tolerance) then
+        self % angularIP(idx) = self % angularIP(idx) * normVol / (self % volume(cIdx))
+        else
+          self % angularIP(idx) = 0.0_defFlt
+        end if
+      end do
+    end do
+
+    do g = 1, size(self % source)
+      num(g) =  0.0_defFlt
+      den(g) = 0.0_defFlt
+    end do
+
+    do cIdx = 1, self % nCells
+      ! Identify material
+      mat  =  self % geom % geom % graph % getMatFromUID(cIdx) 
+
+      baseIdx = (cIdx - 1) * self % nG 
+      matIdx = (mat - 1) * self % nG
+      IPVec => self % angularIP((baseIdx+1):(baseIdx + self % nG))
+
+      total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
+      nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
+      chi => self % chi((matIdx + 1):(matIdx + self % nG))
+      capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
+
+      ! fission term -denom:
+      fission = 0.0_defFlt
+      !$omp simd
+      do gIn = 1, self % nG
+        fission = fission + IPVec(gIn) * nuFission(gIn)
+      end do
+      fission = fission * ONE_KEFF
+
+      ! do g = 1, self % nG 
+      !   idx = baseIdx + g
+      ! end do
+
+      ! delta = 0.0_defFlt
+      do g = 1, self % nG 
+        idx = baseIdx + g
+        ! Change in XS
+        if ( g == 2) then  !mat == 2 .and.
+          deltaXS = XSchange * capture(g)
+          print *, capture(g)
+        else
+          deltaXS = 0.0_defFlt
+        end if
+
+        delta = IPVec(g) * deltaXS
+        num(idx) = delta
+        den(idx) = fission * chi(g)
+
+      end do
+
+    end do
+
+    ! sum to get IP
+
+    delta = 0.0_defFlt
+    fission = 0.0_defFlt
+    do g = 1, self % nG * self % nCells
+      delta = delta + num(g)
+      fission = fission + den(g)
+    end do
+
+    ! delta = 0.0_defFlt
+    ! fission = 0.0_defFlt
+    ! do g = 1, self % nCells
+    !   delta = delta + num(g)
+    !   fission = fission + den(g)
+    ! end do
+
+    print *, delta, fission, self % keffScore(1), self % adjkeffScore(1)
+
+!self % keffScore(1) * self % keffScore(1) *
+    self % sensitivity =  -  (delta / fission) * 8.21360275E-02 !/ self % keffScore(1)
+
+  end subroutine sensitivityCalculation
+
   !!
   !! Accumulate flux scores for stats
   !!
@@ -1359,7 +1479,9 @@ contains
     !$omp end parallel do
 
     self % keffScore(1) = self % keffScore(1) + self % keff
+    self % adjkeffScore(1) = self % adjkeffScore(1) + self % adjkeff
     self % keffScore(2) = self % keffScore(2) + self % keff * self % keff
+    self % adjkeffScore(2) = self % adjkeffScore(2) + self % adjkeff * self % adjkeff
 
   end subroutine accumulateFluxAndKeffScores
   
@@ -1397,6 +1519,11 @@ contains
     self % keffScore(2) = self % keffScore(2) * N1
     self % keffScore(2) = sqrt(Nm1*(self % keffScore(2) - &
             self % keffScore(1) * self % keffScore(1))) 
+
+    self % adjkeffScore(1) = self % adjkeffScore(1) * N1
+    self % adjkeffScore(2) = self % adjkeffScore(2) * N1
+    self % adjkeffScore(2) = sqrt(Nm1*(self % adjkeffScore(2) - &
+            self % adjkeffScore(1) * self % adjkeffScore(1))) 
 
   end subroutine finaliseFluxAndKeffScores
   
@@ -1447,10 +1574,19 @@ contains
     name = 'Clock_Time'
     call out % printValue(timerTime(self % timerMain),name)
 
+    name = 'sensitivity'
+    call out % printValue(real(self % sensitivity,defReal),name)
+
     ! Print keff
     name = 'keff'
     call out % startBlock(name)
     call out % printResult(real(self % keffScore(1),defReal), real(self % keffScore(2),defReal), name)
+    call out % endBlock()
+
+    ! Print keff
+    name = 'Adjoint_keff'
+    call out % startBlock(name)
+    call out % printResult(real(self % adjkeffScore(1),defReal), real(self % adjkeffScore(2),defReal), name)
     call out % endBlock()
 
     ! Print cell volumes
@@ -1702,6 +1838,7 @@ contains
     if(allocated(self % sigmaS)) deallocate(self % sigmaS)
     if(allocated(self % nuSigmaF)) deallocate(self % nuSigmaF)
     if(allocated(self % chi)) deallocate(self % chi)
+    if(allocated(self % sigmaC)) deallocate(self % sigmaC)
 
     ! if(allocated(self % adjSigmaT)) deallocate(self % adjSigmaT)
     if(allocated(self % adjSigmaS)) deallocate(self % adjSigmaS)
@@ -1722,8 +1859,12 @@ contains
     self % printVolume = .false.
     self % printCells  = .false.
 
+    self % sensitivity  = ZERO
+
     self % keff        = ZERO
+    self % adjkeff     = ZERO
     self % keffScore   = ZERO
+    self % adjkeffScore   = ZERO
     if(allocated(self % scalarFlux)) deallocate(self % scalarFlux)
     if(allocated(self % prevFlux)) deallocate(self % prevFlux)
     if(allocated(self % fluxScores)) deallocate(self % fluxScores)
