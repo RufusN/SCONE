@@ -1423,7 +1423,7 @@ contains
       do g = 1, self % nG 
         idx = baseIdx + g
         ! Change in XS
-        if ( g == 2) then  !mat == 2 .and.
+        if (g == 1) then  !mat == 2 .and.
           deltaXS = XSchange * capture(g)
           print *, capture(g)
         else
@@ -1454,10 +1454,10 @@ contains
     !   fission = fission + den(g)
     ! end do
 
-    print *, delta, fission, self % keffScore(1), self % adjkeffScore(1)
+    ! print *, delta, fission, self % keffScore(1), self % adjkeffScore(1)
 
 !self % keffScore(1) * self % keffScore(1) *
-    self % sensitivity =  -  (delta / fission) * 8.21360275E-02 !/ self % keffScore(1)
+    self % sensitivity =  - self % keffScore(1) * (delta / fission) !* 8.21360275E-02 !/ self % keffScore(1)
 
   end subroutine sensitivityCalculation
 
