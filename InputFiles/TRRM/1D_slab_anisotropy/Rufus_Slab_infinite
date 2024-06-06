@@ -1,8 +1,8 @@
 type adjointTRRMPhysicsPackage;
 
 pop      1000;
-active   1000; 
-inactive 100;
+active   300; 
+inactive 400;
 dead 20;
 termination 200;
 plot 1;
@@ -10,7 +10,7 @@ SHOrder 1;
 XSdata   mg;
 dataType mg; 
 //seed 1140;
-outputFile slab_infinite ;
+outputFile slab_pert_1%_capture ;
 
 geometry { 
     type geometryStd;
