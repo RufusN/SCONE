@@ -2003,7 +2003,7 @@ contains
         else
           total = self % sigmaT((matIdx - 1) * self % nG + g)
           sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g, 1)
-      
+          
           ! Presumes non-zero total XS
           if ((sigGG < 0) .and. (total > 0)) then
             D = -real(self % rho, defFlt) * sigGG / total
@@ -2028,7 +2028,7 @@ contains
           self % moments(idx,1) = real(self % moments(idx,1) + (corr - 1.0_defFlt) * self % source(idx,1) / total, defFlt)
         end if
 
-        ! This will probably affect things like neutron conservation...
+        This will probably affect things like neutron conservation...
         if ((self % moments(idx,1) < 0) .and. self % zeroNeg) then
           do SH = 1, self % SHLength
             self % moments(idx,SH) = 0.0_defFlt
@@ -2115,6 +2115,10 @@ contains
         self % source(idx,SH) = scatter + self % fixedSource(idx,SH)
         self % source(idx,SH) = self % source(idx,SH) / total(g)
       end do
+
+      if (chi(g) /= chi(g)) then
+        chi(g) = 0.0_defFlt
+      end if
 
       self % source(idx,1) = self % source(idx,1) + chi(g) * fission / total(g)
     end do
