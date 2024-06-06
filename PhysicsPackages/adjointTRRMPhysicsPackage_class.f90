@@ -183,8 +183,6 @@ module adjointTRRMPhysicsPackage_class !currently backward
     logical(defBool)   :: mapFlux     = .false.
     class(tallyMap), allocatable :: fluxMap
 
-    real(defReal)      :: sensitivity  = ZERO
-
     ! Data space - absorb all nuclear data for speed
     real(defFlt), dimension(:), allocatable     :: sigmaT
     real(defFlt), dimension(:), allocatable     :: nuSigmaF
@@ -195,17 +193,20 @@ module adjointTRRMPhysicsPackage_class !currently backward
     real(defFlt), dimension(:), allocatable     :: adjSigmaS
     real(defFlt), dimension(:), allocatable     :: adjChi
 
-    real(defReal), dimension(:), allocatable   :: angularIP
-
     ! Results space
     real(defFlt)                               :: keff
     real(defFlt)                               :: adjkeff
+    real(defReal)                              :: sensitivity 
+    real(defReal)                              :: deltaKeff 
     real(defReal), dimension(2)                :: keffScore
     real(defReal), dimension(2)                :: adjkeffScore
+    real(defReal), dimension(2)                :: sensitivityScore
+    real(defReal), dimension(2)                :: deltaKeffScore
     real(defFlt), dimension(:), allocatable    :: scalarFlux
     real(defFlt), dimension(:), allocatable    :: prevFlux
     real(defFlt), dimension(:), allocatable    :: adjScalarFlux
     real(defFlt), dimension(:), allocatable    :: adjPrevFlux
+    real(defReal), dimension(:), allocatable   :: angularIP
     real(defReal), dimension(:,:), allocatable :: fluxScores
     real(defFlt), dimension(:), allocatable    :: source
     real(defFlt), dimension(:), allocatable    :: adjSource
@@ -549,19 +550,21 @@ contains
 
     ! Initialise fluxes 
     self % keff       = 1.0_defFlt
-    self % adjkeff       = 1.0_defFlt
-    self % scalarFlux = 0.0_defFlt
-    self % prevFlux   = 1.0_defFlt
-    self % fluxScores = ZERO
-    self % keffScore  = ZERO
-    self % adjKeffScore  = ZERO
-    self % source     = 0.0_defFlt
+    self % adjkeff    = 1.0_defFlt
 
-    self % angularIP = 0.0_defReal
-
+    self % scalarFlux    = 0.0_defFlt
+    self % prevFlux      = 1.0_defFlt
+    self % source        = 0.0_defFlt
     self % adjScalarFlux = 0.0_defFlt
     self % adjPrevFlux   = 1.0_defFlt
     self % adjSource     = 0.0_defFlt
+    self % angularIP     = 0.0_defReal
+
+    self % keffScore        = ZERO
+    self % adjKeffScore     = ZERO
+    self % fluxScores       = ZERO
+    self % deltaKeffScore   = ZERO
+    self % sensitivityScore = ZERO
 
     ! Initialise other results
     self % cellHit      = 0
@@ -636,6 +639,7 @@ contains
 
       ! Calculate new k
       call self % calculateKeff()
+      call self % sensitivityCalculation(ONE_KEFF, it)
 
       ! Accumulate flux scores
       if (isActive) call self % accumulateFluxAndKeffScores()
@@ -687,8 +691,6 @@ contains
 
     ! Finalise flux scores
     call self % finaliseFluxAndKeffScores(itAct)
-
-    call self % sensitivityCalculation(ONE_KEFF, it)
 
   end subroutine cycles
 
@@ -1357,6 +1359,7 @@ contains
       self % scalarFlux(idx) = 0.0_defFlt
       self % adjPrevFlux(idx) = self % adjScalarFlux(idx)
       self % adjScalarFlux(idx) = 0.0_defFlt
+      self % angularIP(idx) = 0.0_defFlt
     end do
     !$omp end parallel do
 
@@ -1376,7 +1379,7 @@ contains
 
     !change in XS
     XSchange = 0.01 ! 1 % change to 
-    normVol = ONE / (self % lengthPerIt * it)
+    normVol = ONE / (self % lengthPerIt) !*it
 
     do cIdx = 1, self % nCells
       do g = 1, self % nG
@@ -1413,29 +1416,23 @@ contains
       do gIn = 1, self % nG
         fission = fission + IPVec(gIn) * nuFission(gIn)
       end do
-      fission = fission * ONE_KEFF
-
-      ! do g = 1, self % nG 
-      !   idx = baseIdx + g
-      ! end do
-
+      fission = fission !* ONE_KEFF
       ! delta = 0.0_defFlt
       do g = 1, self % nG 
         idx = baseIdx + g
         ! Change in XS
-        if (g == 1) then  !mat == 2 .and.
+        if (g == 2) then  !mat == 2 .and.
           deltaXS = XSchange * capture(g)
-          print *, capture(g)
         else
-          deltaXS = 0.0_defFlt
+           deltaXS = 0.0_defFlt
         end if
 
         delta = IPVec(g) * deltaXS
-        num(idx) = delta
+        num(idx) = delta + num(idx)
         den(idx) = fission * chi(g)
-
       end do
 
+   
     end do
 
     ! sum to get IP
@@ -1447,17 +1444,13 @@ contains
       fission = fission + den(g)
     end do
 
-    ! delta = 0.0_defFlt
-    ! fission = 0.0_defFlt
-    ! do g = 1, self % nCells
-    !   delta = delta + num(g)
-    !   fission = fission + den(g)
-    ! end do
+    !self % keffScore(1) * self % keffScore(1) *
 
-    ! print *, delta, fission, self % keffScore(1), self % adjkeffScore(1)
+    self % deltaKeff   = - self % keff * self % keff * (delta / fission) 
 
-!self % keffScore(1) * self % keffScore(1) *
-    self % sensitivity =  - self % keffScore(1) * (delta / fission) !* 8.21360275E-02 !/ self % keffScore(1)
+    !self % deltaKeff = - (delta / fission) / (1 - (delta / fission)) !  * 2 
+
+    self % sensitivity =  self % deltaKeff / (self % keff * XSchange)
 
   end subroutine sensitivityCalculation
 
@@ -1482,6 +1475,12 @@ contains
     self % adjkeffScore(1) = self % adjkeffScore(1) + self % adjkeff
     self % keffScore(2) = self % keffScore(2) + self % keff * self % keff
     self % adjkeffScore(2) = self % adjkeffScore(2) + self % adjkeff * self % adjkeff
+
+    self % sensitivityScore(1) = self % sensitivityScore(1) + self % sensitivity
+    self % sensitivityScore(2) = self % sensitivityScore(2) + self % sensitivity * self % sensitivity
+
+    self % deltaKeffScore(1) = self % deltaKeffScore(1) + self % deltaKeff
+    self % deltaKeffScore(2) = self % deltaKeffScore(2) + self % deltaKeff * self % deltaKeff
 
   end subroutine accumulateFluxAndKeffScores
   
@@ -1517,13 +1516,30 @@ contains
 
     self % keffScore(1) = self % keffScore(1) * N1
     self % keffScore(2) = self % keffScore(2) * N1
-    self % keffScore(2) = sqrt(Nm1*(self % keffScore(2) - &
+    self % keffScore(2) = (Nm1*(self % keffScore(2) - &
             self % keffScore(1) * self % keffScore(1))) 
+    self % keffScore(2) = sqrt(abs(self % keffScore(2)))
 
     self % adjkeffScore(1) = self % adjkeffScore(1) * N1
     self % adjkeffScore(2) = self % adjkeffScore(2) * N1
-    self % adjkeffScore(2) = sqrt(Nm1*(self % adjkeffScore(2) - &
+    self % adjkeffScore(2) = (Nm1*(self % adjkeffScore(2) - &
             self % adjkeffScore(1) * self % adjkeffScore(1))) 
+    self % adjkeffScore(2) = sqrt(abs(self % adjkeffScore(2)))
+
+    self % sensitivityScore(1) = self % sensitivityScore(1) * N1
+    self % sensitivityScore(2) = self % sensitivityScore(2) * N1
+    self % sensitivityScore(2) = (Nm1*(self % sensitivityScore(2) - &
+            self % sensitivityScore(1) * self % sensitivityScore(1))) 
+    self % sensitivityScore(2) = sqrt(abs(self % sensitivityScore(2)))
+
+    self % deltaKeffScore(1) = self % deltaKeffScore(1) * N1
+    self % deltaKeffScore(2) = self % deltaKeffScore(2) * N1
+    self % deltaKeffScore(2) = (Nm1*(self % deltaKeffScore(2) - &
+            self % deltaKeffScore(1) * self % deltaKeffScore(1))) 
+    self % deltaKeffScore(2) = sqrt(abs(self % deltaKeffScore(2)))
+
+    !self % deltaKeffScore(1) = self % deltaKeffScore(1) * self % keffScore(1) * self % keffScore(1)
+    !self % deltaKeffScore(2) = self % deltaKeffScore(2) * self % keffScore(1) !* self % keffScore(1)
 
   end subroutine finaliseFluxAndKeffScores
   
@@ -1574,9 +1590,6 @@ contains
     name = 'Clock_Time'
     call out % printValue(timerTime(self % timerMain),name)
 
-    name = 'sensitivity'
-    call out % printValue(real(self % sensitivity,defReal),name)
-
     ! Print keff
     name = 'keff'
     call out % startBlock(name)
@@ -1587,6 +1600,23 @@ contains
     name = 'Adjoint_keff'
     call out % startBlock(name)
     call out % printResult(real(self % adjkeffScore(1),defReal), real(self % adjkeffScore(2),defReal), name)
+    call out % endBlock()
+
+    name = 'delta_keff'
+    call out % startBlock(name)
+    call out % printResult(real(self % deltaKeffScore(1),defReal), &
+          real(self % deltaKeffScore(2),defReal), name)
+    call out % endBlock()
+
+    name = 'pert_keff'
+    call out % startBlock(name)
+    call out % printResult(real(self % keffScore(1) + self % deltaKeffScore(1),defReal), &
+          real(self % keffScore(1) - self % deltaKeffScore(1),defReal), name)
+    call out % endBlock()
+
+    name = 'sensitivity'
+    call out % startBlock(name)
+    call out % printResult(real(self % sensitivityScore(1),defReal), real(self % sensitivityScore(2),defReal), name)
     call out % endBlock()
 
     ! Print cell volumes
@@ -1859,12 +1889,15 @@ contains
     self % printVolume = .false.
     self % printCells  = .false.
 
-    self % sensitivity  = ZERO
+    self % sensitivity      = ZERO
+    self % deltaKeff        = ZERO
+    self % keff             = ZERO
+    self % adjkeff          = ZERO
+    self % keffScore        = ZERO
+    self % adjkeffScore     = ZERO
+    self % sensitivityScore = ZERO
+    self % deltaKeffScore   = ZERO
 
-    self % keff        = ZERO
-    self % adjkeff     = ZERO
-    self % keffScore   = ZERO
-    self % adjkeffScore   = ZERO
     if(allocated(self % scalarFlux)) deallocate(self % scalarFlux)
     if(allocated(self % prevFlux)) deallocate(self % prevFlux)
     if(allocated(self % fluxScores)) deallocate(self % fluxScores)
