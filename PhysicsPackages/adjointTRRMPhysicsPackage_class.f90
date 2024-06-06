@@ -1008,11 +1008,6 @@ contains
           avgFluxVec(g) = (sourceVec(g) + delta(g))
         end do
 
-        ! !$omp simd
-        ! do g = 1, self % nG
-        !   adjointRecord((i - 1) * self % nG + g) = avgFluxVec(g)
-        ! end do
-
         call OMP_set_lock(self % locks(cIdx))
 
         scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
@@ -1020,7 +1015,7 @@ contains
         !$omp simd 
         do g = 1, self % nG
             scalarVec(g) = scalarVec(g) + delta(g) * tauBack(segIdx + g)
-            angularProd(g) = angularProd(g) + avgFluxVec(g) * fluxRecord(segIdx + g)   
+            angularProd(g) = angularProd(g) + avgFluxVec(g) * fluxRecord(segIdx + g)  
         end do
         call OMP_unset_lock(self % locks(cIdx))
 
@@ -1371,14 +1366,15 @@ contains
     integer(shortInt), intent(in)                 :: it
     real(defReal)                                 :: normVol
     real(defFlt)                                  :: XSchange, deltaXS
-    real(defReal)                                 :: delta, fission
-    integer(shortInt)                             :: cIdx, baseIdx, idx, matIdx, g, gIn, mat
+    real(defReal)                                 :: delta, fission, fission_pert
+    integer(shortInt)                             :: cIdx, baseIdx, idx, matIdx, g, gIn, mat, XScase
     real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture
     real(defReal), dimension(:), pointer          :: IPVec
-    real(defReal), dimension(size(self % source)) :: num, den
+    real(defReal), dimension(self % nG * self % nCells) :: num, den
 
     !change in XS
     XSchange = 0.01 ! 1 % change to 
+    XScase = 2
     normVol = ONE / (self % lengthPerIt) !*it
 
     do cIdx = 1, self % nCells
@@ -1392,7 +1388,7 @@ contains
       end do
     end do
 
-    do g = 1, size(self % source)
+    do g = 1, size(num)
       num(g) =  0.0_defFlt
       den(g) = 0.0_defFlt
     end do
@@ -1410,27 +1406,54 @@ contains
       chi => self % chi((matIdx + 1):(matIdx + self % nG))
       capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
 
-      ! fission term -denom:
       fission = 0.0_defFlt
       !$omp simd
       do gIn = 1, self % nG
         fission = fission + IPVec(gIn) * nuFission(gIn)
       end do
-      fission = fission !* ONE_KEFF
-      ! delta = 0.0_defFlt
-      do g = 1, self % nG 
-        idx = baseIdx + g
-        ! Change in XS
-        if (g == 2) then  !mat == 2 .and.
-          deltaXS = XSchange * capture(g)
-        else
-           deltaXS = 0.0_defFlt
-        end if
+      fission = fission 
 
-        delta = IPVec(g) * deltaXS
-        num(idx) = delta + num(idx)
-        den(idx) = fission * chi(g)
-      end do
+
+      if (XScase == 1) then
+      
+        deltaXS = 0.0_defFlt
+        delta = 0.0_defFlt
+        do g = 1, self % nG 
+          idx = baseIdx + g
+          ! Change in XS
+          if (g == 1) then  !mat == 2 .and.
+            deltaXS = XSchange * capture(g)
+          else
+            deltaXS = 0.0_defFlt
+          end if
+
+          delta = IPVec(g) * deltaXS
+          num(idx) = -delta !+ num(idx)
+          den(idx) = fission * chi(g)
+
+        end do
+
+      else !if (XScase == 2) then !!!complete
+
+        fission_pert = 0.0_defFlt
+        !$omp simd
+        do gIn = 1, self % nG
+            !if (gIn == 1) then
+              fission_pert = fission_pert + IPVec(gIn) * nuFission(gIn) 
+            !end if
+        end do
+
+
+        do g = 1, self % nG 
+          idx = baseIdx + g
+          ! if (gIn == 1) then
+          num(idx) = fission_pert * chi(g) * XSchange 
+          ! end if
+          den(idx) = fission * chi(g)
+
+        end do
+
+      end if
 
    
     end do
@@ -1446,11 +1469,15 @@ contains
 
     !self % keffScore(1) * self % keffScore(1) *
 
-    self % deltaKeff   = - self % keff * self % keff * (delta / fission) 
+    self % deltaKeff   = self % keff * self % keff * (delta / fission) ! * 2
 
     !self % deltaKeff = - (delta / fission) / (1 - (delta / fission)) !  * 2 
 
     self % sensitivity =  self % deltaKeff / (self % keff * XSchange)
+
+
+    !  print *, self % scalarFlux(1), self % scalarFlux(2)
+    !  print *, self % adjScalarFlux(1), self % adjScalarFlux(2)
 
   end subroutine sensitivityCalculation
 
