@@ -1366,7 +1366,7 @@ contains
     integer(shortInt), intent(in)                 :: it
     real(defReal)                                 :: normVol
     real(defFlt)                                  :: XSchange, deltaXS
-    real(defReal)                                 :: delta, fission, fission_pert
+    real(defReal)                                 :: delta, fission, fission_pert, numSum, denSum
     integer(shortInt)                             :: cIdx, baseIdx, idx, matIdx, g, gIn, mat, XScase
     real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture
     real(defReal), dimension(:), pointer          :: IPVec
@@ -1374,33 +1374,32 @@ contains
 
     !change in XS
     XSchange = 0.01 ! 1 % change to 
-    XScase = 2
+    XScase = 1
     normVol = ONE / (self % lengthPerIt) !*it
 
     do cIdx = 1, self % nCells
       do g = 1, self % nG
         idx = (cIdx - 1) * self % nG + g
         if (self % volume(cIdx) > volume_tolerance) then
-        self % angularIP(idx) = self % angularIP(idx) * normVol / (self % volume(cIdx))
+          self % angularIP(idx) = self % angularIP(idx) * normVol / (self % volume(cIdx))
         else
           self % angularIP(idx) = 0.0_defFlt
         end if
       end do
     end do
 
-    do g = 1, size(num)
-      num(g) =  0.0_defFlt
-      den(g) = 0.0_defFlt
+    do idx = 1, self % nCells * self % nG
+      num(idx) =  0.0_defFlt
+      den(idx) = 0.0_defFlt
     end do
 
     do cIdx = 1, self % nCells
       ! Identify material
       mat  =  self % geom % geom % graph % getMatFromUID(cIdx) 
-
       baseIdx = (cIdx - 1) * self % nG 
       matIdx = (mat - 1) * self % nG
-      IPVec => self % angularIP((baseIdx+1):(baseIdx + self % nG))
 
+      IPVec => self % angularIP((baseIdx+1):(baseIdx + self % nG))
       total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
       nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
       chi => self % chi((matIdx + 1):(matIdx + self % nG))
@@ -1421,37 +1420,38 @@ contains
         do g = 1, self % nG 
           idx = baseIdx + g
           ! Change in XS
-          if (g == 1) then  !mat == 2 .and.
+           if (g == 1) then  !mat == 2 .and.  !add energy group check if needed
             deltaXS = XSchange * capture(g)
-          else
-            deltaXS = 0.0_defFlt
-          end if
+           else
+             deltaXS = 0.0_defFlt
+           end if
 
           delta = IPVec(g) * deltaXS
-          num(idx) = -delta !+ num(idx)
+          num(idx) = -delta
           den(idx) = fission * chi(g)
 
         end do
 
-      else !if (XScase == 2) then !!!complete
+      elseif (XScase == 2) then !!!complete
 
-        fission_pert = 0.0_defFlt
-        !$omp simd
-        do gIn = 1, self % nG
-            !if (gIn == 1) then
-              fission_pert = fission_pert + IPVec(gIn) * nuFission(gIn) 
-            !end if
-        end do
+        stop
+        ! fission_pert = 0.0_defFlt
+        ! !$omp simd
+        ! do gIn = 1, self % nG
+        !     !if (gIn == 1) then
+        !       fission_pert = fission_pert + IPVec(gIn) * nuFission(gIn) 
+        !     !end if
+        ! end do
 
 
-        do g = 1, self % nG 
-          idx = baseIdx + g
-          ! if (gIn == 1) then
-          num(idx) = fission_pert * chi(g) * XSchange 
-          ! end if
-          den(idx) = fission * chi(g)
+        ! do g = 1, self % nG 
+        !   idx = baseIdx + g
+        !   ! if (gIn == 1) then
+        !   num(idx) =  chi(g) * XSchange * IPVec(g)
+        !   ! end if
+        !   den(idx) = fission * chi(g)
 
-        end do
+        ! end do
 
       end if
 
@@ -1459,25 +1459,25 @@ contains
     end do
 
     ! sum to get IP
-
-    delta = 0.0_defFlt
-    fission = 0.0_defFlt
-    do g = 1, self % nG * self % nCells
-      delta = delta + num(g)
-      fission = fission + den(g)
+    numSum = 0.0_defFlt
+    denSum = 0.0_defFlt
+    do idx = 1, self % nG * self % nCells
+      numSum = numSum + num(idx)
+      denSum = denSum + den(idx)
     end do
 
     !self % keffScore(1) * self % keffScore(1) *
 
-    self % deltaKeff   = self % keff * self % keff * (delta / fission) ! * 2
+    self % deltaKeff   = self % keff * self % keff * (numSum / denSum) ! * 2
 
-    !self % deltaKeff = - (delta / fission) / (1 - (delta / fission)) !  * 2 
+    !self % deltaKeff = self % keff * self % keff * (numSum / denSum) / (1 - (numSum / denSum)) !  * 2 
 
-    self % sensitivity =  self % deltaKeff / (self % keff * XSchange)
+    self % sensitivity = self % deltaKeff / (self % keff * XSchange)
 
 
-    !  print *, self % scalarFlux(1), self % scalarFlux(2)
-    !  print *, self % adjScalarFlux(1), self % adjScalarFlux(2)
+     print *, self % scalarFlux, size(self % scalarFlux)
+     print *, self % adjScalarFlux, size(self % adjScalarFlux)
+     print *, self % angularIP, size(self % angularIP)
 
   end subroutine sensitivityCalculation
 

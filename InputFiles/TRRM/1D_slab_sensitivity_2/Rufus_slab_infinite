@@ -1,4 +1,5 @@
-type adjointTRRMPhysicsPackage;
+//type adjointTRRMPhysicsPackage;
+type randomRayPhysicsPackage;
 
 pop      1000;
 active   300; 
@@ -49,7 +50,7 @@ geometry {
       shape (1 1 1); 
       padMat fuel; 
       map ( 
-             20 
+             20
           );
       }
     }   
