@@ -449,7 +449,7 @@ contains
     allocate(self % adjPrevFlux(self % nCells * self % nG))
     allocate(self % adjSource(self % nCells * self % nG))
 
-    allocate(self % angularIP(self % nCells * self % nG * 2))
+    allocate(self % angularIP(self % nCells * self % nG * self % nG))
     
     ! Set active length traveled per iteration
     self % lengthPerIt = (self % termination - self % dead) * self % pop 
@@ -750,13 +750,13 @@ contains
     type(ray), intent(inout)                              :: r
     integer(longInt), intent(out)                         :: ints
     integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
-                                                               segCount, i, segCountCrit, segIdx, gIn
+                                                               segCount, i, segCountCrit, segIdx, gIn, pIdx
     real(defReal)                                         :: totalLength, length
     logical(defBool)                                      :: activeRay, hitVacuum, tally
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, avgFluxVec, tau
-    real(defFlt), allocatable, dimension(:)               :: tauBack, tauBackBuffer, tautest
+    real(defFlt), allocatable, dimension(:)               :: tauBack, tauBackBuffer
     real(shortInt), allocatable, dimension(:)             :: cIdxBack, cIdxBackBuffer
     logical(defBool), allocatable, dimension(:)           :: vacBack, vacBackBuffer 
     real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec
@@ -968,14 +968,6 @@ contains
     fluxRecordBuffer = fluxRecord(1 : (segCount * self % nG))
     call move_alloc(fluxRecordBuffer, fluxRecord)
 
-    ! allocate(tautest(size(tauBack)))
-    
-    ! do i = 1, segCount * self % nG
-    !   tautest(i) = tauback(segCount * self % nG - i + 1)
-    ! end do
-
-    ! call move_alloc(tautest, tauback)
-
     !iterate over segments
     do i = segCount, 1, -1
       
@@ -1009,30 +1001,15 @@ contains
         call OMP_set_lock(self % locks(cIdx))
 
         scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
-        angularProd => self % angularIP( 1 : 4)
-        ! !$omp simd 
-        ! do g = 1, self % nG
-        !     scalarVec(g) = scalarVec(g) + delta(g) * tauBack(segIdx + g)
-        !     do gIn = 1, 2
-        !       angularProd(g * gIn) = angularProd(g * gIn) + avgFluxVec(g) * fluxRecord(segIdx + gIn)  
-        !     end do
-        ! end do
-        !angularProd(1) = angularProd(1) + avgFluxVec(2) * fluxRecord(segIdx + 1)  
-        !angularProd(2) = angularProd(2) + avgFluxVec(1) * fluxRecord(segIdx + 2)  
-        ! scalarVec(1) = scalarVec(1) + delta(1) * tauBack(segIdx + 2)
-        ! scalarVec(2) = scalarVec(2) + delta(2) * tauBack(segIdx + 1)
+        angularProd => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG )
         !$omp simd 
         do g = 1, self % nG
             scalarVec(g) = scalarVec(g) + delta(g) * tauBack(segIdx + g)
+            do gIn = 1, self % nG
+              pIdx = self % nG * (g - 1) + gIn
+              angularProd(pIdx) = angularProd(pIdx) + avgFluxVec(g) * fluxRecord(segIdx + gIn)  
+            end do
         end do
-        angularProd(1) = angularProd(1) + avgFluxVec(1) * fluxRecord(segIdx + 1)  
-
-        angularProd(2) = angularProd(2) + avgFluxVec(1) * fluxRecord(segIdx + 2) 
-        
-        angularProd(3) = angularProd(3) + avgFluxVec(2) * fluxRecord(segIdx + 1)  
-
-        angularProd(4) = angularProd(4) + avgFluxVec(2) * fluxRecord(segIdx + 2)  
-
         call OMP_unset_lock(self % locks(cIdx))
 
       end if  
@@ -1362,7 +1339,7 @@ contains
   !!
   subroutine resetFluxes(self)
     class(adjointTRRMPhysicsPackage), intent(inout) :: self
-    integer(shortInt)                             :: idx
+    integer(shortInt)                             :: idx, g
 
     !$omp parallel do schedule(static)
     do idx = 1, size(self % scalarFlux)
@@ -1370,7 +1347,9 @@ contains
       self % scalarFlux(idx) = 0.0_defFlt
       self % adjPrevFlux(idx) = self % adjScalarFlux(idx)
       self % adjScalarFlux(idx) = 0.0_defFlt
-      self % angularIP(idx) = 0.0_defFlt
+      do g = 1, self % nG
+        self % angularIP((idx - 1) * self % nG + g) = 0.0_defFlt
+      end do
     end do
     !$omp end parallel do
 
@@ -1431,7 +1410,6 @@ contains
           !$omp simd
           do gIn = 1, self % nG !* self % nG
             fission = fission + IPVec(self % nG * (g - 1) + gIn) * nuFission(gIn)
-            print *, self % nG * (g - 1) + gIn
           end do
 
           idx = baseIdx + g
@@ -1482,19 +1460,11 @@ contains
       denSum = denSum + den(idx)
     end do
 
-    !self % keffScore(1) * self % keffScore(1) *
+    !self % deltaKeff  = self % keff * self % keff * (numSum / denSum) 
 
-    self % deltaKeff  = self % keff * self % keff * (numSum / denSum) !* capture(2) * XSchange! * 2
+    self % deltaKeff = self % keff * self % keff * (numSum / denSum) / (1 - (numSum / denSum)) ! this seems closer?
 
-    !self % deltaKeff = self % keff * self % keff * (numSum / denSum) / (1 - (numSum / denSum)) !  * 2 
-
-    self % sensitivity = (self % deltaKeff / ( self % keff ) ) 
-
-
-    !print *, self % deltaKeff
-      ! print *, self % scalarFlux, size(self % scalarFlux)
-      ! print *, self % adjScalarFlux, size(self % adjScalarFlux)
-    !  print *, self % angularIP, size(self % angularIP)
+    self % sensitivity = (self % deltaKeff / ( self % keff * XSchange) ) 
 
   end subroutine sensitivityCalculation
 
