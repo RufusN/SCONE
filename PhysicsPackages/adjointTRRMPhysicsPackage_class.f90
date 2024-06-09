@@ -1369,7 +1369,7 @@ contains
 
     !change in XS
     XSchange = 0.01 ! 1 % change to 
-    XScase = 1
+    XScase = 2
     normVol = ONE / (self % lengthPerIt) !*it
 
     do cIdx = 1, self % nCells
@@ -1382,6 +1382,9 @@ contains
         end if
       end do
     end do
+
+    print *, self % scalarFlux, self % adjScalarFlux
+    print *, self % angularIP
 
     do idx = 1, self % nCells * self % nG
       num(idx) =  0.0_defFlt
@@ -1413,15 +1416,15 @@ contains
           end do
 
           idx = baseIdx + g
-
+!!!!!!!!!COME BACK HERE, currently only working for g = 1. !IPVEC(G*G) term
           ! Change in XS
            if ( g == 1 ) then  !mat == 2 .and.  !add energy group check if needed
-            deltaXS = XSchange * capture(g)
+            deltaXS = XSchange * capture(g) * IPVec(g*g)
            else
              deltaXS = 0.0_defFlt
            end if
 
-          delta = IPVec(g) * deltaXS
+          delta = deltaXS !* IPVec(g)
           num(idx) = -delta
           den(idx) = fission * chi(g)
 
@@ -1429,13 +1432,37 @@ contains
 
       elseif (XScase == 2) then !!!complete
 
-        ! fission_pert = 0.0_defFlt
-        ! !$omp simd
-        ! do gIn = 1, self % nG
-        !     !if (gIn == 1) then
-        !       fission_pert = fission_pert + IPVec(gIn) * nuFission(gIn) 
-        !     !end if
-        ! end do
+        deltaXS = 0.0_defFlt
+        delta = 0.0_defFlt
+        do g = 1, self % nG 
+
+          fission = 0.0_defFlt
+          !$omp simd
+          do gIn = 1, self % nG 
+            fission = fission + IPVec(self % nG * (g - 1) + gIn) * nuFission(gIn)
+          end do
+
+          if ( g == 2 ) then  !mat == 2 .and.  !add energy group check if needed
+              deltaXS = XSchange * nuFission(g)
+             else
+               deltaXS = 0.0_defFlt
+          end if
+
+          fission_pert = 0.0_defFlt
+          !$omp simd
+          do gIn = 1, self % nG
+            !if ( gIn == 2 ) then
+                fission_pert = fission_pert + IPVec(self % nG * (g - 1) + gIn) * deltaXS
+           ! end if
+          end do
+
+
+          idx = baseIdx + g
+
+          num(idx) = fission_pert * chi(g) -deltaXS
+          den(idx) = fission * chi(g)
+
+        end do
 
 
         ! do g = 1, self % nG 
@@ -1460,9 +1487,9 @@ contains
       denSum = denSum + den(idx)
     end do
 
-    !self % deltaKeff  = self % keff * self % keff * (numSum / denSum) 
+    self % deltaKeff  = self % keff * self % keff * (numSum / denSum) 
 
-    self % deltaKeff = self % keff * self % keff * (numSum / denSum) / (1 - (numSum / denSum)) ! this seems closer?
+    ! self % deltaKeff = self % keff * self % keff * (numSum / denSum) / (1 - (numSum / denSum)) ! this seems closer?
 
     self % sensitivity = (self % deltaKeff / ( self % keff * XSchange) ) 
 
