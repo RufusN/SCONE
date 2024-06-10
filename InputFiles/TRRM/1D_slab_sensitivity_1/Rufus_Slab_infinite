@@ -10,7 +10,7 @@ SHOrder 1;
 XSdata   mg;
 dataType mg; 
 //seed 1140;
-outputFile slab ;
+outputFile slab_1 ;
 
 geometry { 
     type geometryStd;

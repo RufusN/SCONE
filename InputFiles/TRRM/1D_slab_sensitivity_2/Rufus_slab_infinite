@@ -1,5 +1,5 @@
-//type adjointTRRMPhysicsPackage;
-type randomRayPhysicsPackage;
+type adjointTRRMPhysicsPackage;
+//type randomRayPhysicsPackage;
 
 pop      1000;
 active   300; 
@@ -11,7 +11,7 @@ SHOrder 1;
 XSdata   mg;
 dataType mg; 
 //seed 1140;
-outputFile slab ;
+outputFile slab_2 ;
 
 geometry { 
     type geometryStd;
@@ -36,23 +36,11 @@ geometry {
 	  id 1000;
 	  type rootUniverse; 
           border 1;
-	  fill u<10>; 
+	  fill fuel; 
       }
        
       // Material lump (defined using pinUniverse type
-      myLump { id 20; type pinUniverse; radii (0.0); fills (fuel);}      
-
-      mesh {
-      id 10; 
-      type latUniverse; 
-      origin (0.0 0.0 0.0); 
-      pitch (1.0 1.0 1.0);
-      shape (1 1 1); 
-      padMat fuel; 
-      map ( 
-             20
-          );
-      }
+      // myLump { id 20; type pinUniverse; radii (0.0); fills (fuel);}      
     }   
 }
 
