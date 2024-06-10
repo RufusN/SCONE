@@ -186,6 +186,7 @@ module adjointTRRMPhysicsPackage_class !currently backward
     ! Data space - absorb all nuclear data for speed
     real(defFlt), dimension(:), allocatable     :: sigmaT
     real(defFlt), dimension(:), allocatable     :: nuSigmaF
+    real(defFlt), dimension(:), allocatable     :: fission
     real(defFlt), dimension(:), allocatable     :: sigmaS
     real(defFlt), dimension(:), allocatable     :: chi
     real(defFlt), dimension(:), allocatable     :: sigmaC
@@ -467,6 +468,7 @@ contains
     allocate(self % sigmaT(self % nMat * self % nG))
     allocate(self % sigmaC(self % nMat * self % nG))
     allocate(self % nuSigmaF(self % nMat * self % nG))
+    allocate(self % fission(self % nMat * self % nG))
     allocate(self % chi(self % nMat * self % nG))
     allocate(self % sigmaS(self % nMat * self % nG * self % nG))
 
@@ -477,6 +479,7 @@ contains
         self % sigmaT(self % nG * (m - 1) + g) = real(mat % getTotalXS(g, self % rand),defFlt)
         self % sigmaC(self % nG * (m - 1) + g) = real(mat % getCaptureXS(g, self % rand),defFlt)
         self % nuSigmaF(self % nG * (m - 1) + g) = real(mat % getNuFissionXS(g, self % rand),defFlt)
+        self % fission(self % nG * (m - 1) + g) = real(mat % getFissionXS(g, self % rand),defFlt)
         self % chi(self % nG * (m - 1) + g) = real(mat % getChi(g, self % rand),defFlt)
         ! Include scattering multiplicity
         do g1 = 1, self % nG
@@ -1363,7 +1366,7 @@ contains
     real(defFlt)                                  :: XSchange, deltaXS
     real(defReal)                                 :: delta, fission, fission_pert, numSum, denSum
     integer(shortInt)                             :: cIdx, baseIdx, idx, matIdx, g, gIn, mat, XScase
-    real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture
+    real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture, scatterXS, fissVec
     real(defReal), dimension(:), pointer          :: IPVec
     real(defReal), dimension(self % nG * self % nCells) :: num, den
 
@@ -1383,8 +1386,8 @@ contains
       end do
     end do
 
-    print *, self % scalarFlux, self % adjScalarFlux
-    print *, self % angularIP
+    ! print *, self % scalarFlux, self % adjScalarFlux
+    ! print *, self % angularIP
 
     do idx = 1, self % nCells * self % nG
       num(idx) =  0.0_defFlt
@@ -1400,8 +1403,10 @@ contains
       IPVec => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG)
       total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
       nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
+      fissVec => self % fission((matIdx + 1):(matIdx + self % nG))
       chi => self % chi((matIdx + 1):(matIdx + self % nG))
       capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
+      scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
 
       if (XScase == 1) then
       
@@ -1434,6 +1439,7 @@ contains
 
         deltaXS = 0.0_defFlt
         delta = 0.0_defFlt
+        
         do g = 1, self % nG 
 
           fission = 0.0_defFlt
@@ -1442,41 +1448,40 @@ contains
             fission = fission + IPVec(self % nG * (g - 1) + gIn) * nuFission(gIn)
           end do
 
-          if ( g == 2 ) then  !mat == 2 .and.  !add energy group check if needed
-              deltaXS = XSchange * nuFission(g)
-             else
-               deltaXS = 0.0_defFlt
-          end if
+          deltaXS = XSchange
+
+          ! if ( g == 2 ) then  !mat == 2 .and.  !add energy group check if needed
+          !   deltaXS = XSchange
+          ! else
+          !   deltaXS = 0.0_defFlt
+          ! end if
 
           fission_pert = 0.0_defFlt
           !$omp simd
           do gIn = 1, self % nG
-            !if ( gIn == 2 ) then
-                fission_pert = fission_pert + IPVec(self % nG * (g - 1) + gIn) * deltaXS
-           ! end if
+            !if ( gIn == 1 ) then
+            fission_pert = fission_pert + IPVec(self % nG * (g - 1) + gIn) * deltaXS * nuFission(gIn)
+            !end if
           end do
 
+          ! if ( g == 2 ) then  !mat == 2 .and.  !add energy group check if needed
+          !   deltaXS = XSchange
+          ! else
+          !   deltaXS = 0.0_defFlt
+          ! end if
+
+          !if (g == 1) then
+          delta = deltaXS * IPVec(g*g) * fissVec(g) 
+          !end if
 
           idx = baseIdx + g
 
-          num(idx) = fission_pert * chi(g) -deltaXS
+          num(idx) = - delta + fission_pert * chi(g) * ONE_KEFF
           den(idx) = fission * chi(g)
 
         end do
-
-
-        ! do g = 1, self % nG 
-          ! idx = baseIdx + g
-          ! ! if (gIn == 1) then
-          ! num(idx) =  chi(g) * fission_pert * IPVec(g)
-          ! ! end if
-          ! den(idx) = fission * chi(g)
-
-        ! end do
-
       end if
 
-   
     end do
 
     ! sum to get IP
@@ -1491,7 +1496,7 @@ contains
 
     ! self % deltaKeff = self % keff * self % keff * (numSum / denSum) / (1 - (numSum / denSum)) ! this seems closer?
 
-    self % sensitivity = (self % deltaKeff / ( self % keff * XSchange) ) 
+    self % sensitivity = (self % deltaKeff / ( self % keff * XSchange ) ) 
 
   end subroutine sensitivityCalculation
 
@@ -1915,6 +1920,7 @@ contains
     if(allocated(self % adjSigmaS)) deallocate(self % adjSigmaS)
     if(allocated(self % adjNuSigmaF)) deallocate(self % adjNuSigmaF)
     if(allocated(self % adjChi)) deallocate(self % adjChi)
+    if(allocated(self % fission)) deallocate(self % fission)
 
     self % termination = ZERO
     self % dead        = ZERO
