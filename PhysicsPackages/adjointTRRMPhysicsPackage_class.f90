@@ -1409,10 +1409,11 @@ contains
       scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
 
       if (XScase == 1) then
-      
-        deltaXS = 0.0_defFlt
-        delta = 0.0_defFlt
+
         do g = 1, self % nG 
+
+          deltaXS = 0.0_defFlt
+          delta = 0.0_defFlt
 
           fission = 0.0_defFlt
           !$omp simd
@@ -1436,11 +1437,11 @@ contains
         end do
 
       elseif (XScase == 2) then !!!complete
-
-        deltaXS = 0.0_defFlt
-        delta = 0.0_defFlt
         
         do g = 1, self % nG 
+
+          deltaXS = 0.0_defFlt
+          delta = 0.0_defFlt
 
           fission = 0.0_defFlt
           !$omp simd
@@ -1455,14 +1456,15 @@ contains
           ! else
           !   deltaXS = 0.0_defFlt
           ! end if
-
           fission_pert = 0.0_defFlt
+          !if (g == 1) then 
           !$omp simd
           do gIn = 1, self % nG
-            !if ( gIn == 1 ) then
+            if ( gIn == 1 ) then
             fission_pert = fission_pert + IPVec(self % nG * (g - 1) + gIn) * deltaXS * nuFission(gIn)
-            !end if
+            end if
           end do
+          !end if
 
           ! if ( g == 2 ) then  !mat == 2 .and.  !add energy group check if needed
           !   deltaXS = XSchange
@@ -1470,9 +1472,9 @@ contains
           !   deltaXS = 0.0_defFlt
           ! end if
 
-          !if (g == 1) then
+          if (g == 1) then
           delta = deltaXS * IPVec(g*g) * fissVec(g) 
-          !end if
+          end if
 
           idx = baseIdx + g
 
