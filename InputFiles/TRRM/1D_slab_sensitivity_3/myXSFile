@@ -1,0 +1,18 @@
+//from: Perturbation Theory-Based Whole-Core Eigenvalue Sensitivity
+//and Uncertainty (SU) Analysis via a 2D/1D Transport Code
+
+numberOfGroups 3; 
+capture (1.7273 1.0 0.5); 
+fission (0.0 0.0 1.5); 
+nu      (0 0 3); 
+chi     (0.6250 0.2500 0.1250); 
+
+scatteringMultiplicity ( 1.0 1.0 0.0 1.0 1.0 1.0 1.0 1.0 1.0); 
+
+P0 (    
+  1.1 1.0 0.0
+  0.0 1.1 2.0
+  0.0 0.0 2.1
+);
+
+
