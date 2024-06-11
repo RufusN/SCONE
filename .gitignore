@@ -7,3 +7,4 @@ cream.egg-info/
 .*
 !/.gitignore
 build/
+*.vtk
