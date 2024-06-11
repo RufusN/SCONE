@@ -857,8 +857,6 @@ contains
     end do
     !$omp end parallel do
 
-    print *, self % scalarFlux
-
   end subroutine normaliseFluxAndVolume
   
   !!
