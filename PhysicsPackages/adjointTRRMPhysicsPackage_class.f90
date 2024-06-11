@@ -1491,7 +1491,7 @@ contains
           ! for S12, formula is = IP(1) * scatter(3) + IP(2) * scatter(3), contributions from total and scatter operator respectively. 
 
           idx = baseIdx + g
-          num(idx) = (-delta + scatter_pert)
+          num(idx) = -delta + scatter_pert
         end do
 
       end if
