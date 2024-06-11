@@ -1287,9 +1287,11 @@ contains
     class(materialHandle), pointer, save          :: matPtr
     !$omp threadprivate(mat, matPtr, fissLocal, prevFissLocal, matIdx, g, idx, mIdx, vol)
 
-    fissionRate     = 0.0_defFlt
-    prevFissionRate = 0.0_defFlt
-    !$omp parallel do schedule(static) reduction(+: fissionRate, prevFissionRate)
+    fissionRate        = 0.0_defFlt
+    prevFissionRate    = 0.0_defFlt
+    adjFissionRate     = 0.0_defFlt
+    adjPrevFissionRate = 0.0_defFlt
+    !$omp parallel do schedule(static) reduction(+: fissionRate, prevFissionRate, adjFissionRate, adjPrevFissionRate)
     do cIdx = 1, self % nCells
 
       ! Identify material
@@ -1313,8 +1315,8 @@ contains
         
         ! Source index
         idx = self % nG * (cIdx - 1) + g
-        fissLocal     = fissLocal     + self % scalarFlux(idx) * self % NuSigmaF(mIdx + g)
-        prevFissLocal = prevFissLocal + self % prevFlux(idx) * self % NuSigmaF(mIdx + g)
+        fissLocal     = fissLocal     + self % scalarFlux(idx) * self % nuSigmaF(mIdx + g)
+        prevFissLocal = prevFissLocal + self % prevFlux(idx) * self % nuSigmaF(mIdx + g)
 
         adjfissLocal     = adjfissLocal     + self % adjscalarFlux(idx) * self % adjNuSigmaF(mIdx + g)
         adjprevFissLocal = adjprevFissLocal + self % adjprevFlux(idx) * self % adjNuSigmaF(mIdx + g)
@@ -1363,9 +1365,9 @@ contains
     real(defFlt), intent(in)                      :: ONE_KEFF
     integer(shortInt), intent(in)                 :: it
     real(defReal)                                 :: norm
-    real(defFlt)                                  :: XSchange, deltaXS
+    real(defFlt)                                  :: XSchange
     real(defReal)                                 :: delta, fission, fission_pert, scatter_pert, numSum, denSum
-    integer(shortInt)                             :: cIdx, baseIdx, idx, matIdx, g, gIn, mat, XScase, Sg1, Sg2
+    integer(shortInt)                             :: cIdx, baseIdx, idx, matIdx, g, gIn, mat, XScase, g1Pert, g2Pert
     real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture, scatterXS, &
                                                       fissVec, scatterVec
     real(defReal), dimension(:), pointer          :: IPVec
@@ -1407,102 +1409,89 @@ contains
       capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
       scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
 
-      if (XScase == 1) then !capture - complete 
+
+      do g = 1, self % nG
+        idx = baseIdx + g
+        fission = 0.0_defFlt
+        !$omp simd
+        do gIn = 1, self % nG 
+          fission = fission + IPVec((g - 1) * self % nG + gIn) * nuFission(gIn)
+        end do
+        fission  = fission * chi(g)
+        den(idx) = fission
+      end do
+
+      if (XScase == 1) then ! capture - complete 
+
+        g1Pert = 1
 
         do g = 1, self % nG 
 
           delta = 0.0_defFlt
-          fission = 0.0_defFlt
-          !$omp simd
-          do gIn = 1, self % nG 
-            fission = fission + IPVec((g - 1) * self % nG + gIn) * nuFission(gIn)
-          end do
 
           ! Change in XS
-           if ( g == 1 ) then  !mat == 2 .and.  !add energy/mat group check if needed
+           if ( g == g1Pert ) then  !mat == 2 .and.  !add energy/mat group check if needed
              delta = XSchange * capture(g) * IPVec((g - 1) * self % nG + g)
            end if
 
           idx = baseIdx + g
           num(idx) = -delta
-          den(idx) = fission * chi(g)
 
         end do
 
-      elseif (XScase == 2) then !fission
+      elseif (XScase == 2) then ! fission - complete
+
+        g1Pert = 1
         
         do g = 1, self % nG 
 
-          deltaXS = 0.0_defFlt
           delta = 0.0_defFlt
-
-          fission = 0.0_defFlt
-          !$omp simd
-          do gIn = 1, self % nG 
-            fission = fission + IPVec(self % nG * (g - 1) + gIn) * nuFission(gIn)
-          end do
-
-          deltaXS = XSchange
 
           fission_pert = 0.0_defFlt
           !$omp simd
           do gIn = 1, self % nG
-            if ( gIn == 2 ) then
-              fission_pert = fission_pert + IPVec(self % nG * (g - 1) + gIn) * deltaXS * nuFission(gIn)
+            if ( gIn == g1Pert ) then
+              fission_pert = fission_pert + IPVec(self % nG * (g - 1) + gIn) * nuFission(gIn) * XSchange
             end if
           end do
 
-          if (g == 2) then
-            delta = deltaXS * IPVec(g*g) * fissVec(g) 
+          if ( g == g1Pert ) then 
+            delta = IPVec((g - 1) * self % nG + g) * fissVec(g) * XSchange
           end if
 
           idx = baseIdx + g
-
           num(idx) = - delta + fission_pert * chi(g) * ONE_KEFF
-          den(idx) = fission * chi(g)
 
         end do
 
-      elseif (XScase == 3) then !scatter
+      elseif (XScase == 3) then !scatter - complete
         
         ! Assume input of two numbers. 
-        Sg1 = 1
-        Sg2 = 2
+        g1Pert = 1
+        g2Pert = 2
 
         do g = 1, self % nG 
 
-          !scatterVec => scatterXS((self % nG * (g - 1) + 1):(self % nG * self % nG))
-
-          deltaXS = 0.0_defFlt
           delta = 0.0_defFlt
-
-          fission = 0.0_defFlt
-          !$omp simd
-          do gIn = 1, self % nG 
-            fission = fission + IPVec(self % nG * (g - 1) + gIn) * nuFission(gIn)
-          end do
-
-          deltaXS = XSchange
-
           scatter_pert = 0.0_defFlt
           
-          if (g == Sg1) then
-            delta = IPVec(g*g) * deltaXS * scatterXS((Sg2 - 1) * self % nG + Sg1)
+          if (g == g1Pert) then
+            delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * XSchange
 
             do gIn = 1, self % nG
-              if (gIn == Sg2) then
-                scatter_pert = scatter_pert + scatterXS( (gIn - 1) * self % nG + g ) * IPVec((g - 1 ) * self % nG + gIn) * deltaXS
+              if (gIn == g2Pert) then
+                scatter_pert = scatter_pert + scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
+                                            IPVec((g2Pert - 1 ) * self % nG + g1Pert) * XSchange
               end if
             end do
           end if
 
-          !for S12, formula is = IP(1) * scatter(3) + IP(2) * scatter(3), contributions from total and scatter operator respectively. 
+          ! delta = IPVec((Sg1 - 1) * self % nG + Sg1) * scatterXS((g2Pert - 1) * self % nG + Sg1) * XSchange
+          ! scatter_pert = scatter_pert + scatterXS((g2Pert - 1) * self % nG + Sg1 ) * IPVec((g2Pert - 1) * self % nG + Sg1) * XSchange
+          ! for S12, formula is = IP(1) * scatter(3) + IP(2) * scatter(3), contributions from total and scatter operator respectively. 
 
           idx = baseIdx + g
-
-          num(idx) = (delta + scatter_pert) ! why is this positive?
-          den(idx) = fission * chi(g)
-
+          num(idx) = (-delta + scatter_pert)
         end do
 
       end if
@@ -1518,7 +1507,6 @@ contains
     end do
 
     self % deltaKeff  = self % keff * self % keff * (numSum / denSum) 
-
     !self % deltaKeff = self % keff * self % keff * (numSum / denSum) / (1 - (numSum / denSum)) ! this sometimes seems closer?
 
     self % sensitivity = (self % deltaKeff / ( self % keff * XSchange ) ) 
