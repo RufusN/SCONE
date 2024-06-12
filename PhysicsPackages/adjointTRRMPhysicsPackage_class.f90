@@ -910,7 +910,8 @@ contains
 
         !$omp simd
         do g = 1, self % nG
-          fluxRecord((segCount - 1) * self % nG + g)  = avgFluxVec(g)  ! fluxRecord((segCount) * self % nG - g)  = avgFluxVec(g) ???
+          fluxRecord((segCount - 1) * self % nG + g)  = avgFluxVec(g)  
+          !fluxRecord((segCount) * self % nG - g)  = avgFluxVec(g) !???
         end do
 
           call OMP_set_lock(self % locks(cIdx))
@@ -1431,7 +1432,7 @@ contains
 
       elseif (XScase == 2) then ! fission - complete
 
-        g1Pert = 3
+        g1Pert = 1
         
         do g = 1, self % nG 
 
