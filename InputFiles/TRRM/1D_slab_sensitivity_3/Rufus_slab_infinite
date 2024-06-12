@@ -15,7 +15,7 @@ outputFile slab_3 ;
 
 geometry { 
     type geometryStd;
-    boundary (1 1 1 1 1 1);
+    boundary (0 1 1 1 1 1);
     graph {type extended;}
 
     surfaces
