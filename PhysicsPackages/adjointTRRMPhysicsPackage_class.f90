@@ -867,13 +867,6 @@ contains
         fluxVec(g) = fluxVec(g) - delta(g) * tau(g)
       end do
 
-      ! if (.not. activeRay .and. totalLength >= self % dead) then
-      !   !record flux for first active incoming
-      !   do g = 1, self % nG
-      !     fluxRecord(g) = fluxVec(g) 
-      !   end do
-      ! end if
-
       ! Accumulate to scalar flux
       if (activeRay) then
         segCount = segCount + 1
@@ -904,8 +897,6 @@ contains
         !$omp simd
         do g = 1, self % nG
           avgFluxVec(g) = (delta(g) + sourceVec(g))
-          ! avgFluxAdjoint(g) = (deltaAdjoint(g)/tau(g) + sourceAdjoint(g))
-          ! print *, fluxVec(g), avgFluxVec(g), (fluxVec(g) + delta(g)*tau(g))
         end do
         
         !$omp simd
@@ -919,7 +910,7 @@ contains
 
         !$omp simd
         do g = 1, self % nG
-          fluxRecord((segCount - 1) * self % nG + g)  = avgFluxVec(g) 
+          fluxRecord((segCount - 1) * self % nG + g)  = avgFluxVec(g)  ! fluxRecord((segCount) * self % nG - g)  = avgFluxVec(g) ???
         end do
 
           call OMP_set_lock(self % locks(cIdx))
@@ -949,7 +940,6 @@ contains
 
     ! Flux guess for new adjoint deadlength
     do g = 1, self % nG
-      ! cIdx = cIdxBack(segCount) - should carry over 
       idx = (cIdx - 1) * self % nG + g
       fluxVec(g) = self % adjSource(idx)
     end do
@@ -1010,7 +1000,7 @@ contains
             scalarVec(g) = scalarVec(g) + delta(g) * tauBack(segIdx + g)
             do gIn = 1, self % nG
               pIdx = self % nG * (g - 1) + gIn
-              angularProd(pIdx) = angularProd(pIdx) + avgFluxVec(g) * fluxRecord(segIdx + gIn)  
+              angularProd(pIdx) = angularProd(pIdx) + avgFluxVec(g) * fluxRecord(segIdx + gIn)
             end do
         end do
         call OMP_unset_lock(self % locks(cIdx))
@@ -1375,7 +1365,7 @@ contains
 
     !change in XS
     XSchange = 0.01 
-    XScase   = 3
+    XScase   = 2
     norm     = ONE / (self % lengthPerIt) 
 
     do cIdx = 1, self % nCells
@@ -1441,7 +1431,7 @@ contains
 
       elseif (XScase == 2) then ! fission - complete
 
-        g1Pert = 1
+        g1Pert = 3
         
         do g = 1, self % nG 
 
@@ -1467,8 +1457,8 @@ contains
       elseif (XScase == 3) then !scatter - complete
         
         ! Assume input of two numbers. 
-        g1Pert = 1
-        g2Pert = 2
+        g1Pert = 2
+        g2Pert = 3
 
         do g = 1, self % nG 
 
