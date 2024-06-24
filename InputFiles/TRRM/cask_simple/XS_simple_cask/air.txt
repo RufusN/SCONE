@@ -1,0 +1,4 @@
+numberOfGroups 1; 
+capture ( 0.01625944842294897 ); 
+scatteringMultiplicity ( 1.0 ); 
+P0 ( 0.006140433302834328  ); 

@@ -1,0 +1,151 @@
+type fixedSourceTRRMPhysicsPackage;
+
+pop      50000;
+active   500;
+inactive 700;
+XSdata   mg;
+dataType mg;
+dead 770;
+termination 1770;
+plot 0;
+cache 1;
+outputFile cask_lattice_5;
+volume 52224;
+zeroNeg 0;
+itVol 0;
+rho 0.3;
+seed 50;
+outputFormat asciiJSON;
+//cellCheck 1;
+
+
+// integrate (water);
+source { source (
+0.0 0 0 0 1 0 0 0 0 0
+0 0 0 0 0 0 0 0 0 0
+0 0 0 0 0 0 0 0 0 0
+0 0 0
+); }
+
+
+fluxMap {type multiMap;
+         energy 1;
+         maps (xax yax zax);
+         xax { type spaceMap; axis x; grid lin; min -8.0; max 8.0; N 64; }
+         yax { type spaceMap; axis y; grid lin; min -2.0; max 2.0; N 24; }
+         zax { type spaceMap; axis z; grid lin; min -2.0; max 2.0; N 24; } }
+
+
+geometry {
+    type geometryStd;
+    boundary (0 0 0 0 1 1);
+    graph {type extended;}
+
+    surfaces
+    {
+    domain  { id 1; type box; origin (0.0 0.0 0.0 ); halfwidth (8 8 1); }
+    source  { id 4; type box; origin (0.0 0.0 0.0);  halfwidth (2 2 1); }
+    target  { id 5; type box; origin (0.0 0.0 0.0); halfwidth (2 2 1); } 
+    }
+
+    cells
+    {
+
+    target { id 3; type simpleCell; surfaces (-5);   filltype mat; material water; }
+    source { id 4; type simpleCell; surfaces (-4);     filltype mat; material source; }
+    air    { id 5; type simpleCell; surfaces (-5 -4 1); filltype mat; material air; }
+    }
+
+    universes  
+    {
+        all    { id ; type cellUniverse; cells (3 4 5); }
+        root   { id 1; type rootUniverse; border 1; fill u<20>; }
+
+
+      lattice { id 20; type latUniverse;
+      origin (0.0 0.0 0.0);
+      pitch (0.4 0.4 1.0);
+      shape (20 20 1);
+      offset 0;
+      padMat air;
+      map (
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+      );
+       
+      }
+    }
+}
+viz {
+    plotY { type bmp; axis y; centre (0.0 0.0 0.0); res (700 400); what uniqueID; output geom1; }
+    plotZ { type bmp; axis z; centre (0.0 0.0 -20.0); res (700 300); what uniqueID; output geom2; }
+    bmp2 { 
+       type bmp; 
+       output slab_geom; 
+       what material; 
+       centre (0.0 0.0 0.0); 
+       axis z; 
+       res (00 00);  }
+   }
+   
+   nuclearData {
+   
+     handles { 
+       mg { type baseMgNeutronDatabase; PN P0;} 
+     } 
+   
+   
+   materials {
+   
+       concrete {
+         temp  273;
+         xsFile ./XS_simple_cask/concrete.txt;
+         composition {
+         }
+       }
+   
+        air {
+        temp 273;
+        xsFile ./XS_simple_cask/air.txt;
+        composition {
+          }
+        }
+   
+        water {
+        temp 273;
+        xsFile ./XS_simple_cask/water.txt;
+        composition {
+          }
+        }
+   
+        source {
+        temp 273; 
+        xsFile ./XS_simple_cask/source.txt;
+        composition {
+             } 
+        }
+       
+   }
+   
+   }
+   
+   
+   
