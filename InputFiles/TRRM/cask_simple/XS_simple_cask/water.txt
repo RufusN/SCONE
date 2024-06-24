@@ -1,4 +1,11 @@
+// numberOfGroups 1; 
+// capture ( 0.01625944842294897 ); 
+// nu ( 2.3 ); 
+// fission ( 0.1 ); 
+// chi ( 1.0 ); 
+// scatteringMultiplicity ( 1.0 ); 
+// P0 ( 0.006140433302834328  ); 
 numberOfGroups 1; 
-capture ( 0.01625944842294897 ); 
+capture ( 0.018 ); 
 scatteringMultiplicity ( 1.0 ); 
-P0 ( 0.006140433302834328  ); 
+P0 ( 0.03  ); 
