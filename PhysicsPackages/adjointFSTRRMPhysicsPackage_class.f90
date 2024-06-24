@@ -2077,7 +2077,7 @@ module adjointFSTRRMPhysicsPackage_class
       !$omp threadprivate(flux)
   
       !$omp parallel do schedule(static)
-      do idx = 1, size(self % scalarFlux)
+      do idx = 1, size(self % adjscalarFlux)
         flux = real(self % adjScalarFlux(idx),defReal)
         self % fluxScores(idx,1) = self % fluxScores(idx, 1) + flux
         self % fluxScores(idx,2) = self % fluxScores(idx, 2) + flux*flux
