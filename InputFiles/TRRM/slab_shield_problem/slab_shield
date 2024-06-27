@@ -1,4 +1,5 @@
-type fixedSourceTRRMPhysicsPackage;
+// type fixedSourceTRRMPhysicsPackage;
+type adjointFSTRRMPhysicsPackage;
 
 pop      2000;
 active   500;
@@ -7,14 +8,14 @@ XSdata   mg;
 dataType mg;
 dead   200; 
 termination 1200; 
-plot 1;
+plot 0;
 cache 1;
 outputFile slab_shield;
 volume 225;
 //zeroNeg 0;
 //itVol 0;
 //rho 0.3;
-cellCheck 1;
+//cellCheck 1;
 seed 50;
 outputFormat asciiJSON;
 responseType 1;
@@ -38,7 +39,8 @@ fluxMap {type multiMap;
          xax { type spaceMap; axis x; grid lin; min -4.5; max 4.5; N 36; }
          yax { type spaceMap; axis y; grid lin; min -2.5; max 2.5; N 20; }
          }
-ResponseMap {type multiMap;
+
+responseMap {type multiMap;
   maps (xax yax);
   xax { type spaceMap; axis x; grid lin; min -4.5; max 4.5; N 36; }
   yax { type spaceMap; axis y; grid lin; min -2.5; max 2.5; N 20; }
@@ -139,7 +141,7 @@ viz {
 
         detector {
         temp 273; 
-        xsFile ./XS_slab_shield/source.txt;
+        xsFile ./XS_slab_shield/detector.txt;
         composition {
             } 
         }
