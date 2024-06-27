@@ -17,6 +17,7 @@ volume 225;
 cellCheck 1;
 seed 50;
 outputFormat asciiJSON;
+responseType 1;
 
 integrate (detector);
 source { source (
@@ -37,6 +38,11 @@ fluxMap {type multiMap;
          xax { type spaceMap; axis x; grid lin; min -4.5; max 4.5; N 36; }
          yax { type spaceMap; axis y; grid lin; min -2.5; max 2.5; N 20; }
          }
+ResponseMap {type multiMap;
+  maps (xax yax);
+  xax { type spaceMap; axis x; grid lin; min -4.5; max 4.5; N 36; }
+  yax { type spaceMap; axis y; grid lin; min -2.5; max 2.5; N 20; }
+}
 
 
 geometry {
