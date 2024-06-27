@@ -218,6 +218,7 @@ module fixedSourceTRRMPhysicsPackage_class
     logical(defBool)   :: printVolume = .false.
     logical(defBool)   :: printCells  = .false.
     type(visualiser)   :: viz
+    logical(shortInt)   :: mapResponse  = 0
     real(defReal), dimension(:), allocatable      :: samplePoints
     character(nameLen), dimension(:), allocatable :: sampleNames
     integer(shortInt), dimension(:), allocatable  :: sourceIdx
@@ -381,6 +382,9 @@ contains
 
     ! Read normalised volume by which to scale dimensionless volume estimates
     call dict % getOrDefault(self % normVolume, 'volume', ONE)
+
+    ! Check response map
+    call dict % getOrDefault(self % response, 'responseType', 0)
     
     ! Check whether there is a map for outputting mapped fluxes
     ! If so, read and initialise the map to be used
@@ -390,6 +394,16 @@ contains
       call new_tallyMap(self % fluxMap, tempDict)
     else
       self % mapFlux = .false.
+    end if
+
+    ! Check whether there is a map for outputting fission rates
+    ! If so, read and initialise the map to be used
+    if (dict % isPresent('responseType')) then
+      self % mapResponse = self % response
+      tempDict => dict % getDictPtr('ResponseMap')
+      call new_tallyMap(self % resultsMap, tempDict)
+    else
+      self % mapResponse = .false.
     end if
     
     ! Return flux values at sample points?
@@ -2046,6 +2060,68 @@ contains
         call out % endArray()
         call out % endBlock()
       end do
+    end if
+
+    ! Send fission rates to map output
+    if (self % mapResponse) then
+      resArrayShape = self % resultsMap % binArrayShape()
+      allocate(Response(self % resultsMap % bins(0)))
+      allocate(ResponseSTD(self % resultsMap % bins(0)))
+      Response   = ZERO
+      ResponseSTD = ZERO
+
+      ! Find whether cells are in map and sum their contributions
+      !$omp parallel do reduction(+: Response, ResponseSTD)
+      do cIdx = 1, self % nCells
+        
+        ! Identify material
+        matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
+        matPtr => self % mgData % getMaterial(matIdx)
+        mat    => baseMgNeutronMaterial_CptrCast(matPtr)
+        vol    =  self % volume(cIdx)
+
+        if (vol < volume_tolerance) cycle
+
+        ! Fudge a particle state to search tally map
+        s % r = self % cellPos(cIdx,:)
+        i = self % resultsMap % map(s)
+
+        if (i > 0) then
+          do g = 1, self % nG
+
+            Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
+
+            
+            idx = (cIdx - 1)* self % nG + g
+            Response(i) = Response(i) + vol * self % fluxScores(idx,1) * Sigma
+            ! Is this correct? Also neglects uncertainty in volume - assumed small.
+            ResponseSTD(i) = ResponseSTD(i) + &
+                    vol * vol * self % fluxScores(idx,2)*self % fluxScores(idx,2) * Sigma * Sigma
+          end do
+        end if
+
+      end do
+      !$omp end parallel do
+
+      do i = 1,size(ResponseSTD)
+        ResponseSTD(i) = sqrt(ResponseSTD(i))
+        if (Response(i) > 0) ResponseSTD(i) = ResponseSTD(i) / Response(i)
+      end do
+
+      name = 'responseRate'
+      call out % startBlock(name)
+      call out % startArray(name, resArrayShape)
+      ! Add all map elements to results
+      do idx = 1, self % resultsMap % bins(0)
+        call out % addResult(real(Response(idx),defReal), real(ResponseSTD(idx),defReal))
+      end do
+      call out % endArray()
+      ! Output tally map
+      call self % resultsMap % print(out)
+      call out % endBlock()
+      
+      deallocate(Response)
+      deallocate(ResponseSTD)
     end if
     
     ! Send fluxes to map output
