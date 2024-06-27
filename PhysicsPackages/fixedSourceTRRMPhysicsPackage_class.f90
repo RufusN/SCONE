@@ -218,7 +218,8 @@ module fixedSourceTRRMPhysicsPackage_class
     logical(defBool)   :: printVolume = .false.
     logical(defBool)   :: printCells  = .false.
     type(visualiser)   :: viz
-    logical(shortInt)   :: mapResponse  = 0
+    integer(shortInt)   :: mapResponse  = 0
+    class(tallyMap), allocatable :: resultsMap
     real(defReal), dimension(:), allocatable      :: samplePoints
     character(nameLen), dimension(:), allocatable :: sampleNames
     integer(shortInt), dimension(:), allocatable  :: sourceIdx
@@ -368,6 +369,10 @@ contains
 
     ! Stabilisation factor for negative in-group scattering
     call dict % getOrDefault(self % rho, 'rho', ZERO)
+
+    ! check response map type
+    call dict % getOrDefault(self % mapResponse, 'responseType', 0)
+
     ! Shouldn't need this... but need to do a bit more work to allow these to be done together
     if (self % volCorr) self % rho = ZERO
 
@@ -399,11 +404,8 @@ contains
     ! Check whether there is a map for outputting fission rates
     ! If so, read and initialise the map to be used
     if (dict % isPresent('responseType')) then
-      self % mapResponse = self % response
       tempDict => dict % getDictPtr('ResponseMap')
       call new_tallyMap(self % resultsMap, tempDict)
-    else
-      self % mapResponse = .false.
     end if
     
     ! Return flux values at sample points?
@@ -1972,13 +1974,15 @@ contains
     character(nameLen)                                  :: name
     integer(shortInt)                                   :: g1, cIdx
     integer(shortInt), save                             :: matIdx, g, idx, i
-    real(defReal), save                                 :: vol
+    real(defReal), save                                 :: vol, Sigma
     type(particleState), save                           :: s
-    type(ray), save                                     :: point
+    type(ray), save                                     :: pointRay
     real(defReal)                                       :: res, std, totalVol
     integer(shortInt),dimension(:),allocatable          :: resArrayShape
-    real(defReal), dimension(:), allocatable            :: groupFlux, flxOut, flxOutSTD
-    !$omp threadprivate(idx, matIdx, i, vol, s, g)
+    class(baseMgNeutronMaterial), pointer, save         :: mat
+    class(materialHandle), pointer, save                :: matPtr
+    real(defReal), dimension(:), allocatable            :: groupFlux, flxOut, flxOutSTD, Response, ResponseSTD
+    !$omp threadprivate(idx, matIdx, i, vol, s, g, mat, matptr, sigma, pointRay)
 
     call out % init(self % outputFormat)
     
@@ -2063,7 +2067,7 @@ contains
     end if
 
     ! Send fission rates to map output
-    if (self % mapResponse) then
+    if (self % mapResponse > 0) then
       resArrayShape = self % resultsMap % binArrayShape()
       allocate(Response(self % resultsMap % bins(0)))
       allocate(ResponseSTD(self % resultsMap % bins(0)))
@@ -2075,9 +2079,9 @@ contains
       do cIdx = 1, self % nCells
         
         ! Identify material
-        matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
-        matPtr => self % mgData % getMaterial(matIdx)
-        mat    => baseMgNeutronMaterial_CptrCast(matPtr)
+        matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
+        ! matPtr => self % mgData % getMaterial(matIdx)
+        ! mat    => baseMgNeutronMaterial_CptrCast(matPtr)
         vol    =  self % volume(cIdx)
 
         if (vol < volume_tolerance) cycle
@@ -2089,7 +2093,7 @@ contains
         if (i > 0) then
           do g = 1, self % nG
 
-            Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
+            Sigma = self % nuSigmaF((matIdx - 1) * self % nG + g)!real(mat % getFissionXS(g, self % rand),defFlt)
 
             
             idx = (cIdx - 1)* self % nG + g
@@ -2190,9 +2194,9 @@ contains
         call out % startBlock(name)
         call out % startArray(name, resArrayShape)
         s % r = self % samplePoints(1+3*(i-1):3*i)
-        point = s
-        call self % geom % placeCoord(point % coords)
-        cIdx = self % IDToCell(point % coords % uniqueID)
+        pointRay = s
+        call self % geom % placeCoord(pointRay % coords)
+        cIdx = self % IDToCell(pointRay % coords % uniqueID)
         do g = 1, self % nG
           idx = (cIdx - 1)* self % nG + g
           res = self % fluxScores(idx,1)
@@ -2421,6 +2425,10 @@ contains
     if(allocated(self % fluxMap)) then
       call self % fluxMap % kill()
       deallocate(self % fluxMap)
+    end if
+    if(allocated(self % resultsMap)) then
+      call self % resultsMap % kill()
+      deallocate(self % resultsMap)
     end if
     if(allocated(self % sourceStrength)) deallocate(self % sourceStrength)
     if(allocated(self % uncollidedScores)) deallocate(self % uncollidedScores)

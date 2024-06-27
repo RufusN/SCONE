@@ -230,7 +230,7 @@ contains
     character(*),intent(in)         :: val
     integer(shortInt)               :: i, mul
 
-    if (self % in_array) then
+    if (self % in_array .and. allocated(self % shapeBuffer) ) then
       ! Print opening brackets if required
       mul = 1
       do i = 1, size(self % shapeBuffer)
@@ -242,7 +242,7 @@ contains
     ! Print the number
     call self % output % append(val)
 
-    if (self % in_array) then
+    if (self % in_array .and. allocated(self % shapeBuffer)) then
       ! Append the count
       self % count = self % count + 1
 
@@ -269,7 +269,7 @@ contains
     character(*),intent(in)         :: val
     integer(shortInt)               :: i, mul
 
-    if (self % in_array) then
+    if (self % in_array .and. allocated(self % shapeBuffer)) then
       ! Print opening brackets if required
       mul = 1
       do i = 1, size(self % shapeBuffer)
@@ -281,7 +281,7 @@ contains
     ! Print the character
     call self % output % append(QUOTE // val // QUOTE)
 
-    if (self % in_array) then
+    if (self % in_array .and. allocated(self % shapeBuffer)) then
       ! Append the count
       self % count = self % count + 1
 
