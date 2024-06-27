@@ -388,9 +388,6 @@ contains
     ! Read normalised volume by which to scale dimensionless volume estimates
     call dict % getOrDefault(self % normVolume, 'volume', ONE)
 
-    ! Check response map
-    call dict % getOrDefault(self % response, 'responseType', 0)
-    
     ! Check whether there is a map for outputting mapped fluxes
     ! If so, read and initialise the map to be used
     if (dict % isPresent('fluxMap')) then
@@ -401,10 +398,10 @@ contains
       self % mapFlux = .false.
     end if
 
-    ! Check whether there is a map for outputting fission rates
+    ! Check whether there is a map for outputting reaction rates
     ! If so, read and initialise the map to be used
     if (dict % isPresent('responseType')) then
-      tempDict => dict % getDictPtr('ResponseMap')
+      tempDict => dict % getDictPtr('responseMap')
       call new_tallyMap(self % resultsMap, tempDict)
     end if
     
@@ -2080,8 +2077,8 @@ contains
         
         ! Identify material
         matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
-        ! matPtr => self % mgData % getMaterial(matIdx)
-        ! mat    => baseMgNeutronMaterial_CptrCast(matPtr)
+        matPtr  => self % mgData % getMaterial(matIdx)
+        mat     => baseMgNeutronMaterial_CptrCast(matPtr)
         vol    =  self % volume(cIdx)
 
         if (vol < volume_tolerance) cycle
@@ -2093,7 +2090,7 @@ contains
         if (i > 0) then
           do g = 1, self % nG
 
-            Sigma = self % nuSigmaF((matIdx - 1) * self % nG + g)!real(mat % getFissionXS(g, self % rand),defFlt)
+            Sigma = real(mat % getFissionXS(g, self % rand),defFlt)!self % nuSigmaF((matIdx - 1) * self % nG + g)!real(mat % getFissionXS(g, self % rand),defFlt)
 
             
             idx = (cIdx - 1)* self % nG + g
@@ -2395,6 +2392,7 @@ contains
     self % volCorr     = .false.
     self % passive     = .false.
     self % mapFlux     = .false.
+    self % mapResponse  = 0
 
     self % uncollidedType   = NO_UC
     self % uncollidedPop    = 0
