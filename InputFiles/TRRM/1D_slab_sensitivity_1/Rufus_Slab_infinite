@@ -12,6 +12,8 @@ dataType mg;
 //seed 1140;
 outputFile slab_1 ;
 
+Pertubation {material 1; XStype 2; XSchange 0.01; energyGroups (1 2); }
+
 geometry { 
     type geometryStd;
     boundary (1 1 1 1 1 1);
