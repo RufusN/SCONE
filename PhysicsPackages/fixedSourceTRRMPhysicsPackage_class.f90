@@ -1970,7 +1970,7 @@ contains
     type(outputFile)                                    :: out
     character(nameLen)                                  :: name
     integer(shortInt)                                   :: g1, cIdx
-    integer(shortInt), save                             :: matIdx, g, idx, i
+    integer(shortInt), save                             :: matIdx, g, idx, i, i2
     real(defReal), save                                 :: vol, Sigma
     type(particleState), save                           :: s
     type(ray), save                                     :: pointRay
@@ -1979,7 +1979,7 @@ contains
     class(baseMgNeutronMaterial), pointer, save         :: mat
     class(materialHandle), pointer, save                :: matPtr
     real(defReal), dimension(:), allocatable            :: groupFlux, flxOut, flxOutSTD, Response, ResponseSTD
-    !$omp threadprivate(idx, matIdx, i, vol, s, g, mat, matptr, sigma, pointRay)
+    !$omp threadprivate(idx, matIdx, i, vol, s, g, mat, matptr, sigma, pointRay, i2)
 
     call out % init(self % outputFormat)
     
@@ -2089,20 +2089,24 @@ contains
 
         if (i > 0) then
           do g = 1, self % nG
-
-            Sigma = real(mat % getFissionXS(g, self % rand),defFlt)!self % nuSigmaF((matIdx - 1) * self % nG + g)!real(mat % getFissionXS(g, self % rand),defFlt)
-
-            
+            select case(self % mapResponse)
+            case(1)
+              Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
+            case(2)
+              Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
+            case(3)
+              Sigma = real(mat % getCaptureXS(g, self % rand),defFlt)
+            end select
             idx = (cIdx - 1)* self % nG + g
             Response(i) = Response(i) + vol * self % fluxScores(idx,1) * Sigma
             ! Is this correct? Also neglects uncertainty in volume - assumed small.
             ResponseSTD(i) = ResponseSTD(i) + &
-                    vol * vol * self % fluxScores(idx,2)*self % fluxScores(idx,2) * Sigma * Sigma
+                    vol * vol * self % fluxScores(idx,2) * self % fluxScores(idx,2) * Sigma * Sigma
           end do
         end if
 
       end do
-      !$omp end parallel do
+      !$omp end parallel do     
 
       do i = 1,size(ResponseSTD)
         ResponseSTD(i) = sqrt(ResponseSTD(i))
@@ -2183,31 +2187,32 @@ contains
       deallocate(flxOutSTD)
     end if
 
-    ! Print sample point values if requested
-    if (allocated(self % sampleNames)) then
-      resArrayShape = [self % nG]
-      do i = 1, size(self % sampleNames)
-        name = self % sampleNames(i)
-        call out % startBlock(name)
-        call out % startArray(name, resArrayShape)
-        s % r = self % samplePoints(1+3*(i-1):3*i)
-        pointRay = s
-        call self % geom % placeCoord(pointRay % coords)
-        cIdx = self % IDToCell(pointRay % coords % uniqueID)
-        do g = 1, self % nG
-          idx = (cIdx - 1)* self % nG + g
-          res = self % fluxScores(idx,1)
-          std = self % fluxScores(idx,2)
-          call out % addResult(res, std)
-        end do
-        call out % endArray()
-        call out % endBlock()
-      end do
-    end if
+    ! ! Print sample point values if requested
+    ! if (allocated(self % sampleNames)) then
+    !   resArrayShape = [self % nG]
+    !   do i = 1, size(self % sampleNames)
+    !     name = self % sampleNames(i)
+    !     call out % startBlock(name)
+    !     call out % startArray(name, resArrayShape)
+    !     s % r = self % samplePoints(1+3*(i-1):3*i)
+    !     pointRay = s
+    !     call self % geom % placeCoord(pointRay % coords)
+    !     cIdx = self % IDToCell(pointRay % coords % uniqueID)
+    !     matIdx = self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
+    !     do g = 1, self % nG
+    !       idx = (cIdx - 1) * self % nG + g
+    !       res = self % fluxScores(idx,1) 
+    !       std = self % fluxScores(idx,2)
+    !       call out % addResult(res, std)
+    !     end do
+    !     call out % endArray()
+    !     call out % endBlock()
+    !   end do
+    ! end if
 
     ! Print material integrated fluxes if requested
     if (allocated(self % intMatIdx)) then
-      name = 'integral'
+      name = 'integral reaction rate'
       resArrayShape = [1]
       call out % startBlock(name)
       do i = 1, size(self % intMatIdx)
@@ -2215,16 +2220,31 @@ contains
         res = ZERO
         std = ZERO
         totalVol = ZERO
+
+        matPtr  => self % mgData % getMaterial(self % intMatIdx(i))
+        mat     => baseMgNeutronMaterial_CptrCast(matPtr)
+
         do cIdx = 1, self % nCells
+          s % r = self % cellPos(cIdx,:)
+          i2 = self % fluxMap % map(s)
           matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
+          if (i2 > 0 ) continue
           if (self % intMatIdx(i) == matIdx) then
             vol = self % normVolume * self % volume(cIdx)
             if (vol < volume_tolerance) continue
             totalVol = totalVol + real(vol,defReal)
             do g = 1, self % nG
+              select case(self % mapResponse)
+              case(1)
+                Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
+              case(2)
+                Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
+              case(3)
+                Sigma = real(mat % getCaptureXS(g, self % rand),defFlt)
+              end select
               idx = (cIdx - 1)* self % nG + g
-              res = res + self % fluxScores(idx,1)*vol
-              std = std + self % fluxScores(idx,2)**2*self % fluxScores(idx,1)**2*vol*vol
+              res = res + self % fluxScores(idx,1)*vol * Sigma
+              std = std + self % fluxScores(idx,2)**2*self % fluxScores(idx,1)**2*vol*vol*sigma*sigma
             end do
           end if
         end do
