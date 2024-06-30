@@ -1200,7 +1200,7 @@ module adjointFSTRRMPhysicsPackage_class
       ! Add collided and uncollided results
       if (self % uncollidedType > NO_UC) then
         !$omp parallel do schedule(static)
-        do idx = 1, size(self % scalarFlux)
+        do idx = 1, size(self % adjscalarFlux)
           self % fluxScores(idx,2) = sqrt(self % fluxScores(idx,2)**2 * self % fluxScores(idx,1)**2 + &
                 self % uncollidedScores(idx,2)**2 * self % uncollidedScores(idx,1)**2)
           self % fluxScores(idx,1) = self % fluxScores(idx,1) + self % uncollidedScores(idx,1)
@@ -1835,7 +1835,7 @@ module adjointFSTRRMPhysicsPackage_class
         if (matIdx > 2000000) then
           do g = 1, self % nG
             idx   = self % nG * (cIdx - 1) + g
-            self % scalarFlux(idx) = 0.0_defFlt
+            self % adjscalarFlux(idx) = 0.0_defFlt
           end do
           cycle
         end if 
@@ -1942,7 +1942,10 @@ module adjointFSTRRMPhysicsPackage_class
     subroutine adjointSourceUpdateKernel(self, cIdx)
       class(adjointFSTRRMPhysicsPackage), target, intent(inout) :: self
       integer(shortInt), intent(in)                         :: cIdx
+      class(baseMgNeutronMaterial), pointer                 :: mat
+      class(materialHandle), pointer                        :: matPtr
       real(defFlt)                                          :: scatter, fission
+      real(defFlt)                                          :: Sigma
       real(defFlt), dimension(:), pointer                   :: nuFission, total, chi, scatterXS 
       integer(shortInt)                                     :: matIdx, g, gIn, id, baseIdx, idx
       real(defFlt), pointer, dimension(:)                   :: fluxVec, scatterVec
@@ -1962,6 +1965,10 @@ module adjointFSTRRMPhysicsPackage_class
       end if
   
       ! Obtain XSs
+
+      ! matPtr => self % mgData % getMaterial(matIdx)
+      ! mat    => baseMgNeutronMaterial_CptrCast(matPtr)
+
       matIdx = (matIdx - 1) * self % nG
       total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
       scatterXS => self % adjSigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
@@ -1991,11 +1998,26 @@ module adjointFSTRRMPhysicsPackage_class
         do gIn = 1, self % nG
           scatter = scatter + fluxVec(gIn) * scatterVec(gIn)
         end do
-  
+
+        ! if (matIdx == 3) then
+        !   select case(self % mapResponse)
+        !   case(1)
+        !     Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
+        !   case(2)
+        !     Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
+        !   case(3)
+        !     Sigma = real(mat % getCaptureXS(g, self % rand),defFlt)
+        !   end select
+        ! else
+        !   Sigma = 0.0_defFlt
+        ! end if
+        
+        Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
+
         ! Output index
         idx = baseIdx + g
-  
-        self % adjSource(idx) = chi(g) * fission + scatter + self % fixedSource(idx)
+        
+        self % adjSource(idx) = chi(g) * fission + scatter + Sigma
         self % adjSource(idx) = self % adjSource(idx) / total(g)
   
       end do
@@ -2266,11 +2288,12 @@ module adjointFSTRRMPhysicsPackage_class
               Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
 
               
-              idx = (cIdx - 1)* self % nG + g
-              Response(i) = Response(i) + vol * self % fluxScores(idx,1) * Sigma
+              idx = (cIdx - 1) * self % nG + g
+              Response(i) = Response(i) + vol * self % fluxScores(idx,1) * self % fixedSource(idx)!* Sigma
               ! Is this correct? Also neglects uncertainty in volume - assumed small.
               ResponseSTD(i) = ResponseSTD(i) + &
-                      vol * vol * self % fluxScores(idx,2)*self % fluxScores(idx,2) * Sigma * Sigma
+                      vol * vol * self % fluxScores(idx,2) *self % fluxScores(idx,2) * &
+                            self % fixedSource(idx) * self % fixedSource(idx)
             end do
           end if
 
@@ -2380,7 +2403,7 @@ module adjointFSTRRMPhysicsPackage_class
   
       ! Print material integrated fluxes if requested
       if (allocated(self % intMatIdx)) then
-        name = 'integral'
+        name = 'integral reaction rate'
         resArrayShape = [1]
         call out % startBlock(name)
         do i = 1, size(self % intMatIdx)
@@ -2388,16 +2411,30 @@ module adjointFSTRRMPhysicsPackage_class
           res = ZERO
           std = ZERO
           totalVol = ZERO
+  
+          matPtr  => self % mgData % getMaterial(self % intMatIdx(i))
+          mat     => baseMgNeutronMaterial_CptrCast(matPtr)
+  
           do cIdx = 1, self % nCells
             matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
+  
             if (self % intMatIdx(i) == matIdx) then
               vol = self % normVolume * self % volume(cIdx)
               if (vol < volume_tolerance) continue
               totalVol = totalVol + real(vol,defReal)
               do g = 1, self % nG
                 idx = (cIdx - 1)* self % nG + g
-                res = res + self % fluxScores(idx,1)*vol
-                std = std + self % fluxScores(idx,2)**2*self % fluxScores(idx,1)**2*vol*vol
+                select case(self % mapResponse)
+                case(1)
+                  Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
+                case(2)
+                  Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
+                case(3)
+                  Sigma = real(mat % getCaptureXS(g, self % rand),defFlt)
+                end select
+                res = res + self % fluxScores(idx,1) * vol * self % fixedSource(idx)
+                std = std + self % fluxScores(idx,2)**2 * self % fluxScores(idx,1)**2 &
+                  * vol * vol * self % fixedSource(idx) * self % fixedSource(idx)
               end do
             end if
           end do
