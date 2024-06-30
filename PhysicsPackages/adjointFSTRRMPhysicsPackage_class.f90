@@ -1966,8 +1966,8 @@ module adjointFSTRRMPhysicsPackage_class
   
       ! Obtain XSs
 
-      ! matPtr => self % mgData % getMaterial(matIdx)
-      ! mat    => baseMgNeutronMaterial_CptrCast(matPtr)
+      matPtr => self % mgData % getMaterial(matIdx)
+      mat    => baseMgNeutronMaterial_CptrCast(matPtr)
 
       matIdx = (matIdx - 1) * self % nG
       total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
@@ -2011,7 +2011,7 @@ module adjointFSTRRMPhysicsPackage_class
         ! else
         !   Sigma = 0.0_defFlt
         ! end if
-        
+
         Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
 
         ! Output index
