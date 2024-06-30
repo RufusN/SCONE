@@ -1,4 +1,4 @@
-// type fixedSourceTRRMPhysicsPackage;
+//type fixedSourceTRRMPhysicsPackage;
 type adjointFSTRRMPhysicsPackage;
 
 pop      2000;
@@ -10,13 +10,13 @@ dead   200;
 termination 1200; 
 plot 0;
 cache 1;
-outputFile slab_shield;
+outputFile slab_shield_adjoint_3;
 volume 225;
 //zeroNeg 0;
 //itVol 0;
 //rho 0.3;
 //cellCheck 1;
-seed 50;
+seed 500;
 outputFormat asciiJSON;
 responseType 1;
 
@@ -34,11 +34,11 @@ samplePoints {
 }
 
 fluxMap {type multiMap;
-         energy 1;
-         maps (xax yax);
-         xax { type spaceMap; axis x; grid lin; min -4.5; max 4.5; N 36; }
-         yax { type spaceMap; axis y; grid lin; min -2.5; max 2.5; N 20; }
-         }
+  energy 1;
+  maps (xax yax);
+  xax { type spaceMap; axis x; grid lin; min -4.5; max 4.5; N 36; }
+  yax { type spaceMap; axis y; grid lin; min -2.5; max 2.5; N 20; }
+}
 
 responseMap {type multiMap;
   maps (xax yax);

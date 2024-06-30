@@ -1,8 +1,8 @@
 numberOfGroups 1; 
 capture ( 0.5E-4 );
 nu ( 2.5 ); 
-fission ( 0.05 ); 
+fission ( 5E-2 ); 
 chi ( 1.0 ); 
 scatteringMultiplicity ( 1.0  ); 
-P0 ( 0.05 ); 
+P0 ( 5E-2 ); 
 

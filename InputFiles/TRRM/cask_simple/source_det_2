@@ -1,0 +1,169 @@
+type fixedSourceTRRMPhysicsPackage;
+
+pop      2000;
+active   500;
+inactive 700;
+XSdata   mg;
+dataType mg;
+dead   200; 
+termination 1200; 
+plot 1;
+cache 1;
+outputFile simple_detector_2;
+volume 3200;
+//zeroNeg 0;
+//itVol 0;
+//rho 0.3;
+//cellCheck 1;
+seed 50;
+responseType 1;
+outputFormat asciiJSON;
+
+volRays 500000; volLength 800;
+
+//uncollided { type 2; pop 200000; cycles 20; length 300; bottom ( 0.0 0.0 0.0); top (10.0 10.0 10.0); relVolume 0.00277778;}
+uncollided { type 1; pop 200000; cycles 50; length 400; point ( 19.5 19.5 0.5); strength (50.0); }
+
+// integrate (water);
+// source { source ( 50.0 ); }
+// integrate (sourceMat);
+
+fluxMap {type multiMap;
+         energy 1;
+         maps (xax yax);
+         xax { type spaceMap; axis x; grid lin; min -20.0; max 20.0; N 20; }
+         yax { type spaceMap; axis y; grid lin; min -20.0; max 20.0; N 20; }
+         //zax { type spaceMap; axis z; grid lin; min -1.0; max 1.0; N 1; } 
+        }
+
+responseMap {type multiMap;
+         maps (xax yax);
+         xax { type spaceMap; axis x; grid lin; min -20.0; max 20.0; N 20;}
+         yax { type spaceMap; axis y; grid lin; min -20.0; max 20.0; N 20;}
+        }
+
+
+geometry {
+    type geometryStd;
+    boundary (0 1 0 1 1 1);
+    graph {type extended;}
+
+    surfaces
+    {
+    domain  { id 1; type box; origin (0.0 0.0 0.0);  halfwidth (20.0 20.0 1.0); }
+    // source  { id 2; type box; origin (19.0 19.0 0.0);  halfwidth (0.1 0.1 0.1); }
+    target  { id 3; type box; origin (10.0 10.0 0.0); halfwidth (3.0 3.0 1.0); } 
+    shieldL { id 4; type xPlane; x0 -2.0; }
+	shieldR { id 5; type xPlane; x0  2.0; }
+    }
+
+    cells
+    {
+    target { id 30; type simpleCell; surfaces (-3 -1);      filltype mat; material detector; }
+    // source { id 40; type simpleCell; surfaces (-2 -1);      filltype mat; material source; }
+    shield { id 50; type simpleCell; surfaces (4 -5 -1) ; filltype mat; material concrete; }
+    airL   { id 60; type simpleCell; surfaces (-4 3 -1);  filltype mat; material air; }
+    airR   { id 70; type simpleCell; surfaces (-5 -1);  filltype mat; material air; }
+    // air       { id 70; type simpleCell; surfaces (2 3 -1);  filltype mat; material air; }
+    }
+
+    universes  
+    {
+        all    { id 10; type cellUniverse; cells ( 30 50 60 70); }
+        root   { id 1; type rootUniverse; border 1; fill u<20>; }
+
+
+      lattice { id 20; type latUniverse;
+      origin (0.0 0.0 0.0);
+      pitch (2.0 2.0 2.0);
+      shape (20 20 1);
+      offset 0;
+      padMat air;
+      map (
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+      );
+       
+      }
+    }
+}
+viz {
+    plotz { type bmp; axis z; centre (0.0 0.0 0.0); res (700 400); what uniqueID; output geom1; }
+    plotz2 { type bmp; axis z; centre (0.0 0.0 0.0); res (700 400); what material; output geom2; }
+    myVTK {
+        type vtk;
+        what uniqueID; 
+        corner (-20.0 -20.0 -1.0);
+        width (40.0 40.0 2.0);
+        vox (2000 2000 1);
+      }
+   }
+   
+   nuclearData {
+   
+     handles { 
+       mg { type baseMgNeutronDatabase; PN P0;} 
+     } 
+   
+   
+   materials {
+   
+       concrete {
+         temp  273;
+         xsFile ./XS_simple_cask/concrete.txt;
+         composition {
+         }
+       }
+   
+        air {
+        temp 273;
+        xsFile ./XS_simple_cask/air.txt;
+        composition {
+          }
+        }
+   
+        water {
+        temp 273;
+        xsFile ./XS_simple_cask/water.txt;
+        composition {
+          }
+        }
+   
+        source {
+        temp 273; 
+        xsFile ./XS_simple_cask/source.txt;
+        composition {
+             } 
+        }
+
+        detector {
+        temp 273; 
+        xsFile ./XS_simple_cask/detector_source.txt;
+        composition {
+            } 
+        }
+       
+   }
+   
+   }
+   
+   
+   
