@@ -10,7 +10,7 @@ dead   200;
 termination 1200; 
 plot 0;
 cache 1;
-outputFile slab_shield_adjoint_3;
+outputFile slab_shield_FW;
 volume 225;
 //zeroNeg 0;
 //itVol 0;
@@ -21,6 +21,7 @@ outputFormat asciiJSON;
 responseType 1;
 
 integrate (detector);
+
 source { source (
   0.0 0 0 0 0 0 0 0 0 0
   0 0 0 0 0 0 0 0 0 0
@@ -28,10 +29,10 @@ source { source (
   1 1 1
   ); }
 
-samplePoints {
-    A3_1   ( -4.25 -2.25 0.0 );
-    A3_2   ( 4.25 2.25 0.0 );
-}
+// samplePoints {
+//     A3_1   ( -4.25 -2.25 0.0 );
+//     A3_2   ( 4.25 2.25 0.0 );
+// }
 
 fluxMap {type multiMap;
   energy 1;

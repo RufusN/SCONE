@@ -9,7 +9,7 @@ dead   200;
 termination 1200; 
 plot 1;
 cache 1;
-outputFile simple_detector_2;
+outputFile simple_detector_point;
 volume 3200;
 //zeroNeg 0;
 //itVol 0;
