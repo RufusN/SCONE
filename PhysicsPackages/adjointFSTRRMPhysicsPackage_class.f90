@@ -225,6 +225,8 @@ module adjointFSTRRMPhysicsPackage_class
       integer(shortInt), dimension(:), allocatable  :: sourceIdx
       integer(shortInt) ,dimension(:), allocatable  :: intMatIdx
       character(nameLen),dimension(:), allocatable  :: intMatName
+      integer(shortInt) ,dimension(:), allocatable  :: detectorInt
+      character(nameLen),dimension(:), allocatable  :: detectorName
       logical(defBool)   :: mapFlux     = .false.
       class(tallyMap), allocatable :: fluxMap
   
@@ -534,6 +536,22 @@ module adjointFSTRRMPhysicsPackage_class
         ! and remember the matIdx
         do i = 1,size(names)
           self % intMatIdx(i) = matMap % get(names(i))
+        end do
+      end if
+
+      if (dict % isPresent('detector')) then
+        call dict % get(names,'detector')
+        
+        allocate(self % detectorInt(size(names)))
+        allocate(self % detectorName(size(names)))
+        self % detectorName = names
+        
+        matMap => self % mgData % matNamesMap()
+  
+        ! Check that materials exist in the geometry
+        ! and remember the matIdx
+        do i = 1,size(names)
+          self % detectorInt(i) = matMap % get(names(i))
         end do
       end if
       
@@ -1947,12 +1965,14 @@ module adjointFSTRRMPhysicsPackage_class
       real(defFlt)                                          :: scatter, fission
       real(defFlt)                                          :: Sigma
       real(defFlt), dimension(:), pointer                   :: nuFission, total, chi, scatterXS 
-      integer(shortInt)                                     :: matIdx, g, gIn, id, baseIdx, idx
+      integer(shortInt)                                     :: matIdx, g, gIn, id, baseIdx, idx, material
       real(defFlt), pointer, dimension(:)                   :: fluxVec, scatterVec
+      logical(defBool)                                      :: detMat
   
       ! Identify material
-      id      =  self % CellToID(cIdx)
-      matIdx  =  self % geom % geom % graph % getMatFromUID(id) 
+      id       =  self % CellToID(cIdx)
+      matIdx   =  self % geom % geom % graph % getMatFromUID(id) 
+      material =  self % geom % geom % graph % getMatFromUID(id) 
       
       ! Guard against void cells
       if (matIdx >= UNDEF_MAT) then
@@ -1999,20 +2019,25 @@ module adjointFSTRRMPhysicsPackage_class
           scatter = scatter + fluxVec(gIn) * scatterVec(gIn)
         end do
 
-        ! if (matIdx == 3) then
-        !   select case(self % mapResponse)
-        !   case(1)
-        !     Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
-        !   case(2)
-        !     Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
-        !   case(3)
-        !     Sigma = real(mat % getCaptureXS(g, self % rand),defFlt)
-        !   end select
-        ! else
-        !   Sigma = 0.0_defFlt
-        ! end if
+        if (allocated(self % detectorInt)) then
+          detMat = any(self % detectorInt == material)
+        else
+          detMat = .true.
+        end if
 
-        Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
+        if (detMat) then
+          select case(self % mapResponse)
+          case(1)
+            Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
+          case(2)
+            Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
+          case(3)
+            Sigma = real(mat % getCaptureXS(g, self % rand),defFlt)
+          end select
+        else
+          Sigma = 0.0_defFlt
+        end if
+        ! Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
 
         ! Output index
         idx = baseIdx + g
@@ -2412,9 +2437,6 @@ module adjointFSTRRMPhysicsPackage_class
           std = ZERO
           totalVol = ZERO
   
-          matPtr  => self % mgData % getMaterial(self % intMatIdx(i))
-          mat     => baseMgNeutronMaterial_CptrCast(matPtr)
-  
           do cIdx = 1, self % nCells
             matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
   
@@ -2424,14 +2446,6 @@ module adjointFSTRRMPhysicsPackage_class
               totalVol = totalVol + real(vol,defReal)
               do g = 1, self % nG
                 idx = (cIdx - 1)* self % nG + g
-                select case(self % mapResponse)
-                case(1)
-                  Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
-                case(2)
-                  Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
-                case(3)
-                  Sigma = real(mat % getCaptureXS(g, self % rand),defFlt)
-                end select
                 res = res + self % fluxScores(idx,1) * vol * self % fixedSource(idx)
                 std = std + self % fluxScores(idx,2)**2 * self % fluxScores(idx,1)**2 &
                   * vol * vol * self % fixedSource(idx) * self % fixedSource(idx)
@@ -2639,6 +2653,8 @@ module adjointFSTRRMPhysicsPackage_class
       if(allocated(self % sourceIdx)) deallocate(self % sourceIdx)
       if(allocated(self % intMatIdx)) deallocate(self % intMatIdx)
       if(allocated(self % intMatName)) deallocate(self % intMatName)
+      if(allocated(self % detectorInt)) deallocate(self % detectorInt)
+      if(allocated(self % detectorName)) deallocate(self % detectorName)
       if(allocated(self % fluxMap)) then
         call self % fluxMap % kill()
         deallocate(self % fluxMap)
