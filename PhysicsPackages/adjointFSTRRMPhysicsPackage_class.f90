@@ -2325,10 +2325,15 @@ module adjointFSTRRMPhysicsPackage_class
         end do
         !$omp end parallel do
 
+        !$omp parallel do
         do i = 1,size(ResponseSTD)
-          ResponseSTD(i) = sqrt(ResponseSTD(i))
-          if (Response(i) > 0) ResponseSTD(i) = ResponseSTD(i) / Response(i)
+          if (Response(i) > 0) then
+            ResponseSTD(i) = sqrt(ResponseSTD(i)) / Response(i)
+          else
+            ResponseSTD(cIdx) = ZERO
+          end if
         end do
+        !$omp end parallel do
 
         name = 'responseRate'
         call out % startBlock(name)
@@ -2473,7 +2478,7 @@ module adjointFSTRRMPhysicsPackage_class
           name = 'flux_g'//numToChar(g1)
           !$omp parallel do schedule(static)
           do cIdx = 1, self % nCells
-            idx = (cIdx - 1)* self % nG + g1
+            idx = (cIdx - 1) * self % nG + g1
             groupFlux(cIdx) = self % fluxScores(idx,1)
           end do
           !$omp end parallel do
@@ -2484,7 +2489,7 @@ module adjointFSTRRMPhysicsPackage_class
           name = 'std_g'//numToChar(g1)
           !$omp parallel do schedule(static)
           do cIdx = 1, self % nCells
-            idx = (cIdx - 1)* self % nG + g1
+            idx = (cIdx - 1) * self % nG + g1
             groupFlux(cIdx) = self % fluxScores(idx,2)
           end do
           !$omp end parallel do
@@ -2495,7 +2500,7 @@ module adjointFSTRRMPhysicsPackage_class
           name = 'source_g'//numToChar(g1)
           !$omp parallel do schedule(static)
           do cIdx = 1, self % nCells
-            idx = (cIdx - 1)* self % nG + g1
+            idx = (cIdx - 1) * self % nG + g1
             groupFlux(cIdx) = self % source(idx)
           end do
           !$omp end parallel do
