@@ -13,6 +13,9 @@ dataType mg;
 //seed 1140;
 outputFile slab_3 ;
 
+Pertubation {material 1; XStype 1; XSchange 0.01; energyGroups (1); }
+//type 1 - capt, 2 - fiss, 3 - scatter
+
 geometry { 
     type geometryStd;
     boundary (1 1 1 1 1 1);

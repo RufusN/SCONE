@@ -12,6 +12,8 @@ XSdata   mg;
 dataType mg;
 outputFile C5G7_TRRM ;
 
+Pertubation {material 1; XStype 1; XSchange 0.01; energyGroups (1); }
+
 fissionMap {type multiMap;
             maps (xax yax);
             xax { type spaceMap; axis x; grid lin; min -32.13; max 10.71; N 34;}
