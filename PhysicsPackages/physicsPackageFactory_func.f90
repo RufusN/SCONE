@@ -18,6 +18,9 @@ module physicsPackageFactory_func
   use randomRayPhysicsPackage_class,       only : randomRayPhysicsPackage
   use fixedSourceTRRMPhysicsPackage_class, only : fixedSourceTRRMPhysicsPackage
   use adjointFSTRRMPhysicsPackage_class,   only : adjointFSTRRMPhysicsPackage
+  use adjointBackTRRMPhysicsPackage_class, only : adjointBackTRRMPhysicsPackage
+
+  
 !  use dynamPhysicsPackage_class, only : dynamPhysicsPackage
 
   implicit none
@@ -34,6 +37,7 @@ module physicsPackageFactory_func
                                                                              'randomRayPhysicsPackage      ',&
                                                                              'rayVolPhysicsPackage         ',&
                                                                              'adjointFSTRRMPhysicsPackage  ',&
+                                                                             'adjointBackTRRMPhysicsPackage',&
                                                                              'fixedSourceTRRMPhysicsPackage']
 
   !!
@@ -107,6 +111,11 @@ contains
       case('adjointFSTRRMPhysicsPackage')
         ! Allocate and initialise
         allocate( adjointFSTRRMPhysicsPackage :: new)
+        call new % init(dict)
+
+      case('adjointBackTRRMPhysicsPackage')
+        ! Allocate and initialise
+        allocate( adjointBackTRRMPhysicsPackage :: new)
         call new % init(dict)
 
       case('rayVolPhysicsPackage')

@@ -1,4 +1,4 @@
-module adjointFSTRRMPhysicsPackage_class
+module adjointBackTRRMPhysicsPackage_class
 
     use numPrecision
     use universalVariables
@@ -183,7 +183,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! Interface:
     !!   physicsPackage interface
     !!
-    type, public, extends(physicsPackage) :: adjointFSTRRMPhysicsPackage
+    type, public, extends(physicsPackage) :: adjointBackTRRMPhysicsPackage
       private
       ! Components
       class(geometryStd), pointer           :: geom
@@ -206,6 +206,18 @@ module adjointFSTRRMPhysicsPackage_class
       integer(shortInt)  :: inactive    = 0
       integer(shortInt)  :: active      = 0
       real(defReal)      :: rho         = ZERO
+
+      !Pertubation
+      integer(shortInt), dimension(:), allocatable   :: energyId 
+      integer(shortInt)  :: XStype      = 0
+      integer(shortInt)  :: matPert     = 0
+      real(defReal)      :: XSchange    = ZERO
+      real(defReal)      :: numSum      = 0
+      real(defReal)      :: denSum      = 0
+
+      real(defReal)                 :: sensitivity = ZERO
+      real(defReal), dimension(2)   :: sensitivityScore = ZERO
+      
       logical(defBool)   :: cache       = .false.
       logical(defBool)   :: itVol       = .false.
       logical(defBool)   :: zeroNeg     = .false.
@@ -267,6 +279,8 @@ module adjointFSTRRMPhysicsPackage_class
       real(defFlt), dimension(:), allocatable    :: adjScalarFlux
       real(defFlt), dimension(:), allocatable    :: adjPrevFlux
       real(defFlt), dimension(:), allocatable    :: adjSource
+
+      real(defReal), dimension(:), allocatable   :: angularIP
   
       ! Tracking cell properites
       integer(shortInt), dimension(:), allocatable :: IDToCell
@@ -298,6 +312,7 @@ module adjointFSTRRMPhysicsPackage_class
   
       ! Private procedures
       procedure, private :: cycles
+      procedure, private :: initPertubation
       procedure, private :: initialiseSource
       procedure, private :: initialiseRay
       procedure, private :: transportSweep
@@ -308,6 +323,7 @@ module adjointFSTRRMPhysicsPackage_class
       procedure, private :: adjointNormaliseFluxAndVolume
       procedure, private :: normaliseFluxUncollided
       procedure, private :: resetFluxes
+      procedure, private :: sensitivityCalculation
       procedure, private :: accumulateFluxScores
       procedure, private :: finaliseFluxScores
       procedure, private :: printResults
@@ -318,7 +334,7 @@ module adjointFSTRRMPhysicsPackage_class
       procedure, private :: uncollidedSweep
       procedure, private :: uncollidedCalculation
   
-    end type adjointFSTRRMPhysicsPackage
+    end type adjointBackTRRMPhysicsPackage
   
   contains
   
@@ -328,7 +344,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! See physicsPackage_inter for details
     !!
     subroutine init(self,dict)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       class(dictionary), intent(inout)                    :: dict
       integer(shortInt)                                   :: seed_temp, n, nPoints, i, m, g, g1
       integer(longInt)                                    :: seed
@@ -346,7 +362,7 @@ module adjointFSTRRMPhysicsPackage_class
       class(baseMgNeutronMaterial), pointer               :: mat
       class(materialHandle), pointer                      :: matPtr
       logical(defBool)                                    :: cellCheck
-      character(100), parameter :: Here = 'init (adjointFSTRRMPhysicsPackage_class.f90)'
+      character(100), parameter :: Here = 'init (adjointBackTRRMPhysicsPackage_class.f90)'
   
       call cpu_time(self % CPU_time_start)
       
@@ -397,6 +413,10 @@ module adjointFSTRRMPhysicsPackage_class
 
       ! Check response map
       call dict % getOrDefault(self % mapResponse, 'responseType', 0)
+
+      !!!!!!!!!!!!!!!!!!!!!!
+      tempDict => dict % getDictPtr("Pertubation")
+      call self % initPertubation(tempDict)
       
       ! Check whether there is a map for outputting mapped fluxes
       ! If so, read and initialise the map to be used
@@ -747,9 +767,30 @@ module adjointFSTRRMPhysicsPackage_class
         end do
       end do
   
-  
     end subroutine init
+
+    subroutine initPertubation(self,dict)
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
+      class(dictionary), intent(in)                   :: dict
+      class(dictionary), pointer                      :: tempDict
+      integer(shortInt)                               :: i, g
+      character(100), parameter :: Here = 'initPertubation (adjointTRRMPhysicsPackage_class.f90)'
   
+      call dict % getOrDefault(self % XStype, 'XStype', 0)
+  
+      call dict % getOrDefault(self % matPert, 'material', 0)
+  
+      call dict % getOrDefault(self % XSchange, 'XSchange', ZERO)
+  
+      call dict % get(self % energyId, 'energyGroups')
+  
+      if (self % XStype == 3 .and. mod(size(self % energyId), 2) /= 0) then
+        call fatalError(Here, 'energyGroups for scattering XS pertubation must be given in pairs.')
+      end if 
+  
+    
+    end subroutine initPertubation
+
     !!
     !! Initialises the fixed source to be used in the simulation
     !! Takes a dictionary containing names of materials in the geometry and
@@ -759,7 +800,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! Also sets options for uncollided flux calculations
     !!
     subroutine initialiseSource(self, dict)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       class(dictionary), intent(inout)                    :: dict
       character(nameLen),dimension(:), allocatable        :: names
       real(defReal), dimension(:), allocatable            :: sourceStrength
@@ -768,7 +809,7 @@ module adjointFSTRRMPhysicsPackage_class
       logical(defBool)                                    :: found
       character(nameLen)                                  :: sourceName 
       character(nameLen), save                            :: localName
-      character(100), parameter :: Here = 'initialiseSource (adjointFSTRRMPhysicsPackage_class.f90)'
+      character(100), parameter :: Here = 'initialiseSource (adjointBackTRRMPhysicsPackage_class.f90)'
       !$omp threadprivate(matIdx, localName, idx, g, id)
   
       call dict % keys(names)
@@ -822,6 +863,7 @@ module adjointFSTRRMPhysicsPackage_class
       end do
   
     end subroutine initialiseSource
+
   
     !!
     !! Run calculation
@@ -829,7 +871,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! See physicsPackage_inter for details
     !!
     subroutine run(self)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
   
       call self % printSettings()
       if (self % nVolRays > 0) call self % volumeCalculation()
@@ -846,7 +888,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! Rays are tracked until they reach some specified termination length.
     !!
     subroutine cellMapCalculation(self)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       type(ray), save                                     :: r
       type(RNG), target, save                             :: pRNG
       real(defReal)                                       :: hitRate
@@ -920,7 +962,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! scoring to volume estimates.
     !!
     subroutine volumeCalculation(self)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       type(ray), save                                     :: r
       type(RNG), target, save                             :: pRNG
       real(defReal)                                       :: hitRate
@@ -978,7 +1020,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! During tracking, fluxes are attenuated (and adjusted according to BCs).
     !!
     subroutine uncollidedCalculation(self)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       type(ray), save                                     :: r
       type(RNG), target, save                             :: pRNG
       real(defReal)                                       :: hitRate
@@ -1082,7 +1124,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! given criteria or when a fixed number of iterations has been passed.
     !!
     subroutine cycles(self)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       type(ray), save                                     :: r
       type(RNG), target, save                             :: pRNG
       real(defReal)                                       :: hitRate
@@ -1168,7 +1210,17 @@ module adjointFSTRRMPhysicsPackage_class
         call self % adjointNormaliseFluxAndVolume(self % lengthPerIt, it)
         
         ! Accumulate flux scores
-        if (isActive) call self % accumulateFluxScores()
+        if (isActive) then
+          self % numSum = ZERO
+          self % denSum = ZERO
+          !$omp parallel do schedule(static)
+          do i = 1, self % nCells
+           call self % sensitivityCalculation(i, it)
+          end do
+          self % sensitivity = (self % numSum / self % denSum) 
+
+          call self % accumulateFluxScores()
+        end if
   
         ! Calculate proportion of cells that were hit
         hitRate = real(sum(self % cellHit),defReal) / nCells
@@ -1238,12 +1290,12 @@ module adjointFSTRRMPhysicsPackage_class
     !! and performs the build operation
     !!
     subroutine initialiseRay(self, r)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       type(ray), intent(inout)                            :: r
       real(defReal)                                       :: mu, phi
       real(defReal), dimension(3)                         :: u, rand3, x
       integer(shortInt)                                   :: i, matIdx, id, cIdx
-      character(100), parameter :: Here = 'initialiseRay (adjointFSTRRMPhysicsPackage_class.f90)'
+      character(100), parameter :: Here = 'initialiseRay (adjointBackTRRMPhysicsPackage_class.f90)'
   
       i = 0
       mu = TWO * r % pRNG % get() - ONE
@@ -1286,7 +1338,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! Also used for constructing the cell map
     !!
     subroutine volumeSweep(self, r, maxLength, doVolume)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       type(ray), intent(inout)                            :: r
       real(defReal), intent(in)                           :: maxLength
       logical(defBool), intent(in)                        :: doVolume
@@ -1367,7 +1419,7 @@ module adjointFSTRRMPhysicsPackage_class
     !!
     !!
     subroutine uncollidedSweep(self, r, ints)
-      class(adjointFSTRRMPhysicsPackage), target, intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), target, intent(inout) :: self
       type(ray), intent(inout)                              :: r
       integer(longInt), intent(out)                         :: ints
       integer(shortInt)                                     :: matIdx, g, event, matIdx0, i, cIdx, baseIdx
@@ -1378,7 +1430,7 @@ module adjointFSTRRMPhysicsPackage_class
       real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec
       real(defFlt), pointer, dimension(:)                   :: scalarVec, totVec
       real(defReal), dimension(3)                           :: r0, mu0, u, x0, rand3
-      character(100), parameter :: Here = 'uncollidedSweep (adjointFSTRRMPhysicsPackage_class.f90)'
+      character(100), parameter :: Here = 'uncollidedSweep (adjointBackTRRMPhysicsPackage_class.f90)'
       
       ! If point source, position and direction sample is straightforward
       ! Flux is determined by source
@@ -1529,158 +1581,283 @@ module adjointFSTRRMPhysicsPackage_class
     end subroutine uncollidedSweep
 
     subroutine transportSweep(self, r, ints)
-        class(adjointFSTRRMPhysicsPackage), target, intent(inout) :: self
-        type(ray), intent(inout)                              :: r
-        integer(longInt), intent(out)                         :: ints
-        integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx
-        real(defReal)                                         :: totalLength, length
-        logical(defBool)                                      :: activeRay, hitVacuum
-        type(distCache)                                       :: cache
-        real(defFlt)                                          :: lenFlt
-        real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, fluxAdjoint, deltaAdjoint
-        real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, scalarAdjoint, sourceAdjoint
-        real(defReal), dimension(3)                           :: r0, mu0
-
+      class(adjointBackTRRMPhysicsPackage), target, intent(inout) :: self
+      type(ray), intent(inout)                              :: r
+      integer(longInt), intent(out)                         :: ints
+      integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
+                                                                 segCount, i, segCountCrit, segIdx, gIn, pIdx
+      real(defReal)                                         :: totalLength, length
+      logical(defBool)                                      :: activeRay, hitVacuum, tally
+      type(distCache)                                       :: cache
+      real(defFlt)                                          :: lenFlt
+      real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, avgFluxVec, tau
+      real(defFlt), allocatable, dimension(:)               :: tauBack, tauBackBuffer
+      real(shortInt), allocatable, dimension(:)             :: cIdxBack, cIdxBackBuffer
+      logical(defBool), allocatable, dimension(:)           :: vacBack, vacBackBuffer 
+      real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec
+      real(defReal), pointer, dimension(:)                  :: angularProd
+      real(defFlt), allocatable, dimension(:)               :: fluxRecord, fluxRecordBuffer 
+      ! real(defFlt), allocatable, dimension(:)               :: adjointRecord
+      real(defReal), dimension(3)                           :: r0, mu0
+          
+      ! Set initial angular flux to angle average of cell source
+      cIdx = r % coords % uniqueID
+      do g = 1, self % nG
+        idx = (cIdx - 1) * self % nG + g
+        fluxVec(g) = self % source(idx)
+      end do
+  
+      ints = 0
+      matIdx0 = 0
+      segCount = 0
+      totalLength = ZERO
+      activeRay = .false.
+      tally = .true.
+  
+      allocate(tauBack(self % nG * 50))         ! could add some kind of termination  / average cell length to get an approx length
+      allocate(fluxRecord(self % nG * 50))
+      allocate(cIdxBack(50))
+      allocate(vacBack(50))
+  
+      do while (totalLength < self % termination + self % dead)
+  
+        ! Get material and cell the ray is moving through
         matIdx  = r % coords % matIdx
-        cIdx = self % IDToCell(r % coords % uniqueID)
-        ! Set initial angular flux to angle average of cell source
-        if (cIdx > 0) then
-            do g = 1, self % nG
-                idx = (cIdx - 1) * self % nG + g
-                fluxVec(g) = self % source(idx)
-                fluxAdjoint(g) = self % adjSource(idx)
-            end do
-        else
-            fluxVec(g) = 0.0_defFlt
-            fluxAdjoint(g) = 0.0_defFlt
+        cIdx    = r % coords % uniqueID
+  
+        if (matIdx0 /= matIdx) then
+          matIdx0 = matIdx
+          ! Cache total cross section
+          totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
         end if
-    
-        ints = 0
-        matIdx0 = 0
-        totalLength = ZERO
-        activeRay = .false.
-        do while (totalLength < self % termination)
-    
-          ! Get material and cell the ray is moving through
-          matIdx  = r % coords % matIdx
-          cIdx    = self % IDToCell(r % coords % uniqueID)
-
-          if (matIdx0 /= matIdx) then
-            matIdx0 = matIdx
-            ! Cache total cross section
-            totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
-          end if
-
-          ! Remember co-ordinates to set new cell's position
-          if (cIdx > 0) then
-            if (.not. self % cellFound(cIdx)) then
-              r0 = r % rGlobal()
-              mu0 = r % dirGlobal()
-            end if
-          end if
-
-          ! Set maximum flight distance and ensure ray is active
-          if (totalLength >= self % dead) then
-            length = self % termination - totalLength 
-            activeRay = .true.
-          else
-            length = self % dead - totalLength
-          end if
-    
-          ! Move ray
-          ! Use distance caching or standard ray tracing
-          ! Distance caching seems a little bit more unstable
-          ! due to FP error accumulation, but is faster.
-          ! This can be fixed by resetting the cache after X number
-          ! of distance calculations.
-          if (self % cache) then
-            if (mod(ints,100_longInt) == 0)  cache % lvl = 0
-            call self % geom % moveRay_withCache(r % coords, length, event, cache, hitVacuum)
-          else
-            call self % geom % moveRay_noCache(r % coords, length, event, hitVacuum)
-          end if
-
-          if (cIdx > 0 .and. length > self % skipLength) then
-            totalLength = totalLength + length
+  
+        ! Remember co-ordinates to set new cell's position
+        if (.not. self % cellFound(cIdx)) then
+          r0 = r % rGlobal()
+          mu0 = r % dirGlobal()
+        end if
             
-            ! Set new cell's position. Use half distance across cell
-            ! to try and avoid FP error
-            if (.not. self % cellFound(cIdx)) then
-                !$omp critical 
-                self % cellFound(cIdx) = .true.
-                self % cellPos(cIdx,:) = r0 + length * HALF * mu0
-                !$omp end critical
-            end if
+        ! Set maximum flight distance and ensure ray is active
+        if (totalLength >= self % dead) then
+          length = self % termination - totalLength 
+          activeRay = .true.
+        else
+          length = self % dead - totalLength
+        end if
+  
+        !second dead length
+        if (totalLength >= self % termination) then
+          length = self % termination + self % dead - totalLength
+          tally = .false.
+        end if
+  
+        ! Move ray
+        ! Use distance caching or standard ray tracing
+        ! Distance caching seems a little bit more unstable
+        ! due to FP error accumulation, but is faster.
+        ! This can be fixed by resetting the cache after X number
+        ! of distance calculations.
+        if (self % cache) then
+          if (mod(ints,100_longInt) == 0)  cache % lvl = 0
+          call self % geom % moveRay_withCache(r % coords, length, event, cache, hitVacuum)
+        else
+          call self % geom % moveRay_noCache(r % coords, length, event, hitVacuum)
+        end if
+        totalLength = totalLength + length
         
-            ints = ints + 1
-            lenFlt = real(length,defFlt)
-            baseIdx = (cIdx - 1) * self % nG
-    
-            sourceVec => self % source(baseIdx + 1 : baseIdx + self % nG)
-            sourceAdjoint => self % adjSource(baseIdx + 1 : baseIdx + self % nG)
-    
-            !$omp simd aligned(totVec)
-            do g = 1, self % nG
-                attenuate(g) = exponential(totVec(g) * lenFlt)
-            end do
-        
-            !$omp simd 
-            do g = 1, self % nG
-                delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
-                fluxVec(g) = fluxVec(g) - delta(g)    
-            end do
-    
-            !$omp simd
-            do g = 1, self % nG
-                deltaAdjoint(g) = (fluxAdjoint(g) - sourceAdjoint(g)) * attenuate(g)
-                fluxAdjoint(g) = fluxAdjoint(g) - deltaAdjoint(g)
-            end do
-        
-            ! Accumulate to scalar flux
-            if (activeRay) then
-                
-                scalarVec => self % scalarFlux(baseIdx + 1 : baseIdx + self % nG)
-                scalarAdjoint => self % adjScalarFlux(baseIdx + 1 : baseIdx + self % nG)
-            
-                call OMP_set_lock(self % locks(cIdx))
-                !$omp simd aligned(scalarVec, scalarAdjoint)
-                do g = 1, self % nG
-                scalarVec(g) = scalarVec(g) + delta(g) 
-                scalarAdjoint(g) = scalarAdjoint(g) + deltaAdjoint(g)
-                end do
-                self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
-                call OMP_unset_lock(self % locks(cIdx))
-        
-                if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
-            
-            end if
-
-          elseif((totalLength + length) >= self % termination) then
-              totalLength = self % termination
-    
-          elseif ((totalLength + length) >= self % dead .and. .not. activeRay) then
-              totalLength = self % dead
-
-          end if
-
-          ! Check for a vacuum hit
-          if (hitVacuum) then
-            !$omp simd
-            do g = 1, self % nG
-              fluxVec(g) = 0.0_defFlt
-              fluxAdjoint(g) = 0.0_defFlt
-            end do
-          end if
-    
+        ! Set new cell's position. Use half distance across cell
+        ! to try and avoid FP error
+        if (.not. self % cellFound(cIdx)) then
+          !$omp critical 
+          self % cellFound(cIdx) = .true.
+          self % cellPos(cIdx,:) = r0 + length * HALF * mu0
+          !$omp end critical
+        end if
+  
+        ints = ints + 1
+        lenFlt = real(length,defFlt)
+        baseIdx = (cIdx - 1) * self % nG
+        sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
+  
+        !$omp simd aligned(totVec)
+        do g = 1, self % nG
+          tau(g) = totVec(g) * lenFlt
         end do
-    
-      end subroutine transportSweep
+          
+        !$omp simd 
+        do g = 1, self % nG
+          attenuate(g) = F1(tau(g))
+        end do
+  
+        !$omp simd
+        do g = 1, self % nG
+          delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
+        end do
+  
+        !$omp simd
+        do g = 1, self % nG
+          fluxVec(g) = fluxVec(g) - delta(g) * tau(g)
+        end do
+  
+        ! Accumulate to scalar flux
+        if (activeRay) then
+          segCount = segCount + 1
+  
+          if (tally) then
+              segCountCrit = segCount
+          end if
+   
+          if (segCount > size(cIdxBack) - 1) then ! doubles length if needed
+  
+            allocate(tauBackBuffer(size(tauBack) * 2))   !record expoentials 
+            tauBackBuffer(1:size(tauBack)) = tauBack
+            call move_alloc(tauBackBuffer, tauBack)
+  
+            allocate(cIdxBackBuffer(size(cIdxBack) * 2)) !add cell id for scalar flux update
+            cIdxBackBuffer(1:size(cIdxBack)) = cIdxBack
+            call move_alloc(cIdxBackBuffer, cIdxBack)
+  
+            allocate(vacBackBuffer(size(vacBack) * 2))   !check vacuum
+            vacBackBuffer(1:size(vacBack)) = vacBack
+            call move_alloc(vacBackBuffer, vacBack)
+  
+            allocate(fluxRecordBuffer(size(fluxRecord) * 2))   ! recording of average flux
+            fluxRecordBuffer(1:size(fluxRecord)) = fluxRecord
+            call move_alloc(fluxRecordBuffer, fluxRecord)
+          end if
+  
+          !$omp simd
+          do g = 1, self % nG
+            avgFluxVec(g) = (delta(g) + sourceVec(g))
+          end do
+          
+          !$omp simd
+          do g = 1, self % nG
+            tauBack((segCount - 1) * self % nG + g) = tau(g)
+          end do
+  
+          cIdxBack(segCount) = cIdx
+  
+          if (tally) then
+  
+          !$omp simd
+          do g = 1, self % nG
+            fluxRecord((segCount - 1) * self % nG + g)  = avgFluxVec(g)  
+            !fluxRecord((segCount) * self % nG - g)  = avgFluxVec(g) !???
+          end do
+  
+            call OMP_set_lock(self % locks(cIdx))
+            scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
+            !$omp simd aligned(scalarVec)
+            do g = 1, self % nG
+              scalarVec(g) = scalarVec(g) + delta(g) * tau(g)
+            end do
+            self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length 
+            call OMP_unset_lock(self % locks(cIdx))
+          end if
+  
+          if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
+  
+          vacBack(segCount + 1) = hitVacuum
+        
+        end if
+  
+        ! Check for a vacuum hit
+        if (hitVacuum) then
+          !$omp simd
+          do g = 1, self % nG
+            fluxVec(g) = 0.0_defFlt
+          end do
+        end if 
+      end do
+  
+      ! Flux guess for new adjoint deadlength
+      do g = 1, self % nG
+        idx = (cIdx - 1) * self % nG + g
+        fluxVec(g) = self % adjSource(idx)
+      end do
+  
+      ! Could trim arrays here, (tauBack...)
+      allocate(tauBackBuffer(segCount))
+      tauBackBuffer = tauBack(1 : (segCount * self % nG))
+      call move_alloc(tauBackBuffer, tauBack)
+  
+      allocate(cIdxBackBuffer(segCount))
+      cIdxBackBuffer = cIdxBack(1:segCount)
+      call move_alloc(cIdxBackBuffer, cIdxBack)
+  
+      allocate(vacBackBuffer(segCount))
+      vacBackBuffer = vacBack(1:segCount)
+      call move_alloc(vacBackBuffer, vacBack)
+  
+      allocate(fluxRecordBuffer(segCount))
+      fluxRecordBuffer = fluxRecord(1 : (segCount * self % nG))
+      call move_alloc(fluxRecordBuffer, fluxRecord)
+  
+      !iterate over segments
+      do i = segCount, 1, -1
+        
+        cIdx = cIdxBack(i)
+        baseIdx = (cIdx - 1) * self % nG
+        segIdx =  (i - 1) * self % nG
+        sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
+  
+        !$omp simd
+        do g = 1, self % nG
+          attenuate(g) = F1(tauBack(segIdx + g))
+        end do
+  
+        !$omp simd
+        do g = 1, self % nG
+          delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
+        end do
+  
+        !$omp simd
+        do g = 1, self % nG
+          fluxVec(g) = fluxVec(g) - delta(g) * tauBack(segIdx + g)
+        end do
+        
+        if (i <= segCountCrit) then
+  
+          !$omp simd
+          do g = 1, self % nG
+            avgFluxVec(g) = (sourceVec(g) + delta(g))
+          end do
+  
+          call OMP_set_lock(self % locks(cIdx))
+  
+          scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
+          angularProd => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG )
+          !$omp simd 
+          do g = 1, self % nG
+              scalarVec(g) = scalarVec(g) + delta(g) * tauBack(segIdx + g)
+              do gIn = 1, self % nG
+                pIdx = self % nG * (g - 1) + gIn
+                angularProd(pIdx) = angularProd(pIdx) + avgFluxVec(g) * fluxRecord(segIdx + gIn)
+              end do
+          end do
+          call OMP_unset_lock(self % locks(cIdx))
+  
+        end if  
+  
+        if (vacBack(i)) then
+          !$omp simd
+          do g = 1, self % nG
+            fluxVec(g) = 0.0_defFlt
+          end do
+        end if
+  
+       end do
+  
+       !use records to computer inner product etc - seperate subroutine? 
+       
+    end subroutine transportSweep  
     
     !!
     !! Normalise flux from uncollided calculation
     !!
     subroutine normaliseFluxUncollided(self, norm)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       real(defReal), intent(in)                           :: norm
       real(defFlt)                                        :: normFlt
       real(defFlt), save                                  :: total
@@ -1724,7 +1901,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! the flux by the neutron source
     !!
     subroutine normaliseFluxAndVolume(self, lengthPerIt, it)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       real(defReal), intent(in)                           :: lengthPerIt
       integer(shortInt), intent(in)                       :: it
       real(defReal)                                       :: normVol
@@ -1832,7 +2009,7 @@ module adjointFSTRRMPhysicsPackage_class
     end subroutine normaliseFluxAndVolume
 
     subroutine adjointNormaliseFluxAndVolume(self, lengthPerIt, it)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       integer(shortInt), intent(in)                 :: it
       real(defReal), intent(in)                     :: lengthPerIt
       real(defFlt)                                  :: norm
@@ -1903,7 +2080,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! Kernel to update sources given a cell index
     !!
     subroutine sourceUpdateKernel(self, cIdx)
-      class(adjointFSTRRMPhysicsPackage), target, intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), target, intent(inout) :: self
       integer(shortInt), intent(in)                         :: cIdx
       real(defFlt)                                          :: scatter, fission
       real(defFlt), dimension(:), pointer                   :: nuFission, total, chi, scatterXS 
@@ -1958,7 +2135,7 @@ module adjointFSTRRMPhysicsPackage_class
     
     
     subroutine adjointSourceUpdateKernel(self, cIdx)
-      class(adjointFSTRRMPhysicsPackage), target, intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), target, intent(inout) :: self
       integer(shortInt), intent(in)                         :: cIdx
       class(baseMgNeutronMaterial), pointer                 :: mat
       class(materialHandle), pointer                        :: matPtr
@@ -2054,7 +2231,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! Overwrites any existing fixed source
     !!
     subroutine firstCollidedSourceKernel(self, cIdx)
-      class(adjointFSTRRMPhysicsPackage), target, intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), target, intent(inout) :: self
       integer(shortInt), intent(in)                         :: cIdx
       real(defFlt)                                          :: scatter, fission
       real(defFlt), dimension(:), pointer                   :: nuFission, chi, scatterXS 
@@ -2111,7 +2288,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! Sets prevFlux to scalarFlux and zero's scalarFlux
     !!
     subroutine resetFluxes(self)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       integer(shortInt)                                   :: idx
   
       !$omp parallel do schedule(static)
@@ -2125,12 +2302,110 @@ module adjointFSTRRMPhysicsPackage_class
       !$omp end parallel do
   
     end subroutine resetFluxes
+
+    subroutine sensitivityCalculation(self, cIdx, it)
+      class(adjointBackTRRMPhysicsPackage), target, intent(inout) :: self
+      integer(shortInt), intent(in)                 :: it
+      integer(shortInt), intent(in)                 :: cIdx
+      real(defReal)                                 :: delta, fission, fission_pert, scatter_pert
+      integer(shortInt)                             :: baseIdx, idx, matIdx, g, gIn, mat, g1Pert, g2pert, i, matPert
+      real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture, scatterXS, &
+                                                        fissVec, scatterVec
+      real(defReal), dimension(:), pointer          :: IPVec
+  
+      !removed normalisation 
+      
+      mat  =  self % geom % geom % graph % getMatFromUID(cIdx) 
+      baseIdx = (cIdx - 1) * self % nG 
+      matIdx = (mat - 1) * self % nG
+      mat = self % matPert
+  
+      IPVec => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG)
+      ! total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
+      nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
+      chi => self % chi((matIdx + 1):(matIdx + self % nG))
+  
+      ! do g = 1, self % nG
+      !   idx = baseIdx + g
+      !   fission = 0.0_defFlt
+      !   !$omp simd
+      !   do gIn = 1, self % nG 
+      !     fission = fission + IPVec((g - 1) * self % nG + gIn) * nuFission(gIn)
+      !   end do
+      !   fission  = fission * chi(g)
+      ! end do
+
+      if (self % XStype == 1) then ! capture - complete 
+        do i = 1, size(self % energyId)
+          g1Pert = self % energyId(i)
+          
+          !$omp simd
+          do g = 1, self % nG 
+            delta = 0.0_defFlt
+            ! Change in XS
+              if ( mat == matPert .and. g == g1Pert ) then  !add energy/mat group check if needed
+                delta = self % XSchange * capture(g) * IPVec((g - 1) * self % nG + g)
+              end if
+            idx = baseIdx + g
+            self % numSum = self % numSum - delta
+          end do
+        end do
+
+      elseif (self % XStype == 2) then ! fission - complete
+        do i = 1, size(self % energyId)
+          g1Pert = self % energyId(i)
+          
+          do g = 1, self % nG 
+            delta = 0.0_defFlt
+            fission_pert = 0.0_defFlt
+            !$omp simd
+            do gIn = 1, self % nG
+              if ( gIn == g1Pert ) then
+                fission_pert = fission_pert + IPVec(self % nG * (g - 1) + gIn) * nuFission(gIn) * self % XSchange
+              end if
+            end do
+            if ( g == g1Pert ) then 
+              delta = IPVec((g - 1) * self % nG + g) * fissVec(g) * self % XSchange
+            end if
+            idx = baseIdx + g
+            self % numSum = self % numSum - delta + fission_pert * chi(g) !* ONE_KEFF
+          end do
+        end do
+
+      elseif (self % XStype == 3) then !scatter - complete
+        do i = 1, size(self % energyId), 2
+          scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
+          g1Pert = self % energyId(i)
+          g2Pert = self % energyId(i+1)
+
+          do g = 1, self % nG 
+            delta = 0.0_defFlt
+            scatter_pert = 0.0_defFlt
+            if (g == g1Pert) then
+              delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * &
+                           self % XSchange
+              do gIn = 1, self % nG
+                if (gIn == g2Pert) then
+                  scatter_pert = scatter_pert + scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
+                                              IPVec((g2Pert - 1 ) * self % nG + g1Pert) * self % XSchange
+                end if
+              end do
+            end if
+
+            idx = baseIdx + g
+            self % numSum = self % numSum -delta + scatter_pert
+          end do
+        end do
+
+      end if
+  
+    end subroutine sensitivityCalculation
   
     !!
     !! Accumulate flux scores for stats
     !!
     subroutine accumulateFluxScores(self)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       real(defReal), save                                 :: flux
       integer(shortInt)                                   :: idx
       !$omp threadprivate(flux)
@@ -2142,6 +2417,9 @@ module adjointFSTRRMPhysicsPackage_class
         self % fluxScores(idx,2) = self % fluxScores(idx, 2) + flux*flux
       end do
       !$omp end parallel do
+
+      self % sensitivityScore(1) = self % sensitivityScore(1) + self % sensitivity
+      self % sensitivityScore(2) = self % sensitivityScore(2) + self % sensitivity * self % sensitivity
   
     end subroutine accumulateFluxScores
     
@@ -2149,7 +2427,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! Finalise flux scores for stats
     !!
     subroutine finaliseFluxScores(self,it)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       integer(shortInt), intent(in)                       :: it
       integer(shortInt)                                   :: idx
       real(defReal)                                       :: N1, Nm1
@@ -2177,6 +2455,12 @@ module adjointFSTRRMPhysicsPackage_class
         end if
       end do
       !$omp end parallel do
+
+      self % sensitivityScore(1) = self % sensitivityScore(1) * N1
+      self % sensitivityScore(2) = self % sensitivityScore(2) * N1
+      self % sensitivityScore(2) = (Nm1*(self % sensitivityScore(2) - &
+              self % sensitivityScore(1) * self % sensitivityScore(1))) 
+      self % sensitivityScore(2) = sqrt(abs(self % sensitivityScore(2)))
    
     end subroutine finaliseFluxScores
     
@@ -2187,7 +2471,7 @@ module adjointFSTRRMPhysicsPackage_class
     !!   None
     !!
     subroutine printResults(self)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       type(outputFile)                                    :: out
       character(nameLen)                                  :: name
       integer(shortInt)                                   :: g1, cIdx
@@ -2237,6 +2521,11 @@ module adjointFSTRRMPhysicsPackage_class
   
       name = 'Clock_Time'
       call out % printValue(timerTime(self % timerMain),name)
+      
+      name = 'sensitivity'
+      call out % startBlock(name)
+      call out % printResult(real(self % sensitivityScore(1),defReal), real(self % sensitivityScore(2),defReal), name)
+      call out % endBlock()
   
       ! Print cell volumes
       if (self % printVolume) then
@@ -2326,7 +2615,7 @@ module adjointFSTRRMPhysicsPackage_class
         !$omp end parallel do
 
         !$omp parallel do
-        do cIdx = 1,size(ResponseSTD)
+        do cidx = 1,size(ResponseSTD)
           if (Response(i) > 0) then
             ResponseSTD(i) = sqrt(ResponseSTD(i)) / Response(i)
           else
@@ -2539,7 +2828,7 @@ module adjointFSTRRMPhysicsPackage_class
     !!   None
     !!
     subroutine printSettings(self)
-      class(adjointFSTRRMPhysicsPackage), intent(in) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(in) :: self
   
       print *, repeat("<>", MAX_COL/2)
       print *, "/\/\ RANDOM RAY FIXED SOURCE CALCULATION /\/\"
@@ -2566,7 +2855,7 @@ module adjointFSTRRMPhysicsPackage_class
     !! Return to uninitialised state
     !!
     subroutine kill(self)
-      class(adjointFSTRRMPhysicsPackage), intent(inout) :: self
+      class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       integer(shortInt) :: i
   
       ! Clean Nuclear Data, Geometry and visualisation
@@ -2637,9 +2926,23 @@ module adjointFSTRRMPhysicsPackage_class
       self % sourceTop        = ZERO
       self % sourceBottom     = ZERO
 
+      self % XStype   = 0
+      self % matPert  = 0
+      self % XSchange = 0.0_defFlt
+      self % numSum   = ZERO
+      self % denSum   = ZERO
+  
+      self % sensitivity      = ZERO
+      self % sensitivityScore = ZERO
+
+
+      if(allocated(self % energyId)) deallocate(self % energyId)
+
       if(allocated(self % adjScalarFlux)) deallocate(self % adjScalarFlux)
       if(allocated(self % adjPrevFlux)) deallocate(self % adjPrevFlux)
       if(allocated(self % adjSource)) deallocate(self % adjSource)
+
+      if(allocated(self % angularIP)) deallocate(self % angularIP)
   
       if(allocated(self % scalarFlux)) deallocate(self % scalarFlux)
       if(allocated(self % prevFlux)) deallocate(self % prevFlux)
@@ -2669,5 +2972,5 @@ module adjointFSTRRMPhysicsPackage_class
   
     end subroutine kill
   
-  end module adjointFSTRRMPhysicsPackage_class
+  end module adjointBackTRRMPhysicsPackage_class
   
