@@ -681,22 +681,14 @@ contains
       ! Calculate new k
       call self % calculateKeff()
 
-      !$omp critical 
       self % numSum = ZERO
       self % denSum = ZERO
-      !$omp end critical 
-
       !$omp parallel do schedule(static)
       do i = 1, self % nCells
        call self % sensitivityCalculation(i ,ONE_KEFF, it)
       end do
-
-      !$omp critical 
       self % deltaKeff  = self % keff * self % keff * (self % numSum / self % denSum) 
       self % sensitivity = (self % deltaKeff / ( self % keff * self % XSchange ) ) 
-      !$omp end critical 
-
-      print *, self % numSum, self % denSum
 
       ! Accumulate flux scores
       if (isActive) call self % accumulateFluxAndKeffScores()
@@ -1421,13 +1413,12 @@ contains
     integer(shortInt), intent(in)                 :: it
     integer(shortInt), intent(in)                 :: cIdx
     real(defReal)                                 :: delta, fission, fission_pert, scatter_pert, norm
-    integer(shortInt)                             :: baseIdx, idx, matIdx, g, gIn, mat, g1Pert, g2pert, i, matPert
+    integer(shortInt)                             :: baseIdx, idx, matIdx, g, gIn, mat, g1Pert, g2pert, i
     real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture, scatterXS, &
                                                       fissVec, scatterVec
     real(defReal), dimension(:), pointer          :: IPVec
 
     norm     = ONE / (self % lengthPerIt) 
-
     !$omp simd
     do g = 1, self % nG * self % nG
       idx = (cIdx - 1) * self % nG * self % nG + g
@@ -1438,11 +1429,9 @@ contains
       end if
     end do
 
-
     mat  =  self % geom % geom % graph % getMatFromUID(cIdx) 
     baseIdx = (cIdx - 1) * self % nG 
     matIdx = (mat - 1) * self % nG
-    !matPert = self % matPert
 
     IPVec => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG)
     ! total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
@@ -1465,7 +1454,7 @@ contains
       self % denSum = self % denSum + fission
     end do
 
-    if (mat == self % matPert .and. self % XStype == 1) then ! capture - complete mat == matPert .and. 
+    if (mat == self % matPert .and. self % XStype == 1) then ! capture - complete 
       do i = 1, size(self % energyId)
         g1Pert = self % energyId(1)
         !$omp simd
@@ -1527,160 +1516,48 @@ contains
 
     end if
 
+    ! if (mat == self % matPert .and. self % XStype == 1) then ! capture - complete 
+    !   do i = 1, size(self % energyId)
+    !     g1Pert = self % energyId(1)
+    !     delta = 0.0_defFlt
+    !     delta = self % XSchange * capture(g1Pert) * IPVec((g1Pert - 1) * self % nG + g1Pert)
+    !     !$omp atomic
+    !     self % numSum = self % numSum - delta
+    !   end do
+
+    ! elseif ( mat == self % matPert .and. self % XStype == 2) then ! fission - complete
+    !   do i = 1, size(self % energyId)
+    !     g1Pert = self % energyId(i)
+    !     do g = 1, self % nG 
+    !       delta = 0.0_defFlt
+    !       fission_pert = 0.0_defFlt
+    !       fission_pert = fission_pert + IPVec(self % nG * (g - 1) + g1Pert) * nuFission(g1Pert) * self % XSchange
+    !       if ( g == g1Pert ) then 
+    !         delta = IPVec((g - 1) * self % nG + g) * fissVec(g) * self % XSchange
+    !       end if
+    !       delta = fission_pert * chi(g) * ONE_KEFF - delta
+    !       !$omp atomic
+    !       self % numSum = self % numSum + delta 
+    !     end do
+    !   end do
+
+    ! elseif (mat == self % matPert .and. self % XStype == 3) then !scatter - complete
+    !   do i = 1, size(self % energyId), 2
+    !     g1Pert = self % energyId(i)
+    !     g2Pert = self % energyId(i+1)
+    !     delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * &
+    !                   self % XSchange   
+           
+    !     scatter_pert = scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
+    !                                 IPVec((g2Pert - 1 ) * self % nG + g1Pert) * self % XSchange
+    !     delta = scatter_pert - delta
+    !     !$omp atomic
+    !     self % numSum = self % numSum + delta
+    !   end do
+    ! end if
+
+
   end subroutine sensitivityCalculation
-
-  ! subroutine sensitivityCalculation(self, ONE_KEFF, it)
-  !   class(adjointTRRMPhysicsPackage), target, intent(inout) :: self
-  !   real(defFlt), intent(in)                      :: ONE_KEFF
-  !   integer(shortInt), intent(in)                 :: it
-  !   real(defReal)                                 :: norm
-  !   real(defFlt)                                  :: XSchange
-  !   real(defReal)                                 :: delta, fission, fission_pert, scatter_pert, numSum, denSum
-  !   integer(shortInt)                             :: cIdx, baseIdx, idx, matIdx, g, gIn, mat, XScase, g1Pert, g2Pert
-  !   real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture, scatterXS, &
-  !                                                     fissVec, scatterVec
-  !   real(defReal), dimension(:), pointer          :: IPVec
-  !   real(defReal), dimension(self % nG * self % nCells) :: num, den
-
-  !   !change in XS
-  !   XSchange = 0.01 
-  !   XScase   = 2
-  !   norm     = ONE / (self % lengthPerIt) 
-
-  !   do cIdx = 1, self % nCells
-  !     do g = 1, self % nG * self % nG
-  !       idx = (cIdx - 1) * self % nG * self % nG + g
-  !       if (self % volume(cIdx) > volume_tolerance) then
-  !         self % angularIP(idx) = self % angularIP(idx) * norm / (self % volume(cIdx))
-  !       else
-  !         self % angularIP(idx) = 0.0_defFlt
-  !       end if
-  !     end do
-  !   end do
-
-  !   do idx = 1, self % nCells * self % nG
-  !     num(idx) =  0.0_defFlt
-  !     den(idx) = 0.0_defFlt
-  !   end do
-
-  !   do cIdx = 1, self % nCells
-
-  !     ! Identify material
-  !     mat  =  self % geom % geom % graph % getMatFromUID(cIdx) 
-  !     baseIdx = (cIdx - 1) * self % nG 
-  !     matIdx = (mat - 1) * self % nG
-
-  !     IPVec => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG)
-  !     total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
-  !     nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
-  !     fissVec => self % fission((matIdx + 1):(matIdx + self % nG))
-  !     chi => self % chi((matIdx + 1):(matIdx + self % nG))
-  !     capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
-  !     scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
-
-
-  !     do g = 1, self % nG
-  !       idx = baseIdx + g
-  !       fission = 0.0_defFlt
-  !       !$omp simd
-  !       do gIn = 1, self % nG 
-  !         fission = fission + IPVec((g - 1) * self % nG + gIn) * nuFission(gIn)
-  !       end do
-  !       fission  = fission * chi(g)
-  !       den(idx) = fission
-  !     end do
-
-  !     if (XScase == 1) then ! capture - complete 
-
-  !       g1Pert = 1
-
-  !       do g = 1, self % nG 
-
-  !         delta = 0.0_defFlt
-
-  !         ! Change in XS
-  !          if ( g == g1Pert ) then  !mat == 2 .and.  !add energy/mat group check if needed
-  !            delta = XSchange * capture(g) * IPVec((g - 1) * self % nG + g)
-  !          end if
-
-  !         idx = baseIdx + g
-  !         num(idx) = -delta
-
-  !       end do
-
-  !     elseif (XScase == 2) then ! fission - complete
-
-  !       g1Pert = 1
-        
-  !       do g = 1, self % nG 
-
-  !         delta = 0.0_defFlt
-
-  !         fission_pert = 0.0_defFlt
-  !         !$omp simd
-  !         do gIn = 1, self % nG
-  !           if ( gIn == g1Pert ) then
-  !             fission_pert = fission_pert + IPVec(self % nG * (g - 1) + gIn) * nuFission(gIn) * XSchange
-  !           end if
-  !         end do
-
-  !         if ( g == g1Pert ) then 
-  !           delta = IPVec((g - 1) * self % nG + g) * fissVec(g) * XSchange
-  !         end if
-
-  !         idx = baseIdx + g
-  !         num(idx) = - delta + fission_pert * chi(g) * ONE_KEFF
-
-  !       end do
-
-  !     elseif (XScase == 3) then !scatter - complete
-        
-  !       ! Assume input of two numbers. 
-  !       g1Pert = 2
-  !       g2Pert = 3
-
-  !       do g = 1, self % nG 
-
-  !         delta = 0.0_defFlt
-  !         scatter_pert = 0.0_defFlt
-          
-  !         if (g == g1Pert) then
-  !           delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * XSchange
-
-  !           do gIn = 1, self % nG
-  !             if (gIn == g2Pert) then
-  !               scatter_pert = scatter_pert + scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
-  !                                           IPVec((g2Pert - 1 ) * self % nG + g1Pert) * XSchange
-  !             end if
-  !           end do
-  !         end if
-
-  !         ! delta = IPVec((Sg1 - 1) * self % nG + Sg1) * scatterXS((g2Pert - 1) * self % nG + Sg1) * XSchange
-  !         ! scatter_pert = scatter_pert + scatterXS((g2Pert - 1) * self % nG + Sg1 ) * IPVec((g2Pert - 1) * self % nG + Sg1) * XSchange
-  !         ! for S12, formula is = IP(1) * scatter(3) + IP(2) * scatter(3), contributions from total and scatter operator respectively. 
-
-  !         idx = baseIdx + g
-  !         num(idx) = -delta + scatter_pert
-  !       end do
-
-  !     end if
-
-  !   end do
-
-  !   ! sum to get IP
-  !   numSum = 0.0_defFlt
-  !   denSum = 0.0_defFlt
-  !   do idx = 1, self % nG * self % nCells
-  !     numSum = numSum + num(idx)
-  !     denSum = denSum + den(idx)
-  !   end do
-
-  !   self % deltaKeff  = self % keff * self % keff * (numSum / denSum) 
-  !   !self % deltaKeff = self % keff * self % keff * (numSum / denSum) / (1 - (numSum / denSum)) ! this sometimes seems closer?
-
-  !   self % sensitivity = (self % deltaKeff / ( self % keff * XSchange ) ) 
-
-  ! end subroutine sensitivityCalculation
 
   !!
   !! Accumulate flux scores for stats
