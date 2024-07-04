@@ -190,7 +190,7 @@ module adjointTRRMPhysicsPackage_class !currently backward
     logical(defBool)   :: mapFlux     = .false.
     class(tallyMap), allocatable :: fluxMap
 
-    !Pertubation
+    !Perturbation
     integer(shortInt), dimension(:), allocatable       :: energyId 
 
     ! Data space - absorb all nuclear data for speed
@@ -248,7 +248,7 @@ module adjointTRRMPhysicsPackage_class !currently backward
 
     ! Private procedures
     procedure, private :: cycles
-    procedure, private :: initPertubation
+    procedure, private :: initPerturbation
     procedure, private :: initialiseRay
     procedure, private :: transportSweep
     procedure, private :: sourceUpdateKernel
@@ -348,8 +348,8 @@ contains
 
 
     !!!!!!!!!!!!!!!!!!!!!!
-    tempDict => dict % getDictPtr("Pertubation")
-    call self % initPertubation(tempDict)
+    tempDict => dict % getDictPtr("Perturbation")
+    call self % initPerturbation(tempDict)
     
     ! Check whether there is a map for outputting one-group fluxes
     ! If so, read and initialise the map to be used
@@ -525,12 +525,12 @@ contains
 
   end subroutine init
 
-  subroutine initPertubation(self,dict)
+  subroutine initPerturbation(self,dict)
     class(adjointTRRMPhysicsPackage), intent(inout) :: self
     class(dictionary), intent(in)                   :: dict
     class(dictionary), pointer                      :: tempDict
     integer(shortInt)                               :: i, g
-    character(100), parameter :: Here = 'initPertubation (adjointTRRMPhysicsPackage_class.f90)'
+    character(100), parameter :: Here = 'initPerturbation (adjointTRRMPhysicsPackage_class.f90)'
 
     call dict % getOrDefault(self % XStype, 'XStype', 0)
 
@@ -541,11 +541,11 @@ contains
     call dict % get(self % energyId, 'energyGroups')
 
     if (self % XStype == 3 .and. mod(size(self % energyId), 2) /= 0) then
-      call fatalError(Here, 'energyGroups for scattering XS pertubation must be given in pairs.')
+      call fatalError(Here, 'energyGroups for scattering XS Perturbation must be given in pairs.')
     end if 
 
   
-  end subroutine initPertubation
+  end subroutine initPerturbation
 
   !!
   !! Run calculation
@@ -681,14 +681,22 @@ contains
       ! Calculate new k
       call self % calculateKeff()
 
+      !$omp critical 
       self % numSum = ZERO
       self % denSum = ZERO
+      !$omp end critical 
+
       !$omp parallel do schedule(static)
       do i = 1, self % nCells
        call self % sensitivityCalculation(i ,ONE_KEFF, it)
       end do
+
+      !$omp critical 
       self % deltaKeff  = self % keff * self % keff * (self % numSum / self % denSum) 
       self % sensitivity = (self % deltaKeff / ( self % keff * self % XSchange ) ) 
+      !$omp end critical 
+
+      print *, self % numSum, self % denSum
 
       ! Accumulate flux scores
       if (isActive) call self % accumulateFluxAndKeffScores()
@@ -1121,7 +1129,17 @@ contains
 
       end do
 
+      ! do g = 1, self % nG * self % nG
+      !   idx = (cIdx - 1) * self % nG * self % nG + g
+      !   if (vol > volume_tolerance) then
+      !     self % angularIP(idx) = self % angularIP(idx) * norm / (self % volume(cIdx))
+      !   else
+      !     self % angularIP(idx) = 0.0_defFlt
+      !   end if
+      ! end do
+
     end do
+
     !$omp end parallel do
 
   end subroutine normaliseFluxAndVolume
@@ -1402,16 +1420,29 @@ contains
     real(defFlt), intent(in)                      :: ONE_KEFF
     integer(shortInt), intent(in)                 :: it
     integer(shortInt), intent(in)                 :: cIdx
-    real(defReal)                                 :: delta, fission, fission_pert, scatter_pert
+    real(defReal)                                 :: delta, fission, fission_pert, scatter_pert, norm
     integer(shortInt)                             :: baseIdx, idx, matIdx, g, gIn, mat, g1Pert, g2pert, i, matPert
     real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture, scatterXS, &
                                                       fissVec, scatterVec
     real(defReal), dimension(:), pointer          :: IPVec
 
+    norm     = ONE / (self % lengthPerIt) 
+
+    !$omp simd
+    do g = 1, self % nG * self % nG
+      idx = (cIdx - 1) * self % nG * self % nG + g
+      if (self % volume(cIdx) > volume_tolerance) then
+        self % angularIP(idx) = self % angularIP(idx) * norm / (self % volume(cIdx))
+      else
+        self % angularIP(idx) = 0.0_defFlt
+      end if
+    end do
+
+
     mat  =  self % geom % geom % graph % getMatFromUID(cIdx) 
     baseIdx = (cIdx - 1) * self % nG 
     matIdx = (mat - 1) * self % nG
-    matPert = self % matPert
+    !matPert = self % matPert
 
     IPVec => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG)
     ! total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
@@ -1419,6 +1450,8 @@ contains
     fissVec => self % fission((matIdx + 1):(matIdx + self % nG))
     chi => self % chi((matIdx + 1):(matIdx + self % nG))
     capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
+    scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
+
 
     do g = 1, self % nG
       idx = baseIdx + g
@@ -1428,74 +1461,71 @@ contains
         fission = fission + IPVec((g - 1) * self % nG + gIn) * nuFission(gIn)
       end do
       fission  = fission * chi(g)
+      !$omp atomic
       self % denSum = self % denSum + fission
     end do
 
-      if (self % XStype == 1) then ! capture - complete 
-        do i = 1, size(self % energyId)
-          g1Pert = self % energyId(i)
-          
-          !$omp simd
-          do g = 1, self % nG 
-            delta = 0.0_defFlt
-            ! Change in XS
-              if ( mat == matPert .and. g == g1Pert ) then  !add energy/mat group check if needed
-                delta = self % XSchange * capture(g) * IPVec((g - 1) * self % nG + g)
-              end if
-            idx = baseIdx + g
-            self % numSum = self % numSum - delta
-          end do
+    if (mat == self % matPert .and. self % XStype == 1) then ! capture - complete mat == matPert .and. 
+      do i = 1, size(self % energyId)
+        g1Pert = self % energyId(1)
+        !$omp simd
+        do g = 1, self % nG 
+          delta = 0.0_defFlt
+            if (  g == g1Pert ) then  !add energy/mat group check if needed
+              delta = self % XSchange * capture(g) * IPVec((g - 1) * self % nG + g)
+            end if
+          !$omp atomic
+          self % numSum = self % numSum - delta
         end do
+      end do
 
-      elseif (self % XStype == 2) then ! fission - complete
-        do i = 1, size(self % energyId)
-          g1Pert = self % energyId(i)
-          
-          do g = 1, self % nG 
-            delta = 0.0_defFlt
-            fission_pert = 0.0_defFlt
-            !$omp simd
+    elseif ( mat == self % matPert .and. self % XStype == 2) then ! fission - complete
+      do i = 1, size(self % energyId)
+        g1Pert = self % energyId(i)
+        
+        do g = 1, self % nG 
+          delta = 0.0_defFlt
+          fission_pert = 0.0_defFlt
+
+          do gIn = 1, self % nG
+            if ( gIn == g1Pert ) then
+              fission_pert = fission_pert + IPVec(self % nG * (g - 1) + gIn) * nuFission(gIn) * self % XSchange
+            end if
+          end do
+          if ( g == g1Pert ) then 
+            delta = IPVec((g - 1) * self % nG + g) * fissVec(g) * self % XSchange
+          end if
+          delta = fission_pert * chi(g) * ONE_KEFF - delta
+          !$omp atomic
+          self % numSum = self % numSum + delta 
+        end do
+      end do
+
+    elseif (mat == self % matPert .and. self % XStype == 3) then !scatter - complete
+      do i = 1, size(self % energyId), 2
+        g1Pert = self % energyId(i)
+        g2Pert = self % energyId(i+1)
+
+        do g = 1, self % nG 
+          delta = 0.0_defFlt
+          scatter_pert = 0.0_defFlt
+          if ( g == g1Pert ) then
+            delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * &
+                          self % XSchange   
             do gIn = 1, self % nG
-              if ( gIn == g1Pert ) then
-                fission_pert = fission_pert + IPVec(self % nG * (g - 1) + gIn) * nuFission(gIn) * self % XSchange
+              if ( gIn == g2Pert ) then
+                scatter_pert = scatter_pert + scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
+                                            IPVec((g2Pert - 1 ) * self % nG + g1Pert) * self % XSchange
               end if
             end do
-            if ( g == g1Pert ) then 
-              delta = IPVec((g - 1) * self % nG + g) * fissVec(g) * self % XSchange
-            end if
-            idx = baseIdx + g
-            self % numSum = self % numSum - delta + fission_pert * chi(g) * ONE_KEFF
-          end do
+          end if
+          delta = scatter_pert - delta
+          !$omp atomic
+          self % numSum = self % numSum + delta
         end do
+      end do
 
-      elseif (self % XStype == 3) then !scatter - complete
-        do i = 1, size(self % energyId), 2
-          scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
-          g1Pert = self % energyId(i)
-          g2Pert = self % energyId(i+1)
-
-          do g = 1, self % nG 
-            delta = 0.0_defFlt
-            scatter_pert = 0.0_defFlt
-            if (g == g1Pert) then
-              delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * &
-                           self % XSchange
-              do gIn = 1, self % nG
-                if (gIn == g2Pert) then
-                  scatter_pert = scatter_pert + scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
-                                              IPVec((g2Pert - 1 ) * self % nG + g1Pert) * self % XSchange
-                end if
-              end do
-            end if
-
-            idx = baseIdx + g
-            self % numSum = self % numSum -delta + scatter_pert
-          end do
-        end do
-
-      end if
-
-
+    end if
 
   end subroutine sensitivityCalculation
 
