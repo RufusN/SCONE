@@ -78,7 +78,7 @@ geometry {
     universes  
     {
       all    { id 10; type cellUniverse; cells (11 12 21 22 23 24 3 4 51 52 61 62); }
-      root   { id 1; type rootUniverse; border 1; fill u<10>; }
+      root   { id 1; type rootUniverse; border 1; fill u<20>; }
 
 
       lattice { id 20; type latUniverse;
