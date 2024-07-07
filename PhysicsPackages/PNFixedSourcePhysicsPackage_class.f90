@@ -2092,9 +2092,6 @@ contains
     fission = 0.0_defFlt
     !$omp simd reduction(+:fission)
     do gIn = 1, self % nG
-      if (nuFission(gIn) /= nuFission(gIn)) then
-        nuFission(gIn) = 0.0_defFlt
-      end if
       fission = fission + angularMomVec(gIn,1) * nuFission(gIn)
     end do
 
@@ -2121,6 +2118,7 @@ contains
 
       if (chi(g) /= chi(g)) then
         chi(g) = 0.0_defFlt
+        print *, 'chi'
       end if
 
       self % source(idx,1) = self % source(idx,1) + chi(g) * fission / total(g)
