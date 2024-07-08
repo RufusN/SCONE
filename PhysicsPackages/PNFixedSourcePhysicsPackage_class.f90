@@ -2118,13 +2118,7 @@ contains
         self % source(idx,SH) = scatter + self % fixedSource(idx,SH)
         self % source(idx,SH) = self % source(idx,SH) / total(g)
       end do
-
-      if (chi(g) /= chi(g)) then
-        chi(g) = 0.0_defFlt
-        print *, 'chi'
-        print *, matIdx / self % nG
-      end if
-
+      
       self % source(idx,1) = self % source(idx,1) + chi(g) * fission / total(g)
     end do
 
