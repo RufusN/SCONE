@@ -544,7 +544,7 @@ contains
       self % chi(self % nG * (self % nMatVOID - 1) + g)      = 0.0_defFlt
       
       do g1 = 1, self % nG
-          do SH = 1, self % SHOrder
+          do SH = 1, self % SHOrder + 1
               self % sigmaS(self % nG * self % nG * (self % nMatVOID - 1) &
               + self % nG * (g - 1) + g1, SH)  = 0.0_defFlt
           end do
