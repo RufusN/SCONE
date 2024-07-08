@@ -724,7 +724,7 @@ contains
           if (self % SHOrder > 0) then
             do SH = 1, self % SHOrder
               self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, SH + 1)  = &
-                    real(mat % scatter % getPnScatter(g1, g, SH ) * mat % scatter % prod(g1, g) , defFlt)
+                    real(mat % scatter % getPnScatter(g1, g, SH) * mat % scatter % prod(g1, g) , defFlt)
             end do
           end if
         end do
@@ -737,7 +737,7 @@ contains
       self % chi(self % nG * (self % nMatVOID - 1) + g)      = 0.0_defFlt
       
       do g1 = 1, self % nG
-          do SH = 1, self % SHOrder
+          do SH = 1, self % SHOrder + 1
               self % sigmaS(self % nG * self % nG * (self % nMatVOID - 1) &
               + self % nG * (g - 1) + g1, SH)  = 0.0_defFlt
           end do
@@ -908,7 +908,7 @@ contains
     self % cellFound = .false.
     self % cellPos = -INFINITY
 
-    !Modify local nuclear data appropriately
+    ! Modify local nuclear data appropriately
 
     ! Fission source
     allocate(xsBuffer(self % nMat * self % nG))
@@ -921,10 +921,10 @@ contains
     allocate(xsBufferS(self % nMat * self % nG * self % nG, self % SHOrder))
     xsBufferS = self % sigmaS
 
-    do SH = 1, self % SHOrder 
-      do m = 1, self % nMat
+    do m = 1, self % nMat
         do g = 1, self % nG
           do g1 = 1, self % nG
+            do SH = 1, self % SHOrder + 1
             self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g1 - 1) + g, SH)  = &
                     xsBufferS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1, SH)
           end do
@@ -1677,7 +1677,6 @@ contains
     real(defFlt), dimension(self % SHLength)              :: RCoeffs 
 
     matIdx  = r % coords % matIdx
-    totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
 
     ! Set initial angular flux to angle average of cell source
     cIdx = self % IDToCell(r % coords % uniqueID)
@@ -1695,6 +1694,7 @@ contains
     totalLength = ZERO
     activeRay = .false.
     newRay = .true.
+    totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
 
     do while (totalLength < self % termination)
 
@@ -1802,6 +1802,7 @@ contains
               angularMomVec(g,SH) = angularMomVec(g,SH) + delta(g) * RCoeffs(SH)
             end do
           end do
+
           self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
           call OMP_unset_lock(self % locks(cIdx))
 
@@ -2038,8 +2039,10 @@ contains
         !if ((self % moments(idx,SH) < 0) .and. self % zeroNeg) self % moments(idx,SH) = self % source(idx,1) / total
 
         ! NaN check - kill calculation
-        if (self % moments(idx,1) /= self % moments(idx,1)) &
+        if (self % moments(idx,1) /= self % moments(idx,1)) then
+          print *, self % source(idx,1), self % volume(cidx)
                 call fatalError('normaliseFluxAndVolume','NaNs appeared in group '//numToChar(g))
+        end if
 
       end do
 
@@ -2119,6 +2122,7 @@ contains
       if (chi(g) /= chi(g)) then
         chi(g) = 0.0_defFlt
         print *, 'chi'
+        print *, matIdx / self % nG
       end if
 
       self % source(idx,1) = self % source(idx,1) + chi(g) * fission / total(g)
