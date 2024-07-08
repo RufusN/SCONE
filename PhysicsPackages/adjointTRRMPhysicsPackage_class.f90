@@ -1419,6 +1419,7 @@ contains
     real(defReal), dimension(:), pointer          :: IPVec
 
     norm     = ONE / (self % lengthPerIt) 
+
     !$omp simd
     do g = 1, self % nG * self % nG
       idx = (cIdx - 1) * self % nG * self % nG + g
@@ -1475,7 +1476,7 @@ contains
         do g = 1, self % nG 
           delta = 0.0_defFlt
           fission_pert = 0.0_defFlt
-
+          !$omp simd
           do gIn = 1, self % nG
             if ( gIn == g1Pert ) then
               fission_pert = fission_pert + IPVec(self % nG * (g - 1) + gIn) * nuFission(gIn) * self % XSchange
@@ -1500,7 +1501,8 @@ contains
           scatter_pert = 0.0_defFlt
           if ( g == g1Pert ) then
             delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * &
-                          self % XSchange   
+                          self % XSchange  
+            !$omp simd               
             do gIn = 1, self % nG
               if ( gIn == g2Pert ) then
                 scatter_pert = scatter_pert + scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
