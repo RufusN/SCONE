@@ -13162,81 +13162,161 @@ nuclearData {
   } 
 
 
-  materials {
+//   materials {
+
+//     caskOUT {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete.txt;
+//       composition {
+//       }
+//     }
+//     caskIN {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete.txt;
+//       composition {
+//       }
+//     }
+//     shield_L {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete.txt;
+//       composition {
+//       }
+//     }
+//     shield_L1 {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete.txt;
+//       composition {
+//       }
+//     }
+//     shield_R {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete.txt;
+//       composition {
+//       }
+//     }
+//     shield_R1 {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete.txt;
+//       composition {
+//       }
+//     }
+//     concrete_L {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete.txt;
+//       composition {
+//       }
+//     }
+//     concrete_R {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete.txt;
+//       composition {
+//       }
+//     }
+
+//      airL {
+//      temp 273;
+//      xsFile ./XS_valeria_old/air.txt;
+//      composition {
+//        }
+//      }
+
+//      airR {
+//      temp 273;
+//      xsFile ./XS_valeria_old/air.txt;
+//      composition {
+//        }
+//      }
+
+//      water {
+//      temp 273;
+//      xsFile ./XS_valeria_old/water.txt;
+//      composition {
+//        }
+//      }
+
+//      source {
+//      temp 273; 
+//      xsFile ./XS_valeria_old/source.txt;
+//      composition {
+// 	} 
+//      }
+    
+// }
+materials {
 
     caskOUT {
       temp  273;
-      xsFile ./XS_valeria/concrete.txt;
+      xsFile ./XS_valeria/concrete_sigzero_P3.txt;
       composition {
       }
     }
     caskIN {
       temp  273;
-      xsFile ./XS_valeria/concrete.txt;
+      xsFile ./XS_valeria/concrete_sigzero_P3.txt;
       composition {
       }
     }
     shield_L {
       temp  273;
-      xsFile ./XS_valeria/concrete.txt;
+      xsFile ./XS_valeria/concrete_sigzero_P3.txt;
       composition {
       }
     }
     shield_L1 {
       temp  273;
-      xsFile ./XS_valeria/concrete.txt;
+      xsFile ./XS_valeria/concrete_sigzero_P3.txt;
       composition {
       }
     }
     shield_R {
       temp  273;
-      xsFile ./XS_valeria/concrete.txt;
+      xsFile ./XS_valeria/concrete_sigzero_P3.txt;
       composition {
       }
     }
     shield_R1 {
       temp  273;
-      xsFile ./XS_valeria/concrete.txt;
+      xsFile ./XS_valeria/concrete_sigzero_P3.txt;
       composition {
       }
     }
     concrete_L {
       temp  273;
-      xsFile ./XS_valeria/concrete.txt;
+      xsFile ./XS_valeria/concrete_sigzero_P3.txt;
       composition {
       }
     }
     concrete_R {
       temp  273;
-      xsFile ./XS_valeria/concrete.txt;
+      xsFile ./XS_valeria/concrete_sigzero_P3.txt;
       composition {
       }
     }
 
      airL {
      temp 273;
-     xsFile ./XS_valeria/air.txt;
+     xsFile ./XS_valeria/air_sigzero_P3.txt;
      composition {
        }
      }
 
      airR {
      temp 273;
-     xsFile ./XS_valeria/air.txt;
+     xsFile ./XS_valeria/air_sigzero_P3.txt;
      composition {
        }
      }
 
      water {
      temp 273;
-     xsFile ./XS_valeria/water.txt;
+     xsFile ./XS_valeria/water_sigzero_P3.txt;
      composition {
        }
      }
 
      source {
      temp 273; 
-     xsFile ./XS_valeria/source.txt;
+     xsFile ./XS_valeria/source_sigzero_P3.txt;
      composition {
 	} 
      }

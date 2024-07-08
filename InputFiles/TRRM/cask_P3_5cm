@@ -1,4 +1,4 @@
-type fixedSourceTRRMPhysicsPackage;
+type PNFixedSourcePhysicsPackage;
 
 pop      50000;
 active   500;

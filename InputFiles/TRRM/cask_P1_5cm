@@ -1,4 +1,4 @@
-type fixedSourceTRRMPhysicsPackage;
+type PNFixedSourcePhysicsPackage;
 
 pop      50000;
 active   500;
@@ -13242,6 +13242,86 @@ nuclearData {
      }
     
 }
+// materials {
+
+//     caskOUT {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete_PN.txt;
+//       composition {
+//       }
+//     }
+//     caskIN {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete_PN.txt;
+//       composition {
+//       }
+//     }
+//     shield_L {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete_PN.txt;
+//       composition {
+//       }
+//     }
+//     shield_L1 {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete_PN.txt;
+//       composition {
+//       }
+//     }
+//     shield_R {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete_PN.txt;
+//       composition {
+//       }
+//     }
+//     shield_R1 {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete_PN.txt;
+//       composition {
+//       }
+//     }
+//     concrete_L {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete_PN.txt;
+//       composition {
+//       }
+//     }
+//     concrete_R {
+//       temp  273;
+//       xsFile ./XS_valeria_old/concrete_PN.txt;
+//       composition {
+//       }
+//     }
+
+//      airL {
+//      temp 273;
+//      xsFile ./XS_valeria_old/air_PN.txt;
+//      composition {
+//        }
+//      }
+
+//      airR {
+//      temp 273;
+//      xsFile ./XS_valeria_old/air_PN.txt;
+//      composition {
+//        }
+//      }
+
+//      water {
+//      temp 273;
+//      xsFile ./XS_valeria_old/water_PN.txt;
+//      composition {
+//        }
+//      }
+
+//      source {
+//      temp 273; 
+//      xsFile ./XS_valeria_old/source_PN.txt;
+//      composition {
+// 	} 
+//      }
+    
+// }
 
 }
 
