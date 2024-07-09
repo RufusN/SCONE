@@ -207,7 +207,7 @@ module adjointBackTRRMPhysicsPackage_class
       integer(shortInt)  :: active      = 0
       real(defReal)      :: rho         = ZERO
 
-      !Pertubation
+      ! Perturbation
       integer(shortInt), dimension(:), allocatable   :: energyId 
       integer(shortInt)  :: XStype      = 0
       integer(shortInt)  :: matPert     = 0
@@ -312,7 +312,7 @@ module adjointBackTRRMPhysicsPackage_class
   
       ! Private procedures
       procedure, private :: cycles
-      procedure, private :: initPertubation
+      procedure, private :: initPerturbation
       procedure, private :: initialiseSource
       procedure, private :: initialiseRay
       procedure, private :: transportSweep
@@ -414,8 +414,8 @@ module adjointBackTRRMPhysicsPackage_class
       ! Check response map
       call dict % getOrDefault(self % mapResponse, 'responseType', 0)
 
-      tempDict => dict % getDictPtr("Pertubation")
-      call self % initPertubation(tempDict)
+      tempDict => dict % getDictPtr("Perturbation")
+      call self % initPerturbation(tempDict)
       
       ! Check whether there is a map for outputting mapped fluxes
       ! If so, read and initialise the map to be used
@@ -637,6 +637,10 @@ module adjointBackTRRMPhysicsPackage_class
       allocate(self % adjScalarFlux(self % nCells * self % nG))
       allocate(self % adjPrevFlux(self % nCells * self % nG))
       allocate(self % adjSource(self % nCells * self % nG))
+
+      allocate(self %  angularIP(self % nCells * self % nG * self % nG))
+
+     
       
       self % scalarFlux = 0.0_defFlt
       self % prevFlux = 0.0_defFlt
@@ -768,12 +772,12 @@ module adjointBackTRRMPhysicsPackage_class
   
     end subroutine init
 
-    subroutine initPertubation(self,dict)
+    subroutine initPerturbation(self,dict)
       class(adjointBackTRRMPhysicsPackage), intent(inout) :: self
       class(dictionary), intent(in)                   :: dict
       class(dictionary), pointer                      :: tempDict
       integer(shortInt)                               :: i, g
-      character(100), parameter :: Here = 'initPertubation (adjointTRRMPhysicsPackage_class.f90)'
+      character(100), parameter :: Here = 'initPerturbation (adjointBackTRRMPhysicsPackage_class.f90)'
   
       call dict % getOrDefault(self % XStype, 'XStype', 0)
   
@@ -784,11 +788,11 @@ module adjointBackTRRMPhysicsPackage_class
       call dict % get(self % energyId, 'energyGroups')
   
       if (self % XStype == 3 .and. mod(size(self % energyId), 2) /= 0) then
-        call fatalError(Here, 'energyGroups for scattering XS pertubation must be given in pairs.')
+        call fatalError(Here, 'energyGroups for scattering XS Perturbation must be given in pairs.')
       end if 
   
     
-    end subroutine initPertubation
+    end subroutine initPerturbation
 
     !!
     !! Initialises the fixed source to be used in the simulation

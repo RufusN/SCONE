@@ -1,5 +1,5 @@
 //type fixedSourceTRRMPhysicsPackage;
-type adjointFSTRRMPhysicsPackage;
+type adjointBackTRRMPhysicsPackage;
 
 pop      2000;
 active   500;
@@ -19,6 +19,8 @@ volume 225;
 seed 500;
 outputFormat asciiJSON;
 responseType 1;
+
+Perturbation{XStype 1; XSchange 0.01; material 1; energyGroups (1);}
 
 integrate (detector);
 
