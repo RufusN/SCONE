@@ -704,11 +704,10 @@ contains
     ! TODO: clean nuclear database afterwards! It is no longer used
     !       and takes up memory.
     self % nMat = mm_nMat()
-    self % nMatVOID = self % nMat + 1
-    allocate(self % sigmaT(self % nMatVOID * self % nG))
-    allocate(self % nuSigmaF(self % nMatVOID * self % nG))
-    allocate(self % chi(self % nMatVOID * self % nG))
-    allocate(self % sigmaS(self % nMatVOID * self % nG * self % nG, self % SHOrder + 1 ))
+    allocate(self % sigmaT(self % nMat * self % nG))
+    allocate(self % nuSigmaF(self % nMat * self % nG))
+    allocate(self % chi(self % nMat * self % nG))
+    allocate(self % sigmaS(self % nMat * self % nG * self % nG, self % SHOrder + 1 ))
 
     do m = 1, self % nMat
       matPtr  => self % mgData % getMaterial(m)
@@ -728,19 +727,6 @@ contains
             end do
           end if
         end do
-      end do
-    end do
-
-    do g = 1, self % nG
-      self % sigmaT(self % nG * (self % nMatVOID - 1) + g)   = 0.0_defFlt
-      self % nuSigmaF(self % nG * (self % nMatVOID - 1) + g) = 0.0_defFlt
-      self % chi(self % nG * (self % nMatVOID - 1) + g)      = 0.0_defFlt
-      
-      do g1 = 1, self % nG
-          do SH = 1, self % SHOrder + 1
-              self % sigmaS(self % nG * self % nG * (self % nMatVOID - 1) &
-              + self % nG * (g - 1) + g1, SH)  = 0.0_defFlt
-          end do
       end do
     end do
 
@@ -1702,7 +1688,8 @@ contains
       cIdx    = self % IDToCell(r % coords % uniqueID)
 
       if (matIdx >= VOID_MAT) then
-        matIdx = self % nMatVOID
+        print *, 'error ray in void material'
+        stop
       end if
 
       if (matIdx0 /= matIdx) then
@@ -1961,7 +1948,7 @@ contains
       matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
      
       if (matIdx >= VOID_MAT - 1) then
-        matIdx = self % nMatVOID
+        cycle
       end if
 
       ! Update volume due to additional rays unless volume was precomputed
