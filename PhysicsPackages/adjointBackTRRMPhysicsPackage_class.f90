@@ -414,7 +414,6 @@ module adjointBackTRRMPhysicsPackage_class
       ! Check response map
       call dict % getOrDefault(self % mapResponse, 'responseType', 0)
 
-      !!!!!!!!!!!!!!!!!!!!!!
       tempDict => dict % getDictPtr("Pertubation")
       call self % initPertubation(tempDict)
       
