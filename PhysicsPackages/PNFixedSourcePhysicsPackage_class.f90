@@ -1687,9 +1687,9 @@ contains
       matIdx  = r % coords % matIdx
       cIdx    = self % IDToCell(r % coords % uniqueID)
 
-      if (matIdx >= VOID_MAT) then
-        print *, 'error ray in void material'
-        stop
+      if (matIdx >= UNDEF_MAT) then
+        print *, 'error ray in void/undef material'
+        call fatalError('error - ray in void/undef material','cell id:'//numToChar(cIdx))
       end if
 
       if (matIdx0 /= matIdx) then
