@@ -730,6 +730,8 @@ contains
       end do
     end do
 
+    print *, self % SHLength, self % SHOrder
+
   end subroutine init
 
   !!
@@ -1947,7 +1949,14 @@ contains
     do cIdx = 1, self % nCells
       matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
      
-      if (matIdx >= VOID_MAT - 1) then
+      if (matIdx >= UNDEF_MAT) then
+      ! Guard against void cells
+        do g = 1, self % nG
+          idx   = self % nG * (cIdx - 1) + g
+          do SH = 1, self % SHLength
+          self % moments(idx,SH) = 0.0_defFlt
+          end do
+        end do
         cycle
       end if
 
@@ -2058,13 +2067,13 @@ contains
     ! Hack to guard against non-material cells
     ! Guard against void cells
     if (matIdx >= UNDEF_MAT) then
-      baseIdx = self % nG * (cIdx - 1)
-      do g = 1, self % nG
-        idx = baseIdx + g
-        do SH = 1, self % SHLength
-          self % source(idx,SH) = 0.0_defFlt
-        end do
-      end do
+      ! baseIdx = self % nG * (cIdx - 1)
+      ! do g = 1, self % nG
+      !   idx = baseIdx + g
+      !   do SH = 1, self % SHLength
+      !     self % source(idx,SH) = 0.0_defFlt
+      !   end do
+      ! end do
       return
     end if
 
