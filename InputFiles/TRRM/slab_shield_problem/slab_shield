@@ -20,9 +20,12 @@ seed 500;
 outputFormat asciiJSON;
 responseType 1;
 
+
+
 Perturbation{XStype 1; XSchange 0.01; material 1; energyGroups (1);}
 
 integrate (detector);
+detector  (source);
 
 source { source (
   0.0 0 0 0 0 0 0 0 0 0

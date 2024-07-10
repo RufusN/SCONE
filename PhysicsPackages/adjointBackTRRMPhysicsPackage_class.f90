@@ -1617,7 +1617,7 @@ module adjointBackTRRMPhysicsPackage_class
       activeRay = .false.
       tally = .true.
   
-      allocate(tauBack(self % nG * 50))         ! could add some kind of termination  / average cell length to get an approx length
+      allocate(tauBack(self % nG * 50))    ! could add some kind of termination  / average cell length to get an approx length
       allocate(fluxRecord(self % nG * 50))
       allocate(cIdxBack(50))
       allocate(vacBack(50))
@@ -1648,7 +1648,7 @@ module adjointBackTRRMPhysicsPackage_class
           length = self % dead - totalLength
         end if
   
-        !second dead length
+        ! Second dead length
         if (totalLength >= self % termination) then
           length = self % termination + self % dead - totalLength
           tally = .false.
@@ -1724,7 +1724,7 @@ module adjointBackTRRMPhysicsPackage_class
             vacBackBuffer(1:size(vacBack)) = vacBack
             call move_alloc(vacBackBuffer, vacBack)
   
-            allocate(fluxRecordBuffer(size(fluxRecord) * 2))   ! recording of average flux
+            allocate(fluxRecordBuffer(size(fluxRecord) * 2))   !recording of average flux
             fluxRecordBuffer(1:size(fluxRecord)) = fluxRecord
             call move_alloc(fluxRecordBuffer, fluxRecord)
           end if
@@ -1741,12 +1741,12 @@ module adjointBackTRRMPhysicsPackage_class
   
           cIdxBack(segCount) = cIdx
   
-          if (tally) then
+          if ( tally ) then
   
           !$omp simd
           do g = 1, self % nG
             fluxRecord((segCount - 1) * self % nG + g)  = avgFluxVec(g)  
-            !fluxRecord((segCount) * self % nG - g)  = avgFluxVec(g) !???
+            !fluxRecord((segCount) * self % nG - g)  = avgFluxVec(g) !?
           end do
   
             call OMP_set_lock(self % locks(cIdx))
@@ -1797,8 +1797,8 @@ module adjointBackTRRMPhysicsPackage_class
       fluxRecordBuffer = fluxRecord(1 : (segCount * self % nG))
       call move_alloc(fluxRecordBuffer, fluxRecord)
   
-      !iterate over segments
-      do i = segCount, 1, -1
+      ! Iterate over segments - large array needs changing
+      do i = segCount, 1, -1 
         
         cIdx = cIdxBack(i)
         baseIdx = (cIdx - 1) * self % nG
@@ -2073,8 +2073,6 @@ module adjointBackTRRMPhysicsPackage_class
   
       end do
       !$omp end parallel do
-
-      !print *, self % scalarFlux(1:5), self % adjScalarFlux(1:5)
   
     end subroutine adjointNormaliseFluxAndVolume
     
@@ -2359,7 +2357,7 @@ module adjointBackTRRMPhysicsPackage_class
           !$omp simd
           do g = 1, self % nG 
             delta = 0.0_defFlt
-              if (  g == g1Pert ) then  !add energy/mat group check if needed
+              if ( g == g1Pert ) then  !add energy/mat group check if needed
                 delta = self % XSchange * capture(g) * IPVec((g - 1) * self % nG + g)
               end if
             !$omp atomic
