@@ -730,8 +730,6 @@ contains
       end do
     end do
 
-    print *, self % SHLength, self % SHOrder
-
   end subroutine init
 
   !!
