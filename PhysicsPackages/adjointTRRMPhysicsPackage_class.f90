@@ -1976,6 +1976,7 @@ contains
     if(allocated(self % nuSigmaF)) deallocate(self % nuSigmaF)
     if(allocated(self % chi)) deallocate(self % chi)
     if(allocated(self % sigmaC)) deallocate(self % sigmaC)
+    if(allocated(self % fission)) deallocate(self % fission)
 
     ! if(allocated(self % adjSigmaT)) deallocate(self % adjSigmaT)
     if(allocated(self % adjSigmaS)) deallocate(self % adjSigmaS)
