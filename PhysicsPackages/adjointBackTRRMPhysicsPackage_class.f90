@@ -261,8 +261,10 @@ module adjointBackTRRMPhysicsPackage_class
       ! Data space - absorb all nuclear data for speed
       real(defFlt), dimension(:), allocatable     :: sigmaT
       real(defFlt), dimension(:), allocatable     :: nuSigmaF
+      real(defFlt), dimension(:), allocatable     :: fission
       real(defFlt), dimension(:), allocatable     :: sigmaS
       real(defFlt), dimension(:), allocatable     :: chi
+      real(defFlt), dimension(:), allocatable     :: sigmaC
       real(defFlt), dimension(:), allocatable     :: adjNuSigmaF
       real(defFlt), dimension(:), allocatable     :: adjSigmaS
       real(defFlt), dimension(:), allocatable     :: adjChi
@@ -639,8 +641,6 @@ module adjointBackTRRMPhysicsPackage_class
       allocate(self % adjSource(self % nCells * self % nG))
 
       allocate(self %  angularIP(self % nCells * self % nG * self % nG))
-
-     
       
       self % scalarFlux = 0.0_defFlt
       self % prevFlux = 0.0_defFlt
@@ -734,7 +734,9 @@ module adjointBackTRRMPhysicsPackage_class
       !       and takes up memory.
       self % nMat = mm_nMat()
       allocate(self % sigmaT(self % nMat * self % nG))
+      allocate(self % sigmaC(self % nMat * self % nG))
       allocate(self % nuSigmaF(self % nMat * self % nG))
+      allocate(self % fission(self % nMat * self % nG))
       allocate(self % chi(self % nMat * self % nG))
       allocate(self % sigmaS(self % nMat * self % nG * self % nG))
   
@@ -743,7 +745,9 @@ module adjointBackTRRMPhysicsPackage_class
         mat     => baseMgNeutronMaterial_CptrCast(matPtr)
         do g = 1, self % nG
           self % sigmaT(self % nG * (m - 1) + g) = real(mat % getTotalXS(g, self % rand),defFlt)
+          self % sigmaC(self % nG * (m - 1) + g) = real(mat % getCaptureXS(g, self % rand),defFlt)
           self % nuSigmaF(self % nG * (m - 1) + g) = real(mat % getNuFissionXS(g, self % rand),defFlt)
+          self % fission(self % nG * (m - 1) + g) = real(mat % getFissionXS(g, self % rand),defFlt)
           self % chi(self % nG * (m - 1) + g) = real(mat % getChi(g, self % rand),defFlt)
           do g1 = 1, self % nG
             self % sigmaS(self % nG * self % nG * (m - 1) + self % nG * (g - 1) + g1)  = &
@@ -2333,9 +2337,9 @@ module adjointBackTRRMPhysicsPackage_class
       IPVec => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG)
       ! total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
       nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
-      ! fissVec => self % fission((matIdx + 1):(matIdx + self % nG))
+      fissVec => self % fission((matIdx + 1):(matIdx + self % nG))
       chi => self % chi((matIdx + 1):(matIdx + self % nG))
-      ! capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
+      capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
       scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
   
   
@@ -2901,8 +2905,10 @@ module adjointBackTRRMPhysicsPackage_class
       self % nMat      = 0
       if(allocated(self % sigmaT)) deallocate(self % sigmaT)
       if(allocated(self % sigmaS)) deallocate(self % sigmaS)
-      if(allocated(self % nusigmaF)) deallocate(self % nuSigmaF)
+      if(allocated(self % nuSigmaF)) deallocate(self % nuSigmaF)
       if(allocated(self % chi)) deallocate(self % chi)
+      if(allocated(self % sigmaC)) deallocate(self % sigmaC)
+      if(allocated(self % fission)) deallocate(self % fission)
 
       if(allocated(self % adjSigmaS)) deallocate(self % adjSigmaS)
       if(allocated(self % adjNuSigmaF)) deallocate(self % adjNuSigmaF)
