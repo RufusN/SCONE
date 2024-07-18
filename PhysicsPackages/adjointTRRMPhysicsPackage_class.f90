@@ -1121,14 +1121,14 @@ contains
 
       end do
 
-      ! do g = 1, self % nG * self % nG
-      !   idx = (cIdx - 1) * self % nG * self % nG + g
-      !   if (vol > volume_tolerance) then
-      !     self % angularIP(idx) = self % angularIP(idx) * norm / (self % volume(cIdx))
-      !   else
-      !     self % angularIP(idx) = 0.0_defFlt
-      !   end if
-      ! end do
+      do g = 1, self % nG * self % nG
+        idx = (cIdx - 1) * self % nG * self % nG + g
+        if (self % volume(cIdx) > volume_tolerance) then
+          self % angularIP(idx) = self % angularIP(idx) * norm / (self % volume(cIdx))
+        else
+          self % angularIP(idx) = 0.0_defFlt
+        end if
+      end do
 
     end do
 
@@ -1399,11 +1399,15 @@ contains
       self % scalarFlux(idx) = 0.0_defFlt
       self % adjPrevFlux(idx) = self % adjScalarFlux(idx)
       self % adjScalarFlux(idx) = 0.0_defFlt
-      do g = 1, self % nG
-        self % angularIP((idx - 1) * self % nG + g) = 0.0_defFlt
-      end do
     end do
     !$omp end parallel do
+
+    !$omp parallel do schedule(static)
+    do idx = 1, size(self % angularIP)
+      self % angularIP(idx) = 0.0_defFlt
+    end do
+    !$omp end parallel do
+
 
   end subroutine resetFluxes
 
@@ -1412,23 +1416,23 @@ contains
     real(defFlt), intent(in)                      :: ONE_KEFF
     integer(shortInt), intent(in)                 :: it
     integer(shortInt), intent(in)                 :: cIdx
-    real(defReal)                                 :: delta, fission, fission_pert, scatter_pert, norm
+    real(defReal)                                 :: delta, fission, fission_pert, scatter_pert !, norm
     integer(shortInt)                             :: baseIdx, idx, matIdx, g, gIn, mat, g1Pert, g2pert, i
     real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture, scatterXS, &
                                                       fissVec, scatterVec
     real(defReal), dimension(:), pointer          :: IPVec
 
-    norm     = ONE / (self % lengthPerIt) 
+    ! norm     = ONE / (self % lengthPerIt) 
 
-    !$omp simd
-    do g = 1, self % nG * self % nG
-      idx = (cIdx - 1) * self % nG * self % nG + g
-      if (self % volume(cIdx) > volume_tolerance) then
-        self % angularIP(idx) = self % angularIP(idx) * norm / (self % volume(cIdx))
-      else
-        self % angularIP(idx) = 0.0_defFlt
-      end if
-    end do
+    ! !$omp simd
+    ! do g = 1, self % nG * self % nG
+    !   idx = (cIdx - 1) * self % nG * self % nG + g
+    !   if (self % volume(cIdx) > volume_tolerance) then
+    !     self % angularIP(idx) = self % angularIP(idx) * norm / (self % volume(cIdx))
+    !   else
+    !     self % angularIP(idx) = 0.0_defFlt
+    !   end if
+    ! end do
 
     mat  =  self % geom % geom % graph % getMatFromUID(cIdx) 
     baseIdx = (cIdx - 1) * self % nG 
