@@ -743,7 +743,7 @@ contains
     real(defReal)                                         :: totalLength, length
     logical(defBool)                                      :: activeRay, hitVacuum, newRay
     type(distCache)                                       :: cache
-    real(defFlt)                                          :: lenFlt, maxtot
+    real(defFlt)                                          :: lenFlt!, maxtot
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, currentSource, tau
     real(defFlt), pointer, dimension(:)                   :: totVec
     real(defReal), dimension(3)                           :: r0, mu0
