@@ -172,7 +172,7 @@ module adjointTRRMPhysicsPackage_class !currently backward
     logical(defBool)   :: cache       = .false.
     real(defReal)      :: rho         = ZERO
 
-    integer(shortInt)  :: NSegMax     = 100
+    integer(shortInt)  :: NSegMax     = 10000
     integer(shortInt)  :: XStype      = 0
     integer(shortInt)  :: matPert     = 0
     real(defReal)      :: XSchange    = ZERO
@@ -809,23 +809,24 @@ contains
     integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
                                                                segCount, i, segCountCrit, segIdx, gIn, pIdx
     real(defReal)                                         :: totalLength, length
-    logical(defBool)                                      :: activeRay, hitVacuum, tally
+    logical(defBool)                                      :: activeRay, hitVacuum, tally, oversized
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, avgFluxVec, tau
-    real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, sourceVecAdj
+    real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, sourceVecAdj, deltaFW, scalarVecAdj
     real(defReal), pointer, dimension(:)                  :: angularProd
     ! real(defFlt), dimension(self % nG * self % NSegMax*2) :: tauBack!, tauBackBuffer
     real(defFlt), dimension(self % NSegMax*2)             :: lenBack!, lenBackBuffer
     real(shortInt), dimension(self % NSegMax*2)           :: cIdxBack!, cIdxBackBuffer
     logical(defBool), dimension(self % NSegMax*2)         :: vacBack!, vacBackBuffer 
     ! real(defFlt), dimension(self % nG * self % NSegMax*2) :: fluxRecord!, fluxRecordBuffer 
-    real(defFlt), dimension(self % nG * self % NSegMax*2) :: deltaRecord!, deltaRecordBuffer
+    real(defFlt), target, dimension(self % nG * self % NSegMax*2) :: deltaRecord!, deltaRecordBuffer
     real(defReal), dimension(3)                           :: r0, mu0
-    real(defFlt), allocatable, dimension(:)               :: lenBackBuffer
-    real(shortInt), allocatable, dimension(:)             :: cIdxBackBuffer
-    logical(defBool), allocatable, dimension(:)           :: vacBackBuffer 
-    real(defFlt), allocatable, dimension(:)               :: deltaRecordBuffer
+    real(defReal), allocatable, dimension(:)              :: lenBackOversized, lenBackBuffer
+    real(shortInt), allocatable, dimension(:)             :: cIdxBackOversized, cIdxBackBuffer
+    logical(defBool), allocatable, dimension(:)           :: vacBackOversized, vacBackBuffer 
+    real(defFlt), target, allocatable, dimension(:)       :: deltaRecordOversized
+    real(defFlt), target, allocatable, dimension(:)       :: deltaRecordBuffer
         
     ! Set initial angular flux to angle average of cell source
     cIdx = r % coords % uniqueID
@@ -840,11 +841,7 @@ contains
     totalLength = ZERO
     activeRay = .false.
     tally = .true.
-
-    ! allocate(tauBack(self % nG * 50))         ! could add some kind of termination  / average cell length to get an approx length
-    ! allocate(fluxRecord(self % nG * 50))
-    ! allocate(cIdxBack(50))
-    ! allocate(vacBack(50))
+    oversized = .false. 
 
     do while (totalLength < self % termination + self % dead)
 
@@ -933,76 +930,113 @@ contains
         if (tally) then
             segCountCrit = segCount
         end if
- 
-        if (segCount > self % NSegMax - 1) then ! doubles length if needed
 
-          ! allocate(tauBackBuffer(size(tauBack) * 2))   !record expoentials 
-          ! tauBackBuffer(1:size(tauBack)) = tauBack
-          ! call move_alloc(tauBackBuffer, tauBack)
+        if ( segCount >= self % NSegMax - 1 .and. .not. oversized) then
 
-          allocate(lenBackBuffer(size(lenBack) * 2)) !add cell id for scalar flux update
-          cIdxBackBuffer(1:size(lenBack)) = lenBack
-          call move_alloc(lenBackBuffer, lenBack)
+          oversized = .true.
 
-          allocate(cIdxBackBuffer(size(cIdxBack) * 2)) !add cell id for scalar flux update
-          cIdxBackBuffer(1:size(cIdxBack)) = cIdxBack
-          call move_alloc(cIdxBackBuffer, cIdxBack)
+          allocate(lenBackOversized(size(lenBack) * 2)) !add cell id for scalar flux update
+          lenBackOversized(1:size(lenBack)) = lenBack
 
-          allocate(vacBackBuffer(size(vacBack) * 2))   !check vacuum
-          vacBackBuffer(1:size(vacBack)) = vacBack
-          call move_alloc(vacBackBuffer, vacBack)
+          allocate(cIdxBackOversized(size(cIdxBack) * 2)) !add cell id for scalar flux update
+          cIdxBackOversized(1:size(cIdxBack)) = cIdxBack
 
-          ! allocate(fluxRecordBuffer(size(fluxRecord) * 2))   ! recording of average flux
-          ! fluxRecordBuffer(1:size(fluxRecord)) = fluxRecord
-          ! call move_alloc(fluxRecordBuffer, fluxRecord)
+          allocate(vacBackOversized(size(vacBack) * 2))   !check vacuum
+          vacBackOversized(1:size(vacBack)) = vacBack
 
-          allocate(deltaRecordBuffer(size(deltaRecord) * 2))   ! recording of average flux
-          deltaRecordBuffer(1:size(deltaRecord)) = deltaRecord
-          call move_alloc(deltaRecordBuffer, deltaRecord)
+          allocate(deltaRecordOversized(size(deltaRecord) * 2))   ! recording of average flux
+          deltaRecordOversized(1:size(deltaRecord)) = deltaRecord
 
+        elseif (oversized .and. allocated(vacBackOversized)) then
+
+          if  (segCount >= (size(vacBackOversized) - 1) ) then
+            allocate(lenBackBuffer(size(lenBackOversized) * 2)) !add cell id for scalar flux update
+            lenBackBuffer(1:size(lenBackOversized)) = lenBackOversized
+            call move_alloc(lenBackBuffer, lenBackOversized)
+
+            allocate(cIdxBackBuffer(size(cIdxBackOversized) * 2)) !add cell id for scalar flux update
+            cIdxBackBuffer(1:size(cIdxBackOversized)) = cIdxBackOversized
+            call move_alloc(cIdxBackBuffer, cIdxBackOversized)
+
+            allocate(vacBackBuffer(size(vacBackOversized) * 2))   !check vacuum
+            vacBackBuffer(1:size(vacBackOversized)) = vacBackOversized
+            call move_alloc(vacBackBuffer, vacBackOversized)
+
+            allocate(deltaRecordBuffer(size(deltaRecordOversized) * 2))   ! recording of average flux
+            deltaRecordBuffer(1:size(deltaRecordOversized)) = deltaRecordOversized
+            call move_alloc(deltaRecordBuffer, deltaRecordOversized)
+          end if
         end if
 
-        ! !$omp simd
-        ! do g = 1, self % nG
-        !   avgFluxVec(g) = (delta(g) + sourceVec(g))
-        ! end do
-        
-        ! !$omp simd
-        ! do g = 1, self % nG
-        !   ! tauBack((segCount - 1) * self % nG + g) = tau(g)
-        ! end do
+         
+        ! if (oversized .and. segCount > size(cIdxBackOversized)) then ! doubles length if needed
 
-        cIdxBack(segCount) = cIdx
-        lenBack(segCount) = lenFlt
+        !   allocate(lenBackBuffer(size(lenBackOversized) * 2)) !add cell id for scalar flux update
+        !   lenBackBuffer(1:size(lenBackOversized)) = lenBackOversized
+        !   call move_alloc(lenBackBuffer, lenBackOversized)
+
+        !   allocate(cIdxBackBuffer(size(cIdxBackOversized) * 2)) !add cell id for scalar flux update
+        !   cIdxBackBuffer(1:size(cIdxBackOversized)) = cIdxBackOversized
+        !   call move_alloc(cIdxBackBuffer, cIdxBackOversized)
+
+        !   allocate(vacBackBuffer(size(vacBackOversized) * 2))   !check vacuum
+        !   vacBackBuffer(1:size(vacBackOversized)) = vacBackOversized
+        !   call move_alloc(vacBackBuffer, vacBackOversized)
+
+        !   allocate(deltaRecordBuffer(size(deltaRecordOversized) * 2))   ! recording of average flux
+        !   deltaRecordBuffer(1:size(deltaRecordOversized)) = deltaRecordOversized
+        !   call move_alloc(deltaRecordBuffer, deltaRecordOversized)
+
+        ! elseif (segCount > self % NSegMax - 1 ) then
+
+        !   oversized = .true.
+
+        !   allocate(lenBackOversized(size(lenBack) * 2)) !add cell id for scalar flux update
+        !   lenBackOversized(1:size(lenBack)) = lenBack
+
+        !   allocate(cIdxBackOversized(size(cIdxBack) * 2)) !add cell id for scalar flux update
+        !   cIdxBackOversized(1:size(cIdxBack)) = cIdxBack
+
+        !   allocate(vacBackOversized(size(vacBack) * 2))   !check vacuum
+        !   vacBackOversized(1:size(vacBack)) = vacBack
+
+        !   allocate(deltaRecordOversized(size(deltaRecord) * 2))   ! recording of average flux
+        !   deltaRecordOversized(1:size(deltaRecord)) = deltaRecord
+
+        ! end if
+
+
+
+        if (oversized) then
+          cIdxBackOversized(segCount) = cIdx
+          lenBackOversized(segCount) = length
+        else
+          cIdxBack(segCount) = cIdx
+          lenBack(segCount) = length
+        end if
 
         if (tally) then
+          if (oversized) then
+            !$omp simd
+            do g = 1, self % nG
+              deltaRecordOversized((segCount - 1) * self % nG + g) = delta(g)  
+            end do
+          else
+            !$omp simd
+            do g = 1, self % nG
+              deltaRecord((segCount - 1) * self % nG + g) = delta(g)  
+            end do
+          end if
 
-        ! !$omp simd
-        ! do g = 1, self % nG
-        !   fluxRecord((segCount - 1) * self % nG + g)  = avgFluxVec(g)  
-        ! end do
-        
-        !$omp simd
-        do g = 1, self % nG
-          deltaRecord((segCount - 1) * self % nG + g)  = delta(g)  
-        end do
+          if (oversized) then
+            vacBackOversized(segCount + 1) = hitVacuum
+          else
+            vacBack(segCount + 1) = hitVacuum
+          end if
 
-          ! call OMP_set_lock(self % locks(cIdx))
-          ! scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
-          ! !$omp simd aligned(scalarVec)
-          ! do g = 1, self % nG
-          !   scalarVec(g) = scalarVec(g) + delta(g) * tau(g)
-          ! end do
-          ! self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length 
-          ! if(isActive) then
-          !   self % IPTracks(cIdx) = self % IPTracks(cIdx) + length
-          ! end if
-          ! call OMP_unset_lock(self % locks(cIdx))
         end if
 
         if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
-
-        vacBack(segCount + 1) = hitVacuum
       
       end if
 
@@ -1021,27 +1055,22 @@ contains
       fluxVec(g) = self % adjSource(idx)
     end do
 
-    ! ! trim arrays here, (tauBack...)
-    ! allocate(tauBackBuffer(segCount))
-    ! tauBackBuffer = tauBack(1 : (segCount * self % nG))
-    ! call move_alloc(tauBackBuffer, tauBack)
-
-    ! allocate(cIdxBackBuffer(segCount))
-    ! cIdxBackBuffer = cIdxBack(1:segCount)
-    ! call move_alloc(cIdxBackBuffer, cIdxBack)
-
-    ! allocate(vacBackBuffer(segCount))
-    ! vacBackBuffer = vacBack(1:segCount)
-    ! call move_alloc(vacBackBuffer, vacBack)
-
-    ! allocate(fluxRecordBuffer(segCount))
-    ! fluxRecordBuffer = fluxRecord(1 : (segCount * self % nG))
-    ! call move_alloc(fluxRecordBuffer, fluxRecord)
-
     !iterate over segments
     do i = segCount, 1, -1
-      
-      cIdx = cIdxBack(i)
+
+      if (oversized) then
+        length = lenBackOversized(i)
+        hitVacuum = vacBackOversized(i)
+        deltaFW => deltaRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
+        cIdx = cIdxBackOversized(i)
+      else
+        length = lenBack(i)
+        hitVacuum = vacBack(i)
+        deltaFW => deltaRecord((i - 1) * self % nG + 1 : i * self % nG)
+        cIdx = cIdxBack(i)
+      end if
+
+      ! cIdx = cIdxBack(i)
       matIdx = self % geom % geom % graph % getMatFromUID(cIdx)
       baseIdx = (cIdx - 1) * self % nG
       segIdx =  (i - 1) * self % nG
@@ -1056,7 +1085,7 @@ contains
 
       !$omp simd aligned(totVec)
       do g = 1, self % nG
-        tau(g) = totVec(g) * lenBack(i)
+        tau(g) = totVec(g) * length
       end do
 
       !$omp simd
@@ -1066,7 +1095,7 @@ contains
 
       !$omp simd
       do g = 1, self % nG
-        delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
+        delta(g) = (fluxVec(g) - sourceVecAdj(g)) * attenuate(g)
       end do
 
       !$omp simd
@@ -1089,13 +1118,13 @@ contains
 
         !$omp simd 
         do g = 1, self % nG
-          scalarVec(g) = scalarVec(g) + deltaRecord(segIdx + g) * tau(g)
+          scalarVec(g) = scalarVec(g) + deltaFW(g) * tau(g)
           scalarVecAdj(g) = scalarVecAdj(g) + delta(g) * tau(g)
 
             if(isActive) then
               do gIn = 1, self % nG
                 pIdx = self % nG * (g - 1) + gIn
-                angularProd(pIdx) = angularProd(pIdx) + avgFluxVec(g) * (deltaRecord(segIdx + g) + sourceVec(g))
+                angularProd(pIdx) = angularProd(pIdx) + avgFluxVec(g) * (deltaFW(g) + sourceVec(g))
               end do
             end if
 
@@ -1114,7 +1143,7 @@ contains
 
       end if  
 
-      if (vacBack(i)) then
+      if (hitVacuum) then
         !$omp simd
         do g = 1, self % nG
           fluxVec(g) = 0.0_defFlt
@@ -1252,9 +1281,9 @@ contains
 
   end subroutine adjointNormaliseFluxAndVolume
 
-  subroutine normaliseInnerProduct(self, it)
+  subroutine normaliseInnerProduct(self, itAct)
     class(adjointTRRMPhysicsPackage), intent(inout) :: self
-    integer(shortInt), intent(in)                 :: it
+    integer(shortInt), intent(in)                 :: itAct
     real(defFlt)                                  :: norm
     real(defReal)                                 :: normVol
     real(defFlt), save                            :: total, vol
@@ -1263,7 +1292,7 @@ contains
     !$omp threadprivate(total, vol, idx, g, matIdx)
 
     norm = real(ONE / self % lengthPerIt, defFlt)
-    normVol = ONE / (self % lengthPerIt * it)
+    normVol = ONE / (self % lengthPerIt * itAct)
 
     !$omp parallel do schedule(static)
     do cIdx = 1, self % nCells
