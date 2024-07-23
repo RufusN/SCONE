@@ -1,7 +1,6 @@
-// This XSS are for a URRa-2-l-IN Benchamrk Problem 
-// Source: A. Sood, R. A. Forster, and D. K. Parsons, 
-//        ‘Analytical Benchmark Test Set For Criticality Code Verification’
-//
+// Verification of k-Eigenvalue Sensitivity Coefficient
+// Calculations Using Adjoint-Weighted Perturbation Theory in
+// MCNP
 
 
 numberOfGroups 2; 
