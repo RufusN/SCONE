@@ -174,6 +174,7 @@ module adjointTRRMPhysicsPackage_class !currently backward
 
 
     integer(shortInt)  :: NSegMax     = 100
+    integer(shortInt)  :: NSegMaxTemp = 100
     integer(shortInt)  :: XStype      = 0
     integer(shortInt)  :: matPert     = 0
     real(defReal)      :: XSchange    = ZERO
@@ -847,7 +848,7 @@ contains
     real(shortInt), allocatable, dimension(:)             :: cIdxBackOversized, cIdxBackBuffer
     logical(defBool), allocatable, dimension(:)           :: vacBackOversized, vacBackBuffer 
     real(defFlt), target, allocatable, dimension(:)       :: deltaRecordOversized
-    real(defFlt), allocatable, dimension(:)       :: deltaRecordBuffer
+    real(defFlt), allocatable, dimension(:)               :: deltaRecordBuffer
         
     ! Set initial angular flux to angle average of cell source
     cIdx = r % coords % uniqueID
@@ -876,8 +877,10 @@ contains
     ! cIdxBack = 0
     ! vacBack = .false.
 
-
-        
+    allocate(lenBackOversized(self % NSegMax*4))         ! could add some kind of termination  / average cell length to get an approx length
+    allocate(cIdxBackOversized(self % NSegMax*4))
+    allocate(vacBackOversized(self % NSegMax*4))
+    allocate(deltaRecordOversized(self % nG * self % NSegMax*4*self % nG))
 
     do while (totalLength < self % termination + self % dead)
 
@@ -967,24 +970,19 @@ contains
             segCountCrit = segCount
         end if
  
-       
-        if ( segCount >= self % NSegMax - 1 .and. .not. oversized) then
+        if ( (segCount >= (self % NSegMax - 1)) .and. .not. oversized) then
 
           oversized = .true.
-
-          allocate(lenBackOversized(size(lenBack) * 2)) !add cell id for scalar flux update
+          ! allocate(lenBackOversized(size(lenBack) * 2)) !add cell id for scalar flux update
           lenBackOversized(1:size(lenBack)) = lenBack
-
-          allocate(cIdxBackOversized(size(cIdxBack) * 2)) !add cell id for scalar flux update
+          ! allocate(cIdxBackOversized(size(cIdxBack) * 2)) !add cell id for scalar flux update
           cIdxBackOversized(1:size(cIdxBack)) = cIdxBack
-
-          allocate(vacBackOversized(size(vacBack) * 2))   !check vacuum
+          ! allocate(vacBackOversized(size(vacBack) * 2))   !check vacuum
           vacBackOversized(1:size(vacBack)) = vacBack
-
-          allocate(deltaRecordOversized(size(deltaRecord) * 2))   ! recording of average flux
+          ! allocate(deltaRecordOversized(size(deltaRecord) * 2))   ! recording of average flux
           deltaRecordOversized(1:size(deltaRecord)) = deltaRecord
 
-        elseif (oversized .and. allocated(vacBackOversized)) then
+        elseif (oversized) then
 
           if  (segCount >= (size(vacBackOversized) - 1) ) then
             allocate(lenBackBuffer(size(lenBackOversized) * 2)) !add cell id for scalar flux update
@@ -1003,14 +1001,17 @@ contains
             deltaRecordBuffer(1:size(deltaRecordOversized)) = deltaRecordOversized
             call move_alloc(deltaRecordBuffer, deltaRecordOversized)
           end if
+
         end if
 
         if (oversized) then
           cIdxBackOversized(segCount) = cIdx
           lenBackOversized(segCount) = length
+          vacBackOversized(segCount + 1) = hitVacuum
         else
           cIdxBack(segCount) = cIdx
           lenBack(segCount) = length
+          vacBack(segCount + 1) = hitVacuum
         end if
 
 
@@ -1029,9 +1030,6 @@ contains
         end if
 
         if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
-
-        vacBack(segCount + 1) = hitVacuum
-      
       end if
 
       ! Check for a vacuum hit
@@ -1054,11 +1052,13 @@ contains
 
       if (oversized) then
         lenFlt = real(lenBackOversized(i),defFlt)
+        length = lenBackOversized(i)
         hitVacuum = vacBackOversized(i)
         deltaFW => deltaRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
         cIdx = cIdxBackOversized(i)
       else
         lenFlt = real(lenBack(i),defFlt)
+        length = lenBack(i)
         hitVacuum = vacBack(i)
         deltaFW => deltaRecord((i - 1) * self % nG + 1 : i * self % nG)
         cIdx = cIdxBack(i)
@@ -1069,8 +1069,12 @@ contains
       segIdx =  (i - 1) * self % nG
       sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
       sourceVecFW => self % source((baseIdx + 1):(baseIdx + self % nG))
-      totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
-      ! deltaFW => deltaRecord((segIdx + 1):(segIdx + self % nG))
+      
+      if (matIdx0 /= matIdx) then
+        matIdx0 = matIdx
+        ! Cache total cross section
+        totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
+      end if
 
       !$omp simd
       do g = 1, self % nG
@@ -1119,15 +1123,15 @@ contains
               end do
           end do
         end if
-        self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + lenBack(i)
+        self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
         if (segCount > self % NSegMax) then
-          self % NSegMax = segCount
+          self % NSegMaxTemp = segCount
         end if
         call OMP_unset_lock(self % locks(cIdx))
 
       end if  
 
-      if (hitVacuum) then !vacBack(i)
+      if (hitVacuum) then
         !$omp simd
         do g = 1, self % nG
           fluxVec(g) = 0.0_defFlt
@@ -1156,6 +1160,7 @@ contains
 
     norm = real(ONE / self % lengthPerIt, defFlt)
     normVol = ONE / (self % lengthPerIt * it)
+    self % NSegMax = self % NSegMaxTemp
 
     !$omp parallel do schedule(static)
     do cIdx = 1, self % nCells
@@ -1190,7 +1195,7 @@ contains
           D = 0.0_defFlt
         end if
 
-        self % scalarFlux(idx) =  (self % scalarflux(idx) + self % source(idx) + D * self % prevFlux(idx) ) / (1 + D)
+        self % scalarFlux(idx) = (self % scalarflux(idx) + self % source(idx) + D * self % prevFlux(idx) ) / (1 + D)
 
       end do
 
@@ -1264,8 +1269,6 @@ contains
     integer(shortInt), save                       :: g, matIdx, idx
     integer(shortInt)                             :: cIdx
     !$omp threadprivate(total, vol, idx, g, matIdx)
-
-    norm = real(ONE / self % lengthPerIt, defFlt)
 
     !$omp parallel do schedule(static)
     do cIdx = 1, self % nCells
@@ -1808,9 +1811,10 @@ contains
           real(self % keffScore(1) - self % deltaKeffScore(1),defReal), name)
     call out % endBlock()
 
-    name = 'sensitivity'
+    name = 'sensitivity+relUncertainty'
     call out % startBlock(name)
-    call out % printResult(real(self % sensitivityScore(1),defReal), real(self % sensitivityScore(2),defReal), name)
+    call out % printResult(real(self % sensitivityScore(1),defReal), real(self % sensitivityScore(2)&
+                                        /self % sensitivityScore(1),defReal), name)
     call out % endBlock()
 
     ! Print cell volumes
@@ -2085,6 +2089,7 @@ contains
     self % printVolume = .false.
     self % printCells  = .false.
 
+    self % NSegMax  = 0 
     self % XStype   = 0
     self % matPert  = 0
     self % XSchange = 0.0_defFlt
