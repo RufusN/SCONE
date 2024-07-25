@@ -720,7 +720,7 @@ contains
         matIdx0 = matIdx
         
         ! Cache total cross section
-        totVec => self % sigmaT((matIdx - 1) * self % nG + 1:self % nG)
+        totVec => self % sigmaT(((matIdx - 1) * self % nG + 1) : ((matIdx - 1) * self % nG + self % nG))
       end if
 
       ! Remember co-ordinates to set new cell's position
@@ -886,13 +886,13 @@ contains
 
     ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
-    total => self % sigmaT(matIdx + (1):(self % nG))
-    scatterXS => self % sigmaS(matIdx * self % nG + (1):(self % nG*self % nG))
-    nuFission => self % nuSigmaF(matIdx + (1):(self % nG))
-    chi => self % chi(matIdx + (1):(self % nG))
+    total => self % sigmaT(matIdx + 1 : matIdx + self % nG)
+    scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
+    nuFission => self % nuSigmaF(matIdx + 1 : matIdx + self % nG)
+    chi => self % chi(matIdx + 1 : matIdx + self % nG)
 
     baseIdx = self % ng * (cIdx - 1)
-    fluxVec => self % prevFlux(baseIdx+(1):(self % nG))
+    fluxVec => self % prevFlux(baseIdx + 1 : baseIdx + self % nG)
 
     ! Calculate fission source
     fission = 0.0_defFlt
@@ -904,7 +904,7 @@ contains
 
     do g = 1, self % nG
 
-      scatterVec => scatterXS(self % nG * (g - 1) + (1):self % nG)
+      scatterVec => scatterXS((self % nG * (g - 1) + 1) : (self % nG * self % nG))
 
       ! Calculate scattering source
       scatter = 0.0_defFlt
