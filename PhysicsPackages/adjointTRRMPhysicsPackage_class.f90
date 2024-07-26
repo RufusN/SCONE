@@ -350,8 +350,6 @@ contains
       self % mapFission = .false.
     end if
 
-
-    !!!!!!!!!!!!!!!!!!!!!!
     tempDict => dict % getDictPtr("Perturbation")
     call self % initPerturbation(tempDict)
     
@@ -698,23 +696,24 @@ contains
       !   self % deltaKeff  = self % keff * self % keff * (self % numSum / self % denSum) 
       !   self % sensitivity = (self % deltaKeff / ( self % keff * self % XSchange ) ) 
       ! end if
-      if (isActive) call self % normaliseInnerProduct()
+      ! if (isActive) 
        
       if (isActive) then
+        call self % normaliseInnerProduct()
         ! Accumulate flux scores
         self % numSum = ZERO
         self % denSum = ZERO
         !$omp parallel do schedule(static)
         do i = 1, self % nCells
-        call self % sensitivityCalculation(i, ONE_KEFF, it)
+          call self % sensitivityCalculation(i, ONE_KEFF, it)
         end do
+        !$omp end parallel do
         self % deltaKeff  = self % keff * self % keff * (self % numSum / self % denSum) 
         self % sensitivity = (self % deltaKeff / ( self % keff * self % XSchange ) ) 
+        call self % accumulateFluxAndKeffScores()
       end if
 
-      if (isActive) call self % accumulateFluxAndKeffScores()
-  
-
+      ! if (isActive) 
 
       ! Calculate proportion of cells that were hit
       hitRate = real(sum(self % cellHit),defFlt) / self % nCells
@@ -1115,12 +1114,15 @@ contains
             scalarVecFW(g) = scalarVecFW(g) + deltaFW(g) * tau(g)
         end do
         if (isActive) then
-          !$omp simd 
           do g = 1, self % nG
+            associate(angProd => angularProd(self % nG * (g - 1) + 1 : self % nG * g))
+              !$omp simd 
               do gIn = 1, self % nG
-                pIdx = self % nG * (g - 1) + gIn
-                angularProd(pIdx) = angularProd(pIdx) + avgFluxVec(g) * (deltaFW(gIn) + sourceVecFW(gIn))
+                !pIdx = self % nG * (g - 1) + gIn
+                angProd(gIn) = angProd(gIn) + avgFluxVec(g) * (deltaFW(gIn) + sourceVecFW(gIn))
+                ! angularProd(pIdx) = angularProd(pIdx) + avgFluxVec(g) * (deltaFW(gIn) + sourceVecFW(gIn))
               end do
+              end associate
           end do
         end if
         self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
