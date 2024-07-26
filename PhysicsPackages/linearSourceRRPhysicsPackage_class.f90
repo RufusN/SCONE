@@ -4,7 +4,7 @@ module linearSourceRRPhysicsPackage_class
   use universalVariables
   use genericProcedures,              only : fatalError, numToChar, rotateVector, printFishLineR
   use hashFunctions_func,             only : FNV_1
-  use exponentialRA_func,             only : exponential!, expG, expG2 !=> expTau
+  use exponentialRA_func,             only : exponential, expG, expG2 
   use dictionary_class,               only : dictionary
   use outputFile_class,               only : outputFile
   use rng_class,                      only : RNG
@@ -59,12 +59,6 @@ module linearSourceRRPhysicsPackage_class
                                   xx = 1, xy = 2, xz = 3, &
                                   yy = 4, yz = 5, zz = 6, &
                                   matSize = 6
-
-  ! Parameters for deciding how to invert the moment matrix
-  integer(shortInt), parameter :: invertXYZ = 7, invertXY = 6, &
-                                  invertXZ = 5, invertYZ = 3, &
-                                  invertX = 4, invertY = 2, &
-                                  invertZ = 1
 
   ! Convenient arithmetic parameters
   real(defFlt), parameter :: one_two = real(HALF,defFlt), &
@@ -780,7 +774,7 @@ contains
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt, lenFlt2_2
     real(defFlt), dimension(self % nG)                    :: F1, F2, G1, G2, H, tau, delta, fluxVec, &
-                                                             flatQ, gradQ, xInc, yInc, zInc, fluxVec0
+                                                             flatQ, gradQ, xInc, yInc, zInc, fluxVec0, Gn
     real(defReal), dimension(matSize)                     :: matScore
     real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, &
                                                              xGradVec, yGradVec, zGradVec, &
@@ -878,6 +872,7 @@ contains
       r0NormFlt = real(r0Norm,defFlt)
       rNormFlt = real(rNorm,defFlt)
       muFlt = real(mu0,defFlt)
+      lenFlt = real(length,defFlt)
 
       ! Calculate source terms
       !$omp simd aligned(xGradVec, yGradVec, zGradVec)
@@ -891,39 +886,47 @@ contains
         gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
         gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
       end do
-
-      lenFlt = real(length,defFlt)
       
       ! Compute exponentials necessary for angular flux update
       !$omp simd
       do g = 1, self % nG
         tau(g) = totVec(g) * lenFlt
+        if (tau(g) < 1E-8_defFlt) then 
+          tau(g) = 0.0_defFlt
+        end if
       end do
 
       !$omp simd
       do g = 1, self % nG
-        F1(g)  = exponential(tau(g))
+        Gn(g) = expG(tau(g))
+      end do
+
+     !$omp simd
+      do g = 1, self % nG
+        F1(g)  = 1.0_defFlt - tau(g) * Gn(g) !expTau(tau(g)) * lenFlt
       end do
 
       !$omp simd
       do g = 1, self % nG
-        F2(g)  = 2 * (tau(g) - F1(g)) - tau(g) * F1(g)
-      end do
-      
-      !$omp simd
-      do g = 1, self % nG
-        delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) - &
-                one_two * gradQ(g) * F2(g) / totVec(g)
+        F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt * lenFlt
       end do
 
-      ! Create an intermediate flux variable for use in LS scores
+      !$omp simd
+      do g = 1, self % nG
+        delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) * lenFlt & 
+                    - one_two * gradQ(g) * F2(g) 
+      end do
+
+      ! Intermediate flux variable creation or update
       !$omp simd
       do g = 1, self % nG
         fluxVec0(g) = fluxVec(g)
       end do
+
+      ! Flux vector update
       !$omp simd
       do g = 1, self % nG
-        fluxVec(g) = fluxVec(g) - delta(g)
+        fluxVec(g) = fluxVec(g) - delta(g) * totVec(g) 
       end do
 
       ! Accumulate to scalar flux
@@ -946,59 +949,35 @@ contains
         ! Follows those in Gunow
         lenFlt2_2 = lenFlt * lenFlt * one_two
         
+       !$omp simd
+        do g = 1, self % nG
+          H(g) = ( F1(g) - Gn(g) ) !expH(tau(g))
+        end do
+      
         !$omp simd
         do g = 1, self % nG
-          if (length > 1E-6) then
-            G1(g) = 1 + one_two * tau(g) - (1 + 1.0_defFlt/tau(g)) * F1(g)
-          else
-            G1(g) = tau(g)*tau(g)/3
-          end if
+            G1(g) = one_two - H(g)
         end do
 
-        !$omp simd
-        do g = 1, self % nG
-          if (length > 1E-6) then
-            G2(g) = (two_three * tau(g) - (1 + 2.0_defFlt/tau(g)) * G1(g) )
-          else
-            G2(g) = -tau(g)*tau(g)/12
-          end if
-        end do
-     
-        !$omp simd
-        do g = 1, self % nG
-          H(g) = (one_two * tau(g) - G1(g))
-        end do
-
-        ! Make some more condensed variables to help vectorisation
         !$omp simd 
+        do g = 1, self % nG
+          G2(g) = expG2(tau(g)) 
+        end do
+
         do g = 1, self % nG
           G1(g) = G1(g) * flatQ(g) * lenFlt
           G2(g) = G2(g) * gradQ(g) * lenFlt2_2
           H(g)  = H(g) * fluxVec0(g) * lenFlt
-          H(g) = G1(g) + G2(g) + H(g)
-          flatQ(g) = flatQ(g) * tau(g) + delta(g)
+          H(g) = (G1(g) + G2(g) + H(g)) * lenFlt
+          flatQ(g) = flatQ(g) * lenFlt + delta(g)
         end do
-        
-        ! Attempt based on Fitzgerald... Going to be very explicitly written
-        !!$omp simd 
-        !do g = 1, self % nG
-        !  xInc(g) = real(r0Norm(x),defFlt) * (delta(g) + totVec(g) * flatQ(g) * lenFlt) + &
-        !        real(mu0(x),defFlt) * (G1(g) * flatQ(g) * lenFlt + gradQ(g) * G2(g) * lenFlt2_2 + &
-        !       lenFlt * fluxVec0(g) * H(g)) 
-        !  yInc(g) = real(r0Norm(y),defFlt) * (delta(g) + totVec(g) * flatQ(g) * lenFlt) + &
-        !        real(mu0(y),defFlt) * (G1(g) * flatQ(g) * lenFlt + gradQ(g) * G2(g) * lenFlt2_2 + &
-        !       lenFlt * fluxVec0(g) * H(g)) 
-        !  zInc(g) = real(r0Norm(z),defFlt) * (delta(g) + totVec(g) * flatQ(g) * lenFlt) + &
-        !       real(mu0(z),defFlt) * (G1(g) * flatQ(g) * lenFlt + gradQ(g) * G2(g) * lenFlt2_2 + &
-        !       lenFlt * fluxVec0(g) * H(g))
-        !end do
+
         !$omp simd
         do g = 1, self % nG
           xInc(g) = r0NormFlt(x) * flatQ(g) + muFlt(x) * H(g) 
           yInc(g) = r0NormFlt(y) * flatQ(g) + muFlt(y) * H(g) 
-          zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g) 
+          zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g)
         end do
-      
 
         call OMP_set_lock(self % locks(cIdx))
         
@@ -1064,10 +1043,10 @@ contains
     real(defFlt)                                  :: norm
     real(defReal)                                 :: normVol
     real(defReal), save                           :: invVol
-    real(defFlt), save                            :: total, vol, NTV
+    real(defFlt), save                            :: total, vol, NTV, D, SigGG
     integer(shortInt)                             :: cIdx
     integer(shortInt), save                       :: g, matIdx, idx, dIdx, mIdx
-    !$omp threadprivate(total, vol, idx, mIdx, dIdx, g, matIdx, invVol, NTV)
+    !$omp threadprivate(total, vol, idx, mIdx, dIdx, g, matIdx, invVol, NTV, sigGG, D)
 
     norm = real(ONE / self % lengthPerIt, defFlt)
     normVol = ONE / (self % lengthPerIt * it)
@@ -1114,19 +1093,29 @@ contains
 
       do g = 1, self % nG
 
-        total = self % sigmaT((matIdx - 1) * self % nG + g)
         idx   = self % nG * (cIdx - 1) + g
-        NTV = norm / (total * vol)
-        
+        NTV = norm / vol
+        total = self % sigmaT((matIdx - 1) * self % nG + g)
+        sigGG = self % sigmaS(self % nG * self % nG * (matIdx - 1) + self % nG * (g - 1) + g)
+
         if (vol > volume_tolerance) then
-          self % scalarFlux(idx) = self % scalarFlux(idx) * NTV
+          self % scalarFlux(idx) =  self % scalarFlux(idx) * NTV
           self % scalarX(idx) = self % scalarX(idx) * NTV 
-          self % scalarY(idx) = self % scalarY(idx) * NTV
-          self % scalarZ(idx) = self % scalarZ(idx) * NTV
+          self % scalarY(idx) = self % scalarY(idx) * NTV 
+          self % scalarZ(idx) = self % scalarZ(idx) * NTV 
         end if
 
-        self % scalarFlux(idx) =  (self % scalarflux(idx) + self % source(idx))
+        ! Presumes non-zero total XS
+        if ((sigGG < 0.0_defFlt) .and. (total > 0.0_defFlt)) then
+          D = -real(self % rho, defFlt) * sigGG / total
+        else
+          D = 0.0_defFlt
+        end if
 
+        self % scalarFlux(idx) =  (self % scalarFlux(idx) + self % source(idx) + D * self % prevFlux(idx) ) / (1 + D)
+        self % scalarX(idx) =  (self % scalarX(idx) + D * self % prevX(idx) ) / (1 + D)
+        self % scalarY(idx) =  (self % scalarY(idx) + D * self % prevY(idx) ) / (1 + D)
+        self % scalarZ(idx) =  (self % scalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
       end do
 
     end do
@@ -1146,36 +1135,34 @@ contains
                                                              xSource, ySource, zSource
     real(defFlt)                                          :: invMxx, invMxy, invMxz, invMyy, invMyz, invMzz
     real(defFlt), dimension(:), pointer                   :: nuFission, total, chi, scatterXS 
-    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx, &
-                                                             condX, condY, condZ, inversionTest
+    integer(shortInt)                                     :: matIdx, g, gIn, baseIdx, idx
     real(defFlt), pointer, dimension(:)                   :: fluxVec, scatterVec, xFluxVec, yFluxVec, zFluxVec
     real(defReal), pointer, dimension(:)                  :: momVec
     real(defReal)                                         :: det, one_det 
-
+    
     ! Identify material
-    matIdx  =  self % geom % geom % graph % getMatFromUID(cIdx) 
+    matIdx  =  self % geom % geom % graph % getMatFromUID(cIdx)
+
+    ! Guard against void cells
+    if (matIdx >= VOID_MAT - 1) then
+      baseIdx = self % ng * (cIdx - 1)
+      do g = 1, self % nG
+        idx = baseIdx + g
+        self % source(idx) = 0.0_defFlt
+        self % sourceX(idx) = 0.0_defFlt
+        self % sourceY(idx) = 0.0_defFlt
+        self % sourceZ(idx) = 0.0_defFlt
+      end do
+      return
+    end if
 
     momVec => self % momMat(((cIdx - 1) * matSize + 1):(cIdx * matSize))
 
-    ! Pre-invert the moment matrix
-    ! Need to check for poor conditioning by evaluating the
-    ! diagonal elements of the matrix
-    condX = 0
-    condY = 0
-    condZ = 0
+    det = momVec(xx) * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)) &
+    - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
+    + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-    if (momVec(xx) > 1.0E-6_defReal) condX = 1
-    if (momVec(yy) > 1.0E-6_defReal) condY = 1
-    if (momVec(zz) > 1.0E-6_defReal) condZ = 1
-
-    ! Map conditions to test variable
-    inversionTest = condX * 4 + condY * 2 + condZ
-
-    select case(inversionTest)
-    case(invertXYZ)
-      det = momVec(xx) * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)) &
-            - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
-            + 2 * momVec(xy) * momVec(xz) * momVec(yz)
+    if ((abs(det) > 1E-10) .and. self % volume(cIdx) > 1E-6 ) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
       one_det = ONE/det
       invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
       invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
@@ -1183,85 +1170,14 @@ contains
       invMyy = real(one_det * (momVec(xx) * momVec(zz) - momVec(xz) * momVec(xz)),defFlt)
       invMyz = real(one_det * (momVec(xy) * momVec(xz) - momVec(xx) * momVec(yz)),defFlt)
       invMzz = real(one_det * (momVec(xx) * momVec(yy) - momVec(xy) * momVec(xy)),defFlt)
-
-    case(invertYZ)
-      det = momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)
-      one_det = ONE/det
-      invMxx = 0.0_defFlt
-      invMxy = 0.0_defFlt
-      invMxz = 0.0_defFlt
-      invMyy = real(one_det * momVec(zz),defFlt)
-      invMyz = real(-one_det * momVec(yz),defFlt)
-      invMzz = real(one_det * momVec(yy),defFlt)
-
-    case(invertXY)
-      det = momVec(xx) * momVec(yy) - momVec(xy) * momVec(xy)
-      one_det = ONE/det
-      invMxx = real(one_det * momVec(yy),defFlt)
-      invMxy = real(-one_det * momVec(xy),defFlt)
-      invMxz = 0.0_defFlt
-      invMyy = real(one_det * momVec(xx),defFlt)
-      invMyz = 0.0_defFlt
-      invMzz = 0.0_defFlt
-
-    case(invertXZ)
-      det = momVec(xx) * momVec(zz) - momVec(xz) * momVec(xz)
-      one_det = ONE/det
-      invMxx = real(one_det * momVec(zz),defFlt)
-      invMxy = 0.0_defFlt
-      invMxz = real(-one_det * momVec(xz),defFlt)
-      invMyy = 0.0_defFlt
-      invMyz = 0.0_defFlt
-      invMzz = real(one_det * momVec(xx),defFlt)
-
-    case(invertX)
-      det = momVec(xx)
-      one_det = ONE/det
-      invMxx = real(one_det,defFlt)
-      invMxy = 0.0_defFlt
-      invMxz = 0.0_defFlt
-      invMyy = 0.0_defFlt
-      invMyz = 0.0_defFlt
-      invMzz = 0.0_defFLt
-
-    case(invertY)
-      det = momVec(yy)
-      one_det = ONE/det
-      invMxx = 0.0_defFlt
-      invMxy = 0.0_defFlt
-      invMxz = 0.0_defFlt
-      invMyy = real(one_det,defFlt)
-      invMyz = 0.0_defFlt
-      invMzz = 0.0_defFlt
-
-    case(invertZ)
-      det = momVec(zz)
-      one_det = ONE/det
-      invMxx = 0.0_defFlt
-      invMxy = 0.0_defFlt
-      invMxz = 0.0_defFlt
-      invMyy = 0.0_defFlt
-      invMyz = 0.0_defFlt
-      invMzz = real(one_det,defFlt)
-
-    case default
+    else
       invMxx = 0.0_defFlt
       invMxy = 0.0_defFlt
       invMxz = 0.0_defFlt
       invMyy = 0.0_defFlt
       invMyz = 0.0_defFlt
       invMzz = 0.0_defFlt
-      det = ONE
-    end select
-
-    ! Check for zero determinant
-    if (abs(det) < 1E-6) then
-      invMxx = 0.0_defFlt
-      invMxy = 0.0_defFlt
-      invMxz = 0.0_defFlt
-      invMyy = 0.0_defFlt
-      invMyz = 0.0_defFlt
-      invMzz = 0.0_defFlt
+      det = ONE 
     end if
      
     ! Obtain XSs
