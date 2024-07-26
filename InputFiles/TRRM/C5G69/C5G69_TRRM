@@ -12,6 +12,7 @@ rho 0.3;
 XSdata   mg; 
 dataType mg;
 outputFile C5G69_TRRM ;
+outputFormat asciiJSON;
 
 Perturbation { material 5; XStype 2; XSchange 0.01; energyGroups (6); }
 

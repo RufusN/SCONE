@@ -1,6 +1,7 @@
-!type randomRayPhysicsPackage; 
-type linearSourceRRPhysicsPackage;
- 
+//type randomRayPhysicsPackage; 
+//type linearSourceRRPhysicsPackage;
+type adjointLSRRPhysicsPackage;
+
 pop      1750; 
 active   2600;  
 inactive 1000; 
@@ -11,6 +12,9 @@ cache 1;
 XSdata mg; 
 dataType mg;
 outputFile C5G7_TRRM_coarse;
+outputFormat asciiJSON;
+
+Perturbation { material 5; XStype 2; XSchange 0.01; energyGroups (6); }
 
 fissionMap {type multiMap;
             maps (xax yax);

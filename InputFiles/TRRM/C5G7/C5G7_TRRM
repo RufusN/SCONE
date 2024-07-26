@@ -1,8 +1,9 @@
 type adjointTRRMPhysicsPackage;
+//type randomRayPhysicsPackage;
 
 pop      1750; 
-active   2600;  
-inactive 1000; 
+active   40;  
+inactive 600; 
 dead     20;  
 termination 220;  
 plot 1;
@@ -11,8 +12,9 @@ seed -2103768497;
 XSdata   mg; 
 dataType mg;
 outputFile C5G7_TRRM ;
+outputFormat asciiJSON;
 
-Perturbation { material 1; XStype 3; XSchange 0.01; energyGroups (1 2); }
+Perturbation { material 5; XStype 2; XSchange 0.01; energyGroups (6); }
 //Perturbation { material 5; XStype 1; XSchange 0.01; energyGroups (4); }
 //Perturbation { material 5; XStype 2; XSchange 0.01; energyGroups (6); }
 
