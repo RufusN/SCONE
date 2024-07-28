@@ -1389,6 +1389,84 @@ contains
 
   end subroutine adjointSourceUpdateKernel
 
+  subroutine sensitivityCalculation(self, cIdx, ONE_KEFF, it, numSum, denSum)
+    class(adjointTRRMPhysicsPackage), target, intent(inout) :: self
+    real(defFlt), intent(in)                      :: ONE_KEFF
+    integer(shortInt), intent(in)                 :: it
+    integer(shortInt), intent(in)                 :: cIdx
+    real(defReal), intent(out)                    :: numSum, denSum
+    real(defReal)                                 :: delta, fission, fission_pert, scatter_pert
+    integer(shortInt)                             :: baseIdx, idx, matIdx, g, gIn, mat, g1Pert, g2pert, i
+    real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture, scatterXS, &
+                                                      fissVec, scatterVec
+    real(defReal), dimension(:), pointer          :: IPVec
+
+    mat  =  self % geom % geom % graph % getMatFromUID(cIdx) 
+    baseIdx = (cIdx - 1) * self % nG 
+    matIdx = (mat - 1) * self % nG
+
+    IPVec => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG)
+    ! total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
+    nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
+    fissVec => self % fission((matIdx + 1):(matIdx + self % nG))
+    chi => self % chi((matIdx + 1):(matIdx + self % nG))
+    capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
+    scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
+
+    numSum = ZERO
+    denSum = ZERO
+
+    do g = 1, self % nG
+      idx = baseIdx + g
+      fission = 0.0_defFlt
+      !$omp simd
+      do gIn = 1, self % nG 
+        fission = fission + IPVec((g - 1) * self % nG + gIn) * nuFission(gIn)
+      end do
+      fission  = fission * chi(g)
+      denSum = denSum + fission
+    end do
+
+    if (mat == self % matPert .and. self % XStype == 1) then ! capture - complete 
+      do i = 1, size(self % energyId)
+        g1Pert = self % energyId(1)
+        delta = 0.0_defFlt
+        delta = self % XSchange * capture(g1Pert) * IPVec((g1Pert - 1) * self % nG + g1Pert)
+        numSum = numSum - delta
+      end do
+
+    elseif ( mat == self % matPert .and. self % XStype == 2) then ! fission - complete
+      do i = 1, size(self % energyId)
+        g1Pert = self % energyId(i)
+        do g = 1, self % nG 
+          delta = 0.0_defFlt
+          fission_pert = 0.0_defFlt
+          fission_pert = fission_pert + IPVec(self % nG * (g - 1) + g1Pert) * nuFission(g1Pert) * self % XSchange
+          if ( g == g1Pert ) then 
+            delta = IPVec((g - 1) * self % nG + g) * fissVec(g) * self % XSchange
+          end if
+          delta = fission_pert * chi(g) * ONE_KEFF - delta
+          numSum = numSum + delta
+        end do
+      end do
+
+    elseif (mat == self % matPert .and. self % XStype == 3) then !scatter - complete
+      do i = 1, size(self % energyId), 2
+        g1Pert = self % energyId(i)
+        g2Pert = self % energyId(i+1)
+        delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * &
+                      self % XSchange   
+           
+        scatter_pert = scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
+                                    IPVec((g2Pert - 1 ) * self % nG + g1Pert) * self % XSchange
+        delta = scatter_pert - delta
+        numSum = numSum + delta
+      end do
+    end if
+
+
+  end subroutine sensitivityCalculation
+
   !!
   !! Calculate keff
   !!
@@ -1478,84 +1556,6 @@ contains
 
 
   end subroutine resetFluxes
-
-  subroutine sensitivityCalculation(self, cIdx, ONE_KEFF, it, numSum, denSum)
-    class(adjointTRRMPhysicsPackage), target, intent(inout) :: self
-    real(defFlt), intent(in)                      :: ONE_KEFF
-    integer(shortInt), intent(in)                 :: it
-    integer(shortInt), intent(in)                 :: cIdx
-    real(defReal), intent(out)                    :: numSum, denSum
-    real(defReal)                                 :: delta, fission, fission_pert, scatter_pert
-    integer(shortInt)                             :: baseIdx, idx, matIdx, g, gIn, mat, g1Pert, g2pert, i
-    real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture, scatterXS, &
-                                                      fissVec, scatterVec
-    real(defReal), dimension(:), pointer          :: IPVec
-
-    mat  =  self % geom % geom % graph % getMatFromUID(cIdx) 
-    baseIdx = (cIdx - 1) * self % nG 
-    matIdx = (mat - 1) * self % nG
-
-    IPVec => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG)
-    ! total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
-    nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
-    fissVec => self % fission((matIdx + 1):(matIdx + self % nG))
-    chi => self % chi((matIdx + 1):(matIdx + self % nG))
-    capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
-    scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
-
-    numSum = ZERO
-    denSum = ZERO
-
-    do g = 1, self % nG
-      idx = baseIdx + g
-      fission = 0.0_defFlt
-      !$omp simd
-      do gIn = 1, self % nG 
-        fission = fission + IPVec((g - 1) * self % nG + gIn) * nuFission(gIn)
-      end do
-      fission  = fission * chi(g)
-      denSum = denSum + fission
-    end do
-
-    if (mat == self % matPert .and. self % XStype == 1) then ! capture - complete 
-      do i = 1, size(self % energyId)
-        g1Pert = self % energyId(1)
-        delta = 0.0_defFlt
-        delta = self % XSchange * capture(g1Pert) * IPVec((g1Pert - 1) * self % nG + g1Pert)
-        numSum = numSum - delta
-      end do
-
-    elseif ( mat == self % matPert .and. self % XStype == 2) then ! fission - complete
-      do i = 1, size(self % energyId)
-        g1Pert = self % energyId(i)
-        do g = 1, self % nG 
-          delta = 0.0_defFlt
-          fission_pert = 0.0_defFlt
-          fission_pert = fission_pert + IPVec(self % nG * (g - 1) + g1Pert) * nuFission(g1Pert) * self % XSchange
-          if ( g == g1Pert ) then 
-            delta = IPVec((g - 1) * self % nG + g) * fissVec(g) * self % XSchange
-          end if
-          delta = fission_pert * chi(g) * ONE_KEFF - delta
-          numSum = numSum + delta
-        end do
-      end do
-
-    elseif (mat == self % matPert .and. self % XStype == 3) then !scatter - complete
-      do i = 1, size(self % energyId), 2
-        g1Pert = self % energyId(i)
-        g2Pert = self % energyId(i+1)
-        delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * &
-                      self % XSchange   
-           
-        scatter_pert = scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
-                                    IPVec((g2Pert - 1 ) * self % nG + g1Pert) * self % XSchange
-        delta = scatter_pert - delta
-        numSum = numSum + delta
-      end do
-    end if
-
-
-  end subroutine sensitivityCalculation
 
   !!
   !! Accumulate flux scores for stats
@@ -1714,7 +1714,7 @@ contains
           real(self % keffScore(1) - self % deltaKeffScore(1),defReal), name)
     call out % endBlock()
 
-    name = 'sensitivity+relUncertainty'
+    name = 'sensitivity'
     call out % startBlock(name)
     call out % printResult(real(self % sensitivityScore(1),defReal), real(self % sensitivityScore(2)&
                                         /self % sensitivityScore(1),defReal), name)
