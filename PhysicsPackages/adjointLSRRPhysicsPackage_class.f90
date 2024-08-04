@@ -974,18 +974,6 @@ contains
     tally = .true.
     oversized = .false.
 
-    ! allocate(lenBackOversized(self % NSegMax*4))    
-    ! allocate(cIdxBackOversized(self % NSegMax*4))
-    ! allocate(vacBackOversized(self % NSegMax*4))
-    ! allocate(deltaRecordOversized(self % nG * self % NSegMax*4*self % nG))
-    ! allocate(xIncRecordOversized(self % nG * self % NSegMax*4))
-    ! allocate(yIncRecordOversized(self % nG * self % NSegMax*4))
-    ! allocate(zIncRecordOversized(self % nG * self % NSegMax*4))
-
-    ! allocate(rNormFltOversized(3,self % NSegMax*4))
-    ! allocate(r0NormFltOversized(3, self % NSegMax*4))
-    ! allocate(muFltOversized(3, self % NSegMax*4))
-
     do while (totalLength < self % termination + self % dead)
 
       ! Get ray coords for LS calculations
@@ -1067,7 +1055,7 @@ contains
       lenFlt = real(length,defFlt)
 
       ! Calculate source terms
-      !$omp simd aligned(xGradVec, yGradVec, zGradVec)
+      !$omp simd aligned(xGradVec, yGradVec, zGradVec, sourceVec)
       do g = 1, self % nG
         flatQ(g) = rNormFlt(x) * xGradVec(g)
         flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
@@ -1288,7 +1276,7 @@ contains
           if (oversized) then
             !$omp simd
             do g = 1, self % nG
-              ! avgRecordOversized((segCount - 1) * self % nG + g) = (flatQ(g) + delta(g))
+              avgRecordOversized((segCount - 1) * self % nG + g) = (flatQ0(g) + delta(g))
               deltaRecordOversized((segCount - 1) * self % nG + g) = delta(g) 
               xIncRecordOversized((segCount - 1) * self % nG + g) = xInc(g)
               yIncRecordOversized((segCount - 1) * self % nG + g) = yInc(g)
