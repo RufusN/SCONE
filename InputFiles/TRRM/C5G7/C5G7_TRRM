@@ -1,8 +1,9 @@
-type adjointTRRMPhysicsPackage;
-//type randomRayPhysicsPackage;
+//type adjointTRRMPhysicsPackage;
+//type linearSourceRRPhysicsPackage;
+type adjointLSRRPhysicsPackage;
 
-pop      1750; 
-active   40;  
+pop      1500; 
+active   400;  
 inactive 600; 
 dead     20;  
 termination 220;  

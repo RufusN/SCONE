@@ -1,16 +1,18 @@
 //type randomRayPhysicsPackage; 
 //type linearSourceRRPhysicsPackage;
 type adjointLSRRPhysicsPackage;
+//type adjointTRRMPhysicsPackage;
 
-pop      1750; 
-active   2600;  
-inactive 1000; 
+pop      250; 
+active   100;  
+inactive 300; 
 dead     20;  
 termination 220;  
 plot 0;
 cache 1;
 XSdata mg; 
 dataType mg;
+//seed -1386192845;
 outputFile C5G7_TRRM_coarse;
 outputFormat asciiJSON;
 
