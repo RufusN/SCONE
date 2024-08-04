@@ -52,7 +52,7 @@ module adjointLSRRPhysicsPackage_class
   private
 
   ! Parameter for when to skip a tiny volume
-  real(defReal), parameter :: volume_tolerance = 1.0E-10
+  real(defReal), parameter :: volume_tolerance = 1.0E-10_defReal
 
   ! Parameters for indexing into matrices and spatial moments
   integer(shortInt), parameter :: x = 1, y = 2, z = 3, nDim = 3, &
@@ -309,6 +309,7 @@ module adjointLSRRPhysicsPackage_class
     procedure, private :: adjointNormaliseFluxAndVolume
     procedure, private :: normaliseInnerProduct
     procedure, private :: resetFluxes
+    procedure, private :: sensitivityCalculation
     procedure, private :: accumulateFluxAndKeffScores
     procedure, private :: finaliseFluxAndKeffScores
     procedure, private :: printResults
@@ -526,7 +527,16 @@ contains
 
     allocate(self % adjScalarFlux(self % nCells * self % nG))
     allocate(self % adjPrevFlux(self % nCells * self % nG))
-    allocate(self % adjSource(self % nCells * self % nG))
+    allocate(self % adjSource(self % nCells * self % nG)) 
+    allocate(self % adjSourceX(self % nCells * self % nG))
+    allocate(self % adjSourceY(self % nCells * self % nG))
+    allocate(self % adjSourceZ(self % nCells * self % nG))
+    allocate(self % adjScalarX(self % nCells * self % nG))
+    allocate(self % adjScalarY(self % nCells * self % nG))
+    allocate(self % adjScalarZ(self % nCells * self % nG))
+    allocate(self % adjPrevX(self % nCells * self % nG))
+    allocate(self % adjPrevY(self % nCells * self % nG))
+    allocate(self % adjPrevZ(self % nCells * self % nG))
 
     allocate(self % angularIP(self % nCells * self % nG * self % nG))
     
@@ -642,13 +652,15 @@ contains
     class(adjointLSRRPhysicsPackage), intent(inout) :: self
     type(ray), save                               :: r
     type(RNG), target, save                       :: pRNG
-    real(defFlt)                                  :: hitRate, ONE_KEFF
+    real(defReal)                                 :: numTotal, denTotal
+    real(defReal),save                            :: numSum, denSum
+    real(defFlt)                                  :: hitRate, ONE_KEFF, adj_keff
     real(defReal)                                 :: elapsed_T, end_T, T_toEnd, transport_T
     logical(defBool)                              :: stoppingCriterion, isActive
     integer(shortInt)                             :: i, itInac, itAct, it
     integer(longInt), save                        :: ints
     integer(longInt)                              :: intersections
-    !$omp threadprivate(pRNG, r, ints)
+    !$omp threadprivate(pRNG, r, ints, numSum, denSum)
 
     ! Reset and start timer
     call timerReset(self % timerMain)
@@ -676,6 +688,15 @@ contains
     self % adjPrevFlux   = 1.0_defFlt
     self % adjSource     = 0.0_defFlt
     self % angularIP     = 0.0_defReal
+    self % adjScalarX  = 0.0_defFlt
+    self % adjScalarY  = 0.0_defFlt
+    self % adjScalarZ  = 0.0_defFlt
+    self % adjSourceX  = 0.0_defFlt
+    self % adjSourceY  = 0.0_defFlt
+    self % adjSourceZ  = 0.0_defFlt
+    self % adjPrevX    = 0.0_defFlt
+    self % adjPrevY    = 0.0_defFlt
+    self % adjPrevZ    = 0.0_defFlt
     self % adjKeffScore     = ZERO
     self % deltaKeffScore   = ZERO
     self % sensitivityScore = ZERO
@@ -712,9 +733,11 @@ contains
       it = itInac + itAct
 
       ONE_KEFF = 1.0_defFlt / self % keff
+      adj_KEFF = 1.0_defFlt / self % adjkeff
       !$omp parallel do schedule(static)
       do i = 1, self % nCells
         call self % sourceUpdateKernel(i, ONE_KEFF)
+        call self % adjointSourceUpdateKernel(i, adj_KEFF)
       end do
       !$omp end parallel do
 
@@ -750,25 +773,29 @@ contains
 
       ! Normalise flux estimate and combines with source
       call self % normaliseFluxAndVolume(it)
+      call self % adjointNormaliseFluxAndVolume(it)
 
       ! Calculate new k
       call self % calculateKeff()
 
-      if (isActive) call self % normaliseInnerProduct()
-       
-      ! if (isActive) then
-      !   ! Accumulate flux scores
-      !   self % numSum = ZERO
-      !   self % denSum = ZERO
-      !   !$omp parallel do schedule(static)
-      !   do i = 1, self % nCells
-      !   call self % sensitivityCalculation(i, ONE_KEFF, it)
-      !   end do
-      !   self % deltaKeff  = self % keff * self % keff * (self % numSum / self % denSum) 
-      !   self % sensitivity = (self % deltaKeff / ( self % keff * self % XSchange ) ) 
-      ! end if
+      if (isActive) then
+        call self % normaliseInnerProduct()
+        ! Accumulate flux scores
+        numTotal = ZERO
+        denTotal = ZERO 
 
-      if (isActive) call self % accumulateFluxAndKeffScores()
+        !$omp parallel do schedule(static) reduction(+: numTotal, denTotal)
+        do i = 1, self % nCells
+          call self % sensitivityCalculation(i, ONE_KEFF, it, numSum, denSum)
+          numTotal = numTotal + numSum
+          denTotal = denTotal + denSum
+        end do
+        !$omp end parallel do
+
+        self % deltaKeff  = self % keff * self % keff * (numTotal / denTotal) 
+        self % sensitivity = (self % deltaKeff / ( self % keff * self % XSchange ) ) 
+        call self % accumulateFluxAndKeffScores()
+      end if
 
       ! Calculate proportion of cells that were hit
       hitRate = real(sum(self % cellHit),defFlt) / self % nCells
@@ -806,11 +833,13 @@ contains
       end if
       print *, 'Cell hit rate: ', trim(numToChar(real(hitRate,defReal)))
       print *, 'keff: ', trim(numToChar(real(self % keff,defReal)))
+      print *, 'adjoint_keff: ', trim(numToChar(real(self % adjkeff,defReal)))
       print *, 'Elapsed time: ', trim(secToChar(elapsed_T))
       print *, 'End time:     ', trim(secToChar(end_T))
       print *, 'Time to end:  ', trim(secToChar(T_toEnd))
       print *, 'Time per integration (ns): ', &
               trim(numToChar(transport_T*10**9/(self % nG * intersections)))
+
 
     end do
 
@@ -890,22 +919,22 @@ contains
     type(distCache)                                       :: cache
     real(defFlt)                                          :: lenFlt, lenFlt2_2
     real(defFlt), dimension(self % nG)                    :: F1, F2, G1, G2, H, tau, delta, fluxVec, &
-                                                             flatQ, gradQ, xInc, yInc, zInc, fluxVec0, Gn
+                                                             flatQ, gradQ, xInc, yInc, zInc, fluxVec0, &
+                                                              flatQ0, Gn
     real(defReal), dimension(matSize)                     :: matScore
     real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, &
                                                              xGradVec, yGradVec, zGradVec, &
                                                              xMomVec, yMomVec, zMomVec, &
                                                              xMomVecFW, yMomVecFW, zMomVecFW, &
-                                                             xIncFW, yIncFW, zIncFW
+                                                             xIncFW, yIncFW, zIncFW, scalarVecFW, &
+                                                             sourceVecFW, deltaFW, avgFluxVecFW
     real(defReal), pointer, dimension(:)                  :: mid, momVec, centVec
     real(defReal), pointer                                :: volTrack
     real(defReal), dimension(3)                           :: r0, mu0, rC, r0Norm, rNorm
     real(defFlt), dimension(3)                            :: muFlt, rNormFlt, r0NormFlt
-
     integer(shortInt)                                     :: segCount, i, segCountCrit, segIdx, gIn, pIdx
     logical(defBool)                                      :: tally,  oversized
     real(defFlt), dimension(self % nG)                    :: avgFluxVec
-    real(defFlt), pointer, dimension(:)                   :: scalarVecFW, sourceVecFW, deltaFW, xInFW, yInFW, zInFW
     real(defReal), pointer, dimension(:)                  :: angularProd
     real(defFlt), dimension(self % NSegMax*2)             :: lenBack
     real(shortInt), dimension(self % NSegMax*2)           :: cIdxBack
@@ -922,6 +951,9 @@ contains
     real(defFlt), target, dimension(3, self % NSegMax*2)          :: muFltRecord, rNormFltRecord, r0NormFltRecord
     real(defFlt), target, allocatable, dimension(:,:)             :: muFltOversized, rNormFltOversized, r0NormFltOversized
     real(defFlt), allocatable, dimension(:,:)                     :: muFltBuffer, rNormFltBuffer, r0NormFltBuffer
+    real(defFlt), target, allocatable, dimension(:)       :: avgRecordOversized
+    real(defFlt), allocatable, dimension(:)               :: avgRecordBuffer
+    real(defFlt), target, dimension(self % nG * self % NSegMax*2) :: avgRecord
 
     
     
@@ -942,20 +974,19 @@ contains
     tally = .true.
     oversized = .false.
 
-    allocate(lenBackOversized(self % NSegMax*4))    
-    allocate(cIdxBackOversized(self % NSegMax*4))
-    allocate(vacBackOversized(self % NSegMax*4))
-    allocate(deltaRecordOversized(self % nG * self % NSegMax*4*self % nG))
-    allocate(xIncRecordOversized(self % nG * self % NSegMax*4))
-    allocate(yIncRecordOversized(self % nG * self % NSegMax*4))
-    allocate(zIncRecordOversized(self % nG * self % NSegMax*4))
+    ! allocate(lenBackOversized(self % NSegMax*4))    
+    ! allocate(cIdxBackOversized(self % NSegMax*4))
+    ! allocate(vacBackOversized(self % NSegMax*4))
+    ! allocate(deltaRecordOversized(self % nG * self % NSegMax*4*self % nG))
+    ! allocate(xIncRecordOversized(self % nG * self % NSegMax*4))
+    ! allocate(yIncRecordOversized(self % nG * self % NSegMax*4))
+    ! allocate(zIncRecordOversized(self % nG * self % NSegMax*4))
 
-    allocate(rNormFltOversized(3,self % NSegMax*4))
-    allocate(r0NormFltOversized(3, self % NSegMax*4))
-    allocate(muFltOversized(3, self % NSegMax*4))
+    ! allocate(rNormFltOversized(3,self % NSegMax*4))
+    ! allocate(r0NormFltOversized(3, self % NSegMax*4))
+    ! allocate(muFltOversized(3, self % NSegMax*4))
 
-
-    do while (totalLength < self % termination)
+    do while (totalLength < self % termination + self % dead)
 
       ! Get ray coords for LS calculations
       mu0 = r % dirGlobal()
@@ -966,17 +997,22 @@ contains
       cIdx    = r % coords % uniqueID
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
-        
         ! Cache total cross section
         totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
       end if
 
-      ! Set maximum flight distance and ensure ray is active
+       ! Set maximum flight distance and ensure ray is active
       if (totalLength >= self % dead) then
         length = self % termination - totalLength 
         activeRay = .true.
       else
         length = self % dead - totalLength
+      end if
+
+      !second dead length
+      if (totalLength >= self % termination) then
+        length = self % termination + self % dead - totalLength
+        tally = .false.
       end if
 
       ! Move ray
@@ -1001,9 +1037,7 @@ contains
       if (.not. self % cellFound(cIdx)) then
         !$omp critical 
         self % cellFound(cIdx) = .true.
-        self % cellPos(cIdx,x) = rC(x)
-        self % cellPos(cIdx,y) = rC(y)
-        self % cellPos(cIdx,z) = rC(z)
+        self % cellPos(cIdx,:) = rC(:)
         !$omp end critical
       end if
 
@@ -1066,12 +1100,12 @@ contains
 
       !$omp simd
       do g = 1, self % nG
-        F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt * lenFlt
+        F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt 
       end do
 
       !$omp simd
       do g = 1, self % nG
-        delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) * lenFlt & 
+        delta(g) = (fluxVec(g) - flatQ(g)) * F1(g)  & 
                     - one_two * gradQ(g) * F2(g) 
       end do
 
@@ -1084,7 +1118,12 @@ contains
       ! Flux vector update
       !$omp simd
       do g = 1, self % nG
-        fluxVec(g) = fluxVec(g) - delta(g) * totVec(g) 
+        fluxVec(g) = fluxVec(g) - delta(g) * tau(g) 
+      end do
+
+      !$omp simd
+      do g = 1, self % nG
+        flatQ0(g) = flatQ(g)
       end do
 
       ! Accumulate to scalar flux
@@ -1127,7 +1166,7 @@ contains
           G2(g) = G2(g) * gradQ(g) * lenFlt2_2
           H(g)  = H(g) * fluxVec0(g) * lenFlt
           H(g) = (G1(g) + G2(g) + H(g)) * lenFlt
-          flatQ(g) = flatQ(g) * lenFlt + delta(g)
+          flatQ(g) = flatQ(g) * lenFlt + delta(g) * lenFlt
         end do
 
         !$omp simd
@@ -1144,17 +1183,38 @@ contains
         if ( (segCount >= (self % NSegMax - 1)) .and. .not. oversized) then
 
           oversized = .true.
+          allocate(lenBackOversized(size(lenBack) * 2))
           lenBackOversized(1:size(lenBack)) = lenBack
+
+          allocate(cIdxBackOversized(size(cIdxBack) * 2))
           cIdxBackOversized(1:size(cIdxBack)) = cIdxBack
+
+          allocate(vacBackOversized(size(vacBack) * 2))
           vacBackOversized(1:size(vacBack)) = vacBack
+
+          allocate(deltaRecordOversized(size(deltaRecord) * 2))
           deltaRecordOversized(1:size(deltaRecord)) = deltaRecord
 
+          allocate(xIncRecordOversized(size(xIncRecord) * 2))
           xIncRecordOversized(1:size(xIncRecord)) = xIncRecord
+
+          allocate(yIncRecordOversized(size(yIncRecord) * 2))
           yIncRecordOversized(1:size(yIncRecord)) = yIncRecord
+
+          allocate(zIncRecordOversized(size(zIncRecord) * 2))
           zIncRecordOversized(1:size(zIncRecord)) = zIncRecord
-          rNormFltOversized(1:size(rNormFltRecord(:,1)),:) = rNormFltRecord
-          r0NormFltOversized(1:size(r0NormFltRecord(:,1)),:) = r0NormFltRecord
-          muFltOversized(1:size(muFltRecord(:,1)),:) = muFltRecord
+
+          allocate(rNormFltOversized(3, size(rNormFltRecord(1,:)) * 2))
+          rNormFltOversized(:, 1:size(rNormFltRecord(1,:))) = rNormFltRecord
+
+          allocate(r0NormFltOversized(3, size(r0NormFltRecord(1,:)) * 2))
+          r0NormFltOversized(:, 1:size(r0NormFltRecord(1,:))) = r0NormFltRecord
+
+          allocate(muFltOversized(3, size(muFltRecord(1,:)) * 2))
+          muFltOversized(:, 1:size(muFltRecord(1,:))) = muFltRecord
+
+          allocate(avgRecordOversized(size(avgRecord) * 2))
+          avgRecordOversized(1:size(avgRecord)) = avgRecord
 
         elseif (oversized) then
 
@@ -1178,22 +1238,30 @@ contains
             allocate(xIncRecordBuffer(size(xIncRecordOversized) * 2))  
             xIncRecordBuffer(1:size(xIncRecordOversized)) = xIncRecordOversized 
             call move_alloc(xIncRecordBuffer, xIncRecordOversized)
+
             allocate(yIncRecordBuffer(size(yIncRecordOversized) * 2))  
             yIncRecordBuffer(1:size(yIncRecordOversized)) = yIncRecordOversized
             call move_alloc(yIncRecordBuffer, yIncRecordOversized)
+
             allocate(zIncRecordBuffer(size(zIncRecordOversized) * 2))   
             zIncRecordBuffer(1:size(zIncRecordOversized)) = zIncRecordOversized
             call move_alloc(zIncRecordBuffer, zIncRecordOversized)
 
-            allocate(rNormFltBuffer(size(rNormFltOversized) * 2,3))
-            rNormFltBuffer(1:size(rNormFltOversized),:) = rNormFltOversized
+            allocate(rNormFltBuffer(3, size(rNormFltOversized(1,:)) * 2))
+            rNormFltBuffer(:, 1:size(rNormFltOversized,2)) = rNormFltOversized
             call move_alloc(rNormFltBuffer, rNormFltOversized)
-            allocate(r0NormFltBuffer(size(r0NormFltOversized) * 2,3))
-            r0NormFltBuffer(1:size(r0NormFltOversized),:) = r0NormFltOversized
+
+            allocate(r0NormFltBuffer(3, size(r0NormFltOversized(1,:)) * 2))
+            r0NormFltBuffer(:, 1:size(r0NormFltOversized,2)) = r0NormFltOversized
             call move_alloc(r0NormFltBuffer, r0NormFltOversized)
-            allocate(muFltBuffer(size(muFltOversized) * 2,3))
-            muFltBuffer(1:size(muFltOversized),:) = muFltOversized
+
+            allocate(muFltBuffer(3, size(muFltOversized(1,:)) * 2))
+            muFltBuffer(:, 1:size(muFltOversized,2)) = muFltOversized
             call move_alloc(muFltBuffer, muFltOversized)
+
+            allocate(avgRecordBuffer(size(avgRecordOversized) * 2))
+            avgRecordBuffer(1:size(avgRecordOversized)) = avgRecordOversized
+            call move_alloc(avgRecordBuffer, avgRecordOversized)
 
           end if
 
@@ -1203,16 +1271,16 @@ contains
           cIdxBackOversized(segCount) = cIdx
           lenBackOversized(segCount) = length
           vacBackOversized(segCount + 1) = hitVacuum
-          rNormFltOversized(segCount,1:3) = rNormFlt
-          r0NormFltOversized(segCount,1:3) = r0NormFlt
-          muFltOversized(segCount,1:3) = muFlt
+          rNormFltOversized(:, segCount) = rNormFlt
+          r0NormFltOversized(:, segCount) = r0NormFlt
+          muFltOversized(:, segCount) = muFlt
         else
           cIdxBack(segCount) = cIdx
           lenBack(segCount) = length
           vacBack(segCount + 1) = hitVacuum
-          rNormFltRecord(segCount,1:3) = rNormFlt
-          r0NormFltRecord(segCount,1:3) = r0NormFlt
-          muFltRecord(segCount,1:3) = muFlt
+          rNormFltRecord(:, segCount) = rNormFlt
+          r0NormFltRecord(:, segCount) = r0NormFlt
+          muFltRecord(:, segCount) = muFlt
         end if
 
 
@@ -1220,7 +1288,8 @@ contains
           if (oversized) then
             !$omp simd
             do g = 1, self % nG
-              deltaRecordOversized((segCount - 1) * self % nG + g) = delta(g)  
+              ! avgRecordOversized((segCount - 1) * self % nG + g) = (flatQ(g) + delta(g))
+              deltaRecordOversized((segCount - 1) * self % nG + g) = delta(g) 
               xIncRecordOversized((segCount - 1) * self % nG + g) = xInc(g)
               yIncRecordOversized((segCount - 1) * self % nG + g) = yInc(g)
               zIncRecordOversized((segCount - 1) * self % nG + g) = zInc(g)
@@ -1228,6 +1297,7 @@ contains
           else
             !$omp simd
             do g = 1, self % nG
+              avgRecord((segCount - 1) * self % nG + g) = (flatQ0(g) + delta(g))
               deltaRecord((segCount - 1) * self % nG + g) = delta(g)  
               xIncRecord((segCount - 1) * self % nG + g) = xInc(g)
               yIncRecord((segCount - 1) * self % nG + g) = yInc(g)
@@ -1235,24 +1305,24 @@ contains
             end do
           end if
 
-          !call OMP_set_lock(self % locks(cIdx))
+          call OMP_set_lock(self % locks(cIdx))
           centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
           momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
           ! Update centroid
           !$omp simd aligned(centVec)
           do g = 1, nDim
-            !$omp atomic
+            
             centVec(g) = centVec(g) + rC(g)
           end do
 
           ! Update spatial moment scores
           !$omp simd aligned(momVec)
           do g = 1, matSize
-            !$omp atomic
+
             momVec(g) = momVec(g) + matScore(g)
           end do
           
-          !call OMP_unset_lock(self % locks(cIdx))
+          call OMP_unset_lock(self % locks(cIdx))
 
           if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
         
@@ -1284,10 +1354,11 @@ contains
         length = lenBackOversized(i)
         hitVacuum = vacBackOversized(i)
         cIdx = cIdxBackOversized(i)
-        rNormFlt = rNormFltOversized(i,:)
-        muFlt = muFltOversized(i,:)
-        r0NormFlt = r0NormFltOversized(i,:)
+        rNormFlt = rNormFltOversized(:,i)
+        muFlt = muFltOversized(:,i)
+        r0NormFlt = r0NormFltOversized(:,i)
 
+        avgFluxVecFW => avgRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
         deltaFW => deltaRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
         xIncFW  => xIncRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
         yIncFW  => yIncRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
@@ -1297,25 +1368,29 @@ contains
         length = lenBack(i)
         hitVacuum = vacBack(i)
         cIdx = cIdxBack(i)
-        rNormFlt = rNormFltRecord(i,:)
-        muFlt = muFltRecord(i,:)
-        r0NormFlt = r0NormFltRecord(i,:)
+        rNormFlt = rNormFltRecord(:,i)
+        muFlt = muFltRecord(:,i)
+        r0NormFlt = r0NormFltRecord(:,i)
 
+        avgFluxVecFW => avgRecord((i - 1) * self % nG + 1 : i * self % nG)
         deltaFW => deltaRecord((i - 1) * self % nG + 1 : i * self % nG)
         xIncFW  => xIncRecord((i - 1) * self % nG + 1 : i * self % nG)
         yIncFW  => yIncRecord((i - 1) * self % nG + 1 : i * self % nG)
         zIncFW  => zIncRecord((i - 1) * self % nG + 1 : i * self % nG)
       end if
 
+      lenFlt2_2 = lenFlt * lenFlt * one_two
+
       matIdx = self % geom % geom % graph % getMatFromUID(cIdx)
       baseIdx = (cIdx - 1) * self % nG
       segIdx =  (i - 1) * self % nG
-      sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
-      xGradVec => self % adjSourceX((baseIdx + 1):(baseIdx + self % nG))
-      yGradVec => self % adjSourceY((baseIdx + 1):(baseIdx + self % nG))
-      zGradVec => self % adjSourceZ((baseIdx + 1):(baseIdx + self % nG))
 
-      sourceVecFW => self % source((baseIdx + 1):(baseIdx + self % nG))
+      sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
+      xGradVec  => self % adjSourceX((baseIdx + 1):(baseIdx + self % nG))
+      yGradVec  => self % adjSourceY((baseIdx + 1):(baseIdx + self % nG))
+      zGradVec  => self % adjSourceZ((baseIdx + 1):(baseIdx + self % nG))
+
+      !sourceVecFW => self % source((baseIdx + 1):(baseIdx + self % nG))
       
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
@@ -1355,12 +1430,12 @@ contains
 
       !$omp simd
       do g = 1, self % nG
-        F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt * lenFlt
+        F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt
       end do
 
       !$omp simd
       do g = 1, self % nG
-        delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) * lenFlt & 
+        delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) & 
                     - one_two * gradQ(g) * F2(g) 
       end do
 
@@ -1373,14 +1448,14 @@ contains
       ! Flux vector update
       !$omp simd
       do g = 1, self % nG
-        fluxVec(g) = fluxVec(g) - delta(g) * totVec(g) 
+        fluxVec(g) = fluxVec(g) - delta(g) * tau(g) 
       end do
 
       if (i <= segCountCrit) then
 
         !$omp simd
         do g = 1, self % nG
-          avgFluxVec(g) = (sourceVec(g) + delta(g))
+          avgFluxVec(g) = (flatQ(g) + delta(g))
         end do
 
         lenFlt2_2 = lenFlt * lenFlt * one_two
@@ -1405,7 +1480,7 @@ contains
           G2(g) = G2(g) * gradQ(g) * lenFlt2_2
           H(g)  = H(g) * fluxVec0(g) * lenFlt
           H(g) = (G1(g) + G2(g) + H(g)) * lenFlt
-          flatQ(g) = flatQ(g) * lenFlt + delta(g)
+          flatQ(g) = flatQ(g) * lenFlt + delta(g) * lenFlt
         end do
 
         !$omp simd
@@ -1431,12 +1506,12 @@ contains
 
         !$omp simd 
         do g = 1, self % nG
-            scalarVec(g) = scalarVec(g) + delta(g) 
+            scalarVec(g) = scalarVec(g) + delta(g) * lenFlt
             xMomVec(g) = xMomVec(g) + xInc(g)
             yMomVec(g) = yMomVec(g) + yInc(g)
             zMomVec(g) = zMomVec(g) + zInc(g)
 
-            scalarVecFW(g) = scalarVecFW(g) + deltaFW(g)
+            scalarVecFW(g) = scalarVecFW(g) + deltaFW(g) * lenFlt
             xMomVecFW(g) = xMomVecFW(g) + xIncFW(g)
             yMomVecFW(g) = yMomVecFW(g) + yIncFW(g)
             zMomVecFW(g) = zMomVecFW(g) + zIncFW(g)
@@ -1446,7 +1521,7 @@ contains
           do g = 1, self % nG
               do gIn = 1, self % nG
                 pIdx = self % nG * (g - 1) + gIn
-                angularProd(pIdx) = angularProd(pIdx) + avgFluxVec(g) * (deltaFW(gIn) + sourceVecFW(gIn))
+                angularProd(pIdx) = angularProd(pIdx) + avgFluxVec(g) * avgFluxVecFW(gIn)
               end do
           end do
         end if
@@ -1486,6 +1561,7 @@ contains
 
     norm = real(ONE / self % lengthPerIt, defFlt)
     normVol = ONE / (self % lengthPerIt * it)
+    self % NSegMax = self % NSegMaxTemp
 
     !$omp parallel do schedule(static)
     do cIdx = 1, self % nCells
@@ -1597,10 +1673,10 @@ contains
           D = 0.0_defFlt
         end if
 
-        self % adjScalarFlux(idx) =  (self % adjScalarFlux(idx) + self % adjSource(idx) + D * self % prevFlux(idx) ) / (1 + D)
-        self % adjScalarX(idx) =  (self % adjScalarX(idx) + D * self % prevX(idx) ) / (1 + D)
-        self % adjScalarY(idx) =  (self % adjScalarY(idx) + D * self % prevY(idx) ) / (1 + D)
-        self % adjScalarZ(idx) =  (self % adjScalarZ(idx) + D * self % prevZ(idx) ) / (1 + D)
+        self % adjScalarFlux(idx) =  (self % adjScalarFlux(idx) + self % adjSource(idx) + D * self % adjPrevFlux(idx) ) / (1 + D)
+        self % adjScalarX(idx) =  (self % adjScalarX(idx) + D * self % adjPrevX(idx) ) / (1 + D)
+        self % adjScalarY(idx) =  (self % adjScalarY(idx) + D * self % adjPrevY(idx) ) / (1 + D)
+        self % adjScalarZ(idx) =  (self % adjScalarZ(idx) + D * self % adjPrevZ(idx) ) / (1 + D)
       end do
 
     end do
@@ -1677,7 +1753,7 @@ contains
     - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
     + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-    if ((abs(det) > 1E-10) .and. self % volume(cIdx) > 1E-6 ) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
+    if ((abs(det) > volume_tolerance) .and. self % volume(cIdx) > 1E-6) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
       one_det = ONE/det
       invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
       invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
@@ -1762,8 +1838,11 @@ contains
               invMxy * ySource + invMxz * zSource
       self % sourceY(baseIdx + g) = invMxy * xSource + &
               invMyy * ySource + invMyz * zSource
-      self % sourceZ(baseIdx + g) = invMxz * xSource + &
-           invMyz * ySource + invMzz * zSource
+      ! self % sourceZ(baseIdx + g) = invMxz * xSource + &
+      !      invMyz * ySource + invMzz * zSource
+      ! self % sourceX(baseIdx + g) = 0.0_defFlt
+      ! self % sourceY(baseIdx + g) = 0.0_defFlt
+      self % sourceZ(baseIdx + g) = 0.0_defFlt
 
     end do
 
@@ -1806,7 +1885,7 @@ contains
     - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
     + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-    if ((abs(det) > 1E-10) .and. self % volume(cIdx) > 1E-6 ) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
+    if ((abs(det) > volume_tolerance) .and. self % volume(cIdx) > 1E-6) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
       one_det = ONE/det
       invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
       invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
@@ -1878,7 +1957,7 @@ contains
       idx = baseIdx + g
 
       self % adjSource(idx) = chi(g) * fission + scatter
-      self % adjSource(idx) = self % source(idx) / total(g)
+      self % adjSource(idx) = self % adjSource(idx) / total(g)
       xSource = chi(g) * xFission + xScatter
       xSource = xSource / total(g)
       ySource = chi(g) * yFission + yScatter
@@ -1886,39 +1965,122 @@ contains
       zSource = chi(g) * zFission + zScatter
       zSource = zSource / total(g)
         
-      ! Calculate source gradients by inverting the moment matrix
+      !Calculate source gradients by inverting the moment matrix
       self % adjSourceX(baseIdx + g) = invMxx * xSource + &
               invMxy * ySource + invMxz * zSource
       self % adjSourceY(baseIdx + g) = invMxy * xSource + &
               invMyy * ySource + invMyz * zSource
-      self % adjSourceZ(baseIdx + g) = invMxz * xSource + &
-           invMyz * ySource + invMzz * zSource
-
+      ! self % adjSourceZ(baseIdx + g) = invMxz * xSource + &
+      !      invMyz * ySource + invMzz * zSource
+      ! self % adjSourceX(baseIdx + g) = 0.0_defFlt
+      ! self % adjSourceY(baseIdx + g) = 0.0_defFlt
+      self % adjSourceZ(baseIdx + g) = 0.0_defFlt
     end do
 
   end subroutine adjointSourceUpdateKernel
+
+  subroutine sensitivityCalculation(self, cIdx, ONE_KEFF, it, numSum, denSum)
+    class(adjointLSRRPhysicsPackage), target, intent(inout) :: self
+    real(defFlt), intent(in)                      :: ONE_KEFF
+    integer(shortInt), intent(in)                 :: it
+    integer(shortInt), intent(in)                 :: cIdx
+    real(defReal), intent(out)                    :: numSum, denSum
+    real(defReal)                                 :: delta, fission, fission_pert, scatter_pert
+    integer(shortInt)                             :: baseIdx, idx, matIdx, g, gIn, mat, g1Pert, g2pert, i
+    real(defFlt), dimension(:), pointer           :: nuFission, total, chi, capture, scatterXS, &
+                                                      fissVec, scatterVec
+    real(defReal), dimension(:), pointer          :: IPVec
+
+    mat  =  self % geom % geom % graph % getMatFromUID(cIdx) 
+    baseIdx = (cIdx - 1) * self % nG 
+    matIdx = (mat - 1) * self % nG
+
+    IPVec => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG)
+    ! total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
+    nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
+    fissVec => self % fission((matIdx + 1):(matIdx + self % nG))
+    chi => self % chi((matIdx + 1):(matIdx + self % nG))
+    capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
+    scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
+
+    numSum = ZERO
+    denSum = ZERO
+
+    do g = 1, self % nG
+      idx = baseIdx + g
+      fission = 0.0_defFlt
+      !$omp simd
+      do gIn = 1, self % nG 
+        fission = fission + IPVec((g - 1) * self % nG + gIn) * nuFission(gIn)
+      end do
+      fission  = fission * chi(g)
+      denSum = denSum + fission
+    end do
+
+    if (mat == self % matPert .and. self % XStype == 1) then ! capture - complete 
+      do i = 1, size(self % energyId)
+        g1Pert = self % energyId(1)
+        delta = 0.0_defFlt
+        delta = self % XSchange * capture(g1Pert) * IPVec((g1Pert - 1) * self % nG + g1Pert)
+        numSum = numSum - delta
+      end do
+
+    elseif ( mat == self % matPert .and. self % XStype == 2) then ! fission - complete
+      do i = 1, size(self % energyId)
+        g1Pert = self % energyId(i)
+        do g = 1, self % nG 
+          delta = 0.0_defFlt
+          fission_pert = 0.0_defFlt
+          fission_pert = fission_pert + IPVec(self % nG * (g - 1) + g1Pert) * nuFission(g1Pert) * self % XSchange
+          if ( g == g1Pert ) then 
+            delta = IPVec((g - 1) * self % nG + g) * fissVec(g) * self % XSchange
+          end if
+          delta = fission_pert * chi(g) * ONE_KEFF - delta
+          numSum = numSum + delta
+        end do
+      end do
+
+    elseif (mat == self % matPert .and. self % XStype == 3) then !scatter - complete
+      do i = 1, size(self % energyId), 2
+        g1Pert = self % energyId(i)
+        g2Pert = self % energyId(i+1)
+        delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * &
+                      self % XSchange   
+           
+        scatter_pert = scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
+                                    IPVec((g2Pert - 1 ) * self % nG + g1Pert) * self % XSchange
+        delta = scatter_pert - delta
+        numSum = numSum + delta
+      end do
+    end if
+
+
+  end subroutine sensitivityCalculation
 
   !!
   !! Calculate keff
   !!
   subroutine calculateKeff(self)
     class(adjointLSRRPhysicsPackage), intent(inout) :: self
-    real(defFlt)                                  :: fissionRate, prevFissionRate
-    real(defFlt), save                            :: fissLocal, prevFissLocal, vol
+    real(defFlt)                                  :: fissionRate, prevFissionRate,adjfissionRate, adjprevFissionRate
+    real(defFlt), save                            :: fissLocal, prevFissLocal, vol, adjfissLocal, adjprevFissLocal
     integer(shortInt), save                       :: matIdx, g, idx, mIdx
     integer(shortInt)                             :: cIdx
     class(baseMgNeutronMaterial), pointer, save   :: mat
     class(materialHandle), pointer, save          :: matPtr
     !$omp threadprivate(mat, matPtr, fissLocal, prevFissLocal, matIdx, g, idx, mIdx, vol)
 
-    fissionRate     = 0.0_defFlt
-    prevFissionRate = 0.0_defFlt
-    !$omp parallel do schedule(static) reduction(+: fissionRate, prevFissionRate)
+    fissionRate        = 0.0_defFlt
+    prevFissionRate    = 0.0_defFlt
+    adjFissionRate     = 0.0_defFlt
+    adjPrevFissionRate = 0.0_defFlt
+    !$omp parallel do schedule(static) reduction(+: fissionRate, prevFissionRate, adjFissionRate, adjPrevFissionRate)
     do cIdx = 1, self % nCells
 
       ! Identify material
       matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
-      if (matIdx > 100000) cycle
+      if (matIdx >= VOID_MAT) cycle
+
       matPtr => self % mgData % getMaterial(matIdx)
       mat    => baseMgNeutronMaterial_CptrCast(matPtr)
       if (.not. mat % isFissile()) cycle
@@ -1929,6 +2091,8 @@ contains
 
       fissLocal = 0.0_defFlt
       prevFissLocal = 0.0_defFlt
+      adjfissLocal = 0.0_defFlt
+      adjprevFissLocal = 0.0_defFlt
       mIdx = (matIdx - 1) * self % nG
       do g = 1, self % nG
         
@@ -1937,16 +2101,24 @@ contains
         fissLocal     = fissLocal     + self % scalarFlux(idx) * self % nuSigmaF(mIdx + g)
         prevFissLocal = prevFissLocal + self % prevFlux(idx) * self % nuSigmaF(mIdx + g)
 
+        adjfissLocal     = adjfissLocal     + self % adjscalarFlux(idx) * self % adjNuSigmaF(mIdx + g)
+        adjprevFissLocal = adjprevFissLocal + self % adjprevFlux(idx) * self % adjNuSigmaF(mIdx + g)
+
       end do
 
       fissionRate     = fissionRate     + fissLocal * vol
       prevFissionRate = prevFissionRate + prevFissLocal * vol
+
+      adjfissionRate     = adjfissionRate     + adjfissLocal * vol
+      adjprevFissionRate = adjprevFissionRate + adjprevFissLocal * vol
 
     end do
     !$omp end parallel do
 
     ! Update k
     self % keff = self % keff * fissionRate / prevFissionRate
+
+    self % adjkeff = self % adjkeff * adjfissionRate / adjprevFissionRate
 
   end subroutine calculateKeff
   
@@ -1968,14 +2140,26 @@ contains
       self % scalarY(idx) = 0.0_defFlt
       self % prevZ(idx) = self % scalarZ(idx)
       self % scalarZ(idx) = 0.0_defFlt
+
+      self % adjPrevFlux(idx) = self % adjScalarFlux(idx)
+      self % adjScalarFlux(idx) = 0.0_defFlt
+      self % adjPrevX(idx) = self % adjScalarX(idx)
+      self % adjScalarX(idx) = 0.0_defFlt
+      self % adjPrevY(idx) = self % adjScalarY(idx)
+      self % adjScalarY(idx) = 0.0_defFlt
+      self % adjPrevZ(idx) = self % adjScalarZ(idx)
+      self % adjScalarZ(idx) = 0.0_defFlt
+    end do
+    !$omp end parallel do
+
+    !$omp parallel do schedule(static)
+    do idx = 1, size(self % angularIP)
+      self % angularIP(idx) = 0.0_defFlt
     end do
     !$omp end parallel do
     
   end subroutine resetFluxes
 
-  !!
-  !! Accumulate flux scores for stats
-  !!
   subroutine accumulateFluxAndKeffScores(self)
     class(adjointLSRRPhysicsPackage), intent(inout) :: self
     real(defReal), save                            :: flux
@@ -1986,12 +2170,20 @@ contains
     do idx = 1, size(self % scalarFlux)
       flux = real(self % scalarFlux(idx),defReal)
       self % fluxScores(idx,1) = self % fluxScores(idx, 1) + flux
-      self % fluxScores(idx,2) = self % fluxScores(idx, 2) + flux*flux
+      self % fluxScores(idx,2) = self % fluxScores(idx, 2) + flux * flux
     end do
     !$omp end parallel do
 
     self % keffScore(1) = self % keffScore(1) + self % keff
+    self % adjkeffScore(1) = self % adjkeffScore(1) + self % adjkeff
     self % keffScore(2) = self % keffScore(2) + self % keff * self % keff
+    self % adjkeffScore(2) = self % adjkeffScore(2) + self % adjkeff * self % adjkeff
+
+    self % sensitivityScore(1) = self % sensitivityScore(1) + self % sensitivity
+    self % sensitivityScore(2) = self % sensitivityScore(2) + self % sensitivity * self % sensitivity
+
+    self % deltaKeffScore(1) = self % deltaKeffScore(1) + self % deltaKeff
+    self % deltaKeffScore(2) = self % deltaKeffScore(2) + self % deltaKeff * self % deltaKeff
 
   end subroutine accumulateFluxAndKeffScores
   
@@ -2027,8 +2219,27 @@ contains
 
     self % keffScore(1) = self % keffScore(1) * N1
     self % keffScore(2) = self % keffScore(2) * N1
-    self % keffScore(2) = sqrt(Nm1*(self % keffScore(2) - &
+    self % keffScore(2) = (Nm1*(self % keffScore(2) - &
             self % keffScore(1) * self % keffScore(1))) 
+    self % keffScore(2) = sqrt(abs(self % keffScore(2)))
+
+    self % adjkeffScore(1) = self % adjkeffScore(1) * N1
+    self % adjkeffScore(2) = self % adjkeffScore(2) * N1
+    self % adjkeffScore(2) = (Nm1*(self % adjkeffScore(2) - &
+            self % adjkeffScore(1) * self % adjkeffScore(1))) 
+    self % adjkeffScore(2) = sqrt(abs(self % adjkeffScore(2)))
+
+    self % sensitivityScore(1) = self % sensitivityScore(1) * N1
+    self % sensitivityScore(2) = self % sensitivityScore(2) * N1
+    self % sensitivityScore(2) = (Nm1*(self % sensitivityScore(2) - &
+            self % sensitivityScore(1) * self % sensitivityScore(1))) 
+    self % sensitivityScore(2) = sqrt(abs(self % sensitivityScore(2)))
+
+    self % deltaKeffScore(1) = self % deltaKeffScore(1) * N1
+    self % deltaKeffScore(2) = self % deltaKeffScore(2) * N1
+    self % deltaKeffScore(2) = (Nm1*(self % deltaKeffScore(2) - &
+            self % deltaKeffScore(1) * self % deltaKeffScore(1))) 
+    self % deltaKeffScore(2) = sqrt(abs(self % deltaKeffScore(2)))
 
   end subroutine finaliseFluxAndKeffScores
   
@@ -2083,6 +2294,30 @@ contains
     name = 'keff'
     call out % startBlock(name)
     call out % printResult(real(self % keffScore(1),defReal), real(self % keffScore(2),defReal), name)
+    call out % endBlock()
+
+    ! Print keff
+    name = 'Adjoint_keff'
+    call out % startBlock(name)
+    call out % printResult(real(self % adjkeffScore(1),defReal), real(self % adjkeffScore(2),defReal), name)
+    call out % endBlock()
+
+    name = 'delta_keff'
+    call out % startBlock(name)
+    call out % printResult(real(self % deltaKeffScore(1),defReal), &
+          real(self % deltaKeffScore(2),defReal), name)
+    call out % endBlock()
+
+    name = 'pert_keff'
+    call out % startBlock(name)
+    call out % printResult(real(self % keffScore(1) + self % deltaKeffScore(1),defReal), &
+          real(self % keffScore(1) - self % deltaKeffScore(1),defReal), name)
+    call out % endBlock()
+
+    name = 'sensitivity'
+    call out % startBlock(name)
+    call out % printResult(real(self % sensitivityScore(1),defReal), real(self % sensitivityScore(2)&
+                                        /self % sensitivityScore(1),defReal), name)
     call out % endBlock()
 
     ! Print cell volumes
@@ -2386,6 +2621,18 @@ contains
     if(allocated(self % sourceX)) deallocate(self % adjSourceX)
     if(allocated(self % sourceY)) deallocate(self % adjSourceY)
     if(allocated(self % sourceZ)) deallocate(self % adjSourceZ)
+
+    if(allocated(self % adjScalarX)) deallocate(self % adjScalarX)
+    if(allocated(self % adjScalarY)) deallocate(self % adjScalarY)
+    if(allocated(self % adjScalarZ)) deallocate(self % adjScalarZ)
+
+    if(allocated(self % adjPrevX)) deallocate(self % adjPrevX)
+    if(allocated(self % adjPrevY)) deallocate(self % adjPrevY)
+    if(allocated(self % adjPrevZ)) deallocate(self % adjPrevZ)
+
+    if(allocated(self % adjsourceX)) deallocate(self % adjsourceX)
+    if(allocated(self % adjsourceY)) deallocate(self % adjsourceY)
+    if(allocated(self % adjsourceZ)) deallocate(self % adjsourceZ)
 
 
 
