@@ -1472,7 +1472,7 @@ contains
   !!
   subroutine calculateKeff(self)
     class(adjointTRRMPhysicsPackage), intent(inout) :: self
-    real(defFlt)                                  :: fissionRate, prevFissionRate,adjfissionRate, adjprevFissionRate
+    real(defFlt)                                  :: fissionRate, prevFissionRate, adjfissionRate, adjprevFissionRate
     real(defFlt), save                            :: fissLocal, prevFissLocal, vol, adjfissLocal, adjprevFissLocal
     integer(shortInt), save                       :: matIdx, g, idx, mIdx
     integer(shortInt)                             :: cIdx
