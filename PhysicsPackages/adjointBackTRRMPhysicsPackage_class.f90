@@ -1233,8 +1233,8 @@ module adjointBackTRRMPhysicsPackage_class
           end do
           !$omp end parallel do
   
-          ! self % deltaKeff  = self % keff * self % keff * (numTotal / denTotal) 
-          ! self % sensitivity = (self % deltaKeff / ( self % keff * self % XSchange ) ) 
+          self % deltaKeff  =  (numTotal) 
+          self % sensitivity = (self % delta / ( self % XSchange ) ) 
           call self % accumulateFluxScores()
         end if
   
