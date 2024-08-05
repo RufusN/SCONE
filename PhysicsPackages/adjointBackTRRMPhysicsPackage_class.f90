@@ -216,6 +216,7 @@ module adjointBackTRRMPhysicsPackage_class
       real(defReal)      :: XSchange    = ZERO
 
       real(defReal)                 :: sensitivity = ZERO
+      real(defReal)                 :: deltaR = ZERO
       real(defReal), dimension(2)   :: sensitivityScore = ZERO
       
       logical(defBool)   :: cache       = .false.
@@ -1233,8 +1234,8 @@ module adjointBackTRRMPhysicsPackage_class
           end do
           !$omp end parallel do
   
-          self % deltaKeff  =  (numTotal) 
-          self % sensitivity = (self % delta / ( self % XSchange ) ) 
+          self % deltaR  =  (numTotal) 
+          self % sensitivity = (self % deltaR / ( self % XSchange ) ) 
           call self % accumulateFluxScores()
         end if
   
@@ -3263,6 +3264,7 @@ module adjointBackTRRMPhysicsPackage_class
   
       self % sensitivity      = ZERO
       self % sensitivityScore = ZERO
+      self % deltaR = ZERO
 
 
       if(allocated(self % energyId)) deallocate(self % energyId)
