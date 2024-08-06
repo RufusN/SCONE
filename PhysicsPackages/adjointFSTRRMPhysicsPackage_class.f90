@@ -1971,7 +1971,6 @@ module adjointFSTRRMPhysicsPackage_class
   
       ! Identify material
       id       =  self % CellToID(cIdx)
-      matIdx   =  self % geom % geom % graph % getMatFromUID(id) 
       material =  self % geom % geom % graph % getMatFromUID(id) 
       
       ! Guard against void cells
@@ -1986,10 +1985,10 @@ module adjointFSTRRMPhysicsPackage_class
   
       ! Obtain XSs
 
-      matPtr => self % mgData % getMaterial(matIdx)
+      matPtr => self % mgData % getMaterial(material)
       mat    => baseMgNeutronMaterial_CptrCast(matPtr)
 
-      matIdx = (matIdx - 1) * self % nG
+      matIdx = (material - 1) * self % nG
       total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
       scatterXS => self % adjSigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
       nuFission => self % adjNuSigmaF((matIdx + 1):(matIdx + self % nG))
