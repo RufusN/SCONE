@@ -2670,9 +2670,9 @@ module adjointBackTRRMPhysicsPackage_class
       IPVec => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG)
       ! total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
       nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
-      fissVec => self % fission((matIdx + 1):(matIdx + self % nG))
+      ! fissVec => self % fission((matIdx + 1):(matIdx + self % nG))
       chi => self % chi((matIdx + 1):(matIdx + self % nG))
-      capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
+      ! capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
       scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
   
       numSum = ZERO
