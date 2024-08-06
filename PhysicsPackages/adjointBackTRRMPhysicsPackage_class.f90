@@ -1896,11 +1896,15 @@ module adjointBackTRRMPhysicsPackage_class
       real(defFlt), target, dimension(self % nG * self % NSegMax*2) :: deltaRecord
           
       ! Set initial angular flux to angle average of cell source
-      cIdx = r % coords % uniqueID
-      do g = 1, self % nG
-        idx = (cIdx - 1) * self % nG + g
-        fluxVec(g) = self % source(idx)
-      end do
+      cIdx = self % IDToCell(r % coords % uniqueID)
+      if (cIdx > 0) then
+        do g = 1, self % nG
+          idx = (cIdx - 1) * self % nG + g
+          fluxVec(g) = self % source(idx)
+        end do
+      else
+        fluxVec(g) = 0.0_defFlt
+      end if
   
       ints = 0
       matIdx0 = 0
@@ -1914,7 +1918,7 @@ module adjointBackTRRMPhysicsPackage_class
   
         ! Get material and cell the ray is moving through
         matIdx  = r % coords % matIdx
-        cIdx    = r % coords % uniqueID
+        cIdx    = self % IDToCell(r % coords % uniqueID)
   
         if (matIdx0 /= matIdx) then
           matIdx0 = matIdx
@@ -1923,9 +1927,11 @@ module adjointBackTRRMPhysicsPackage_class
         end if
   
         ! Remember co-ordinates to set new cell's position
-        if (.not. self % cellFound(cIdx)) then
-          r0 = r % rGlobal()
-          mu0 = r % dirGlobal()
+        if (cIdx > 0) then
+          if (.not. self % cellFound(cIdx)) then
+            r0 = r % rGlobal()
+            mu0 = r % dirGlobal()
+          end if
         end if
             
         ! Set maximum flight distance and ensure ray is active
@@ -1954,110 +1960,120 @@ module adjointBackTRRMPhysicsPackage_class
         else
           call self % geom % moveRay_noCache(r % coords, length, event, hitVacuum)
         end if
-        totalLength = totalLength + length
-        
-        ! Set new cell's position. Use half distance across cell
-        ! to try and avoid FP error
-        if (.not. self % cellFound(cIdx)) then
-          !$omp critical 
-          self % cellFound(cIdx) = .true.
-          self % cellPos(cIdx,:) = r0 + length * HALF * mu0
-          !$omp end critical
-        end if
-  
-        ints = ints + 1
-        lenFlt = real(length,defFlt)
-        baseIdx = (cIdx - 1) * self % nG
-        sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
-  
-        !$omp simd aligned(totVec)
-        do g = 1, self % nG
-          tau(g) = totVec(g) * lenFlt
-        end do
+
+        if (cIdx > 0 .and. length > self % skipLength) then
+          totalLength = totalLength + length
           
-        !$omp simd 
-        do g = 1, self % nG
-          attenuate(g) = F1(tau(g))
-        end do
-  
-        !$omp simd
-        do g = 1, self % nG
-          delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
-        end do
-  
-        !$omp simd
-        do g = 1, self % nG
-          fluxVec(g) = fluxVec(g) - delta(g) * tau(g)
-        end do
-  
-        ! Accumulate to scalar flux
-        if (activeRay) then
-          segCount = segCount + 1
-  
-          if (tally) then
-              segCountCrit = segCount
+          ! Set new cell's position. Use half distance across cell
+          ! to try and avoid FP error
+          if (.not. self % cellFound(cIdx)) then
+            !$omp critical 
+            self % cellFound(cIdx) = .true.
+            self % cellPos(cIdx,:) = r0 + length * HALF * mu0
+            !$omp end critical
           end if
-   
-          if ( (segCount >= (self % NSegMax - 1)) .and. .not. oversized) then
-  
-            oversized = .true.
-            allocate(lenBackOversized(size(lenBack) * 2)) !add seg length for scalar flux update
-            lenBackOversized(1:size(lenBack)) = lenBack
-            allocate(cIdxBackOversized(size(cIdxBack) * 2)) !add cell id for scalar flux update
-            cIdxBackOversized(1:size(cIdxBack)) = cIdxBack
-            allocate(vacBackOversized(size(vacBack) * 2))   !check vacuum
-            vacBackOversized(1:size(vacBack)) = vacBack
-            allocate(deltaRecordOversized(size(deltaRecord) * 2))   ! recording of delta for scalar flux update
-            deltaRecordOversized(1:size(deltaRecord)) = deltaRecord
-  
-          elseif (oversized) then
-  
-            if  (segCount >= (size(vacBackOversized) - 1) ) then
-              allocate(lenBackBuffer(size(lenBackOversized) * 2)) 
-              lenBackBuffer(1:size(lenBackOversized)) = lenBackOversized
-              call move_alloc(lenBackBuffer, lenBackOversized)
-  
-              allocate(cIdxBackBuffer(size(cIdxBackOversized) * 2)) 
-              cIdxBackBuffer(1:size(cIdxBackOversized)) = cIdxBackOversized
-              call move_alloc(cIdxBackBuffer, cIdxBackOversized)
-  
-              allocate(vacBackBuffer(size(vacBackOversized) * 2))   
-              vacBackBuffer(1:size(vacBackOversized)) = vacBackOversized
-              call move_alloc(vacBackBuffer, vacBackOversized)
-  
-              allocate(deltaRecordBuffer(size(deltaRecordOversized) * 2))   
-              deltaRecordBuffer(1:size(deltaRecordOversized)) = deltaRecordOversized
-              call move_alloc(deltaRecordBuffer, deltaRecordOversized)
+    
+          ints = ints + 1
+          lenFlt = real(length,defFlt)
+          baseIdx = (cIdx - 1) * self % nG
+          sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
+    
+          !$omp simd aligned(totVec)
+          do g = 1, self % nG
+            tau(g) = totVec(g) * lenFlt
+          end do
+            
+          !$omp simd 
+          do g = 1, self % nG
+            attenuate(g) = F1(tau(g))
+          end do
+    
+          !$omp simd
+          do g = 1, self % nG
+            delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
+          end do
+    
+          !$omp simd
+          do g = 1, self % nG
+            fluxVec(g) = fluxVec(g) - delta(g) * tau(g)
+          end do
+    
+          ! Accumulate to scalar flux
+          if (activeRay) then
+            segCount = segCount + 1
+    
+            if (tally) then
+                segCountCrit = segCount
             end if
-  
-          end if
-  
-          if (oversized) then
-            cIdxBackOversized(segCount) = cIdx
-            lenBackOversized(segCount) = length
-            vacBackOversized(segCount + 1) = hitVacuum
-          else
-            cIdxBack(segCount) = cIdx
-            lenBack(segCount) = length
-            vacBack(segCount + 1) = hitVacuum
-          end if
-  
-  
-          if (tally) then
+    
+            if ( (segCount >= (self % NSegMax - 1)) .and. .not. oversized) then
+    
+              oversized = .true.
+              allocate(lenBackOversized(size(lenBack) * 2)) !add seg length for scalar flux update
+              lenBackOversized(1:size(lenBack)) = lenBack
+              allocate(cIdxBackOversized(size(cIdxBack) * 2)) !add cell id for scalar flux update
+              cIdxBackOversized(1:size(cIdxBack)) = cIdxBack
+              allocate(vacBackOversized(size(vacBack) * 2))   !check vacuum
+              vacBackOversized(1:size(vacBack)) = vacBack
+              allocate(deltaRecordOversized(size(deltaRecord) * 2))   ! recording of delta for scalar flux update
+              deltaRecordOversized(1:size(deltaRecord)) = deltaRecord
+    
+            elseif (oversized) then
+    
+              if  (segCount >= (size(vacBackOversized) - 1) ) then
+                allocate(lenBackBuffer(size(lenBackOversized) * 2)) 
+                lenBackBuffer(1:size(lenBackOversized)) = lenBackOversized
+                call move_alloc(lenBackBuffer, lenBackOversized)
+    
+                allocate(cIdxBackBuffer(size(cIdxBackOversized) * 2)) 
+                cIdxBackBuffer(1:size(cIdxBackOversized)) = cIdxBackOversized
+                call move_alloc(cIdxBackBuffer, cIdxBackOversized)
+    
+                allocate(vacBackBuffer(size(vacBackOversized) * 2))   
+                vacBackBuffer(1:size(vacBackOversized)) = vacBackOversized
+                call move_alloc(vacBackBuffer, vacBackOversized)
+    
+                allocate(deltaRecordBuffer(size(deltaRecordOversized) * 2))   
+                deltaRecordBuffer(1:size(deltaRecordOversized)) = deltaRecordOversized
+                call move_alloc(deltaRecordBuffer, deltaRecordOversized)
+              end if
+    
+            end if
+    
             if (oversized) then
-              !$omp simd
-              do g = 1, self % nG
-                deltaRecordOversized((segCount - 1) * self % nG + g) = delta(g)  
-              end do
+              cIdxBackOversized(segCount) = cIdx
+              lenBackOversized(segCount) = length
+              vacBackOversized(segCount + 1) = hitVacuum
             else
-              !$omp simd
-              do g = 1, self % nG
-                deltaRecord((segCount - 1) * self % nG + g) = delta(g)  
-              end do
+              cIdxBack(segCount) = cIdx
+              lenBack(segCount) = length
+              vacBack(segCount + 1) = hitVacuum
             end if
+    
+    
+            if (tally) then
+              if (oversized) then
+                !$omp simd
+                do g = 1, self % nG
+                  deltaRecordOversized((segCount - 1) * self % nG + g) = delta(g)  
+                end do
+              else
+                !$omp simd
+                do g = 1, self % nG
+                  deltaRecord((segCount - 1) * self % nG + g) = delta(g)  
+                end do
+              end if
+            end if
+    
+            if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
           end if
+
+        elseif((totalLength + length) >= self % termination) then
+          totalLength = self % termination
   
-          if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
+        elseif ((totalLength + length) >= self % dead .and. .not. activeRay) then
+          totalLength = self % dead
+  
         end if
   
         ! Check for a vacuum hit
@@ -2092,7 +2108,7 @@ module adjointBackTRRMPhysicsPackage_class
           cIdx = cIdxBack(i)
         end if
   
-        matIdx = self % geom % geom % graph % getMatFromUID(cIdx)
+        matIdx   =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
         baseIdx = (cIdx - 1) * self % nG
         segIdx =  (i - 1) * self % nG
         sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
@@ -2241,11 +2257,11 @@ module adjointBackTRRMPhysicsPackage_class
         matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
           
         ! Guard against void cells
-        if (matIdx > 2000000) then
-          do g = 1, self % nG
-            idx   = self % nG * (cIdx - 1) + g
-            self % scalarFlux(idx) = 0.0_defFlt
-          end do
+        if (matIdx >= UNDEF_MAT) then
+          ! do g = 1, self % nG
+          !   idx   = self % nG * (cIdx - 1) + g
+          !   self % scalarFlux(idx) = 0.0_defFlt
+          ! end do
           cycle
         end if 
         
@@ -2348,11 +2364,11 @@ module adjointBackTRRMPhysicsPackage_class
         matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
 
         ! Guard against void cells
-        if (matIdx > 2000000) then
-          do g = 1, self % nG
-            idx   = self % nG * (cIdx - 1) + g
-            self % adjscalarFlux(idx) = 0.0_defFlt
-          end do
+        if (matIdx >= UNDEF_MAT) then
+          ! do g = 1, self % nG
+          !   idx   = self % nG * (cIdx - 1) + g
+          !   self % adjscalarFlux(idx) = 0.0_defFlt
+          ! end do
           cycle
         end if 
         
@@ -2437,8 +2453,16 @@ module adjointBackTRRMPhysicsPackage_class
       id      =  self % CellToID(cIdx)
       matIdx  =  self % geom % geom % graph % getMatFromUID(id) 
   
-      ! Hack to guard against non-material cells
-      if (matIdx >= UNDEF_MAT) return
+      ! Guard against void cells
+      if (matIdx >= UNDEF_MAT) then
+        baseIdx = self % ng * (cIdx - 1)
+        do g = 1, self % nG
+          idx = baseIdx + g
+          self % source(idx) = 0.0_defFlt
+        end do
+        return
+      end if
+      
       
       ! Obtain XSs
       matIdx = (matIdx - 1) * self % nG
@@ -2663,16 +2687,17 @@ module adjointBackTRRMPhysicsPackage_class
                                                         fissVec, scatterVec
       real(defReal), dimension(:), pointer          :: IPVec
   
-      mat  =  self % geom % geom % graph % getMatFromUID(cIdx) 
+      mat =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
       baseIdx = (cIdx - 1) * self % nG 
+      if (mat >= UNDEF_MAT) return
       matIdx = (mat - 1) * self % nG
   
       IPVec => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG)
       ! total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
       nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
-      ! fissVec => self % fission((matIdx + 1):(matIdx + self % nG))
+      fissVec => self % fission((matIdx + 1):(matIdx + self % nG))
       chi => self % chi((matIdx + 1):(matIdx + self % nG))
-      ! capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
+      capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
       scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
   
       numSum = ZERO
@@ -2913,7 +2938,7 @@ module adjointBackTRRMPhysicsPackage_class
         do cIdx = 1, self % nCells
           
           ! Identify material
-          matIdx =  self % geom % geom % graph % getMatFromUID(cIdx) 
+          matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
           matPtr => self % mgData % getMaterial(matIdx)
           mat    => baseMgNeutronMaterial_CptrCast(matPtr)
           vol    =  self % volume(cIdx)
