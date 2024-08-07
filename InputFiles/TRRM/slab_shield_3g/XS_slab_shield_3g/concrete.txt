@@ -1,8 +1,8 @@
 numberOfGroups 2; 
-capture ( 0.0016 8.48E-4); 
+capture ( 0.75 0.25); 
 
 scatteringMultiplicity ( 1.0 1.0 
                          1.0 1.0  ); 
 
-P0 ( 0.36339 0.001000595707 
-     0.0 0.1096742149);
+P0 ( 0.36 0.10
+     0.0 0.11);

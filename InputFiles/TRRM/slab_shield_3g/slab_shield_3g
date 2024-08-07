@@ -1,14 +1,14 @@
-//type fixedSourceTRRMPhysicsPackage;
-type adjointFSTRRMPhysicsPackage;
+type fixedSourceTRRMPhysicsPackage;
+// type adjointBackTRRMPhysicsPackage;
 
-pop      1000;
-active   200;
-inactive 400;
+pop      5000;
+active   1000;
+inactive 2000;
 XSdata   mg;
 dataType mg;
-dead   20; 
+dead   20;
 termination 220; 
-plot 0;
+plot 1;
 cache 1;
 outputFile slab_shield_3g;
 volume 225;
@@ -20,15 +20,13 @@ seed 500;
 outputFormat asciiJSON;
 responseType 1;
 
+Perturbation{XStype 1; XSchange 0.01; material 2; energyGroups (1);} // 1st group concrete capture perturbation 
 
-
-Perturbation{XStype 1; XSchange 0.01; material 1; energyGroups (1);}
-
-integrate (source);
-detector  (source);
+integrate (detector); //integrate source for adjoint
+detector  (detector);
 
 source { source (
-  0.0 10.0
+  0.0 5.0
   ); }
 
 // samplePoints {
