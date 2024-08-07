@@ -1541,9 +1541,8 @@ module adjointFSTRRMPhysicsPackage_class
         real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, scalarAdjoint, sourceAdjoint
         real(defReal), dimension(3)                           :: r0, mu0
 
-        matIdx  = r % coords % matIdx
-        cIdx = self % IDToCell(r % coords % uniqueID)
         ! Set initial angular flux to angle average of cell source
+        cIdx = self % IDToCell(r % coords % uniqueID)
         if (cIdx > 0) then
             do g = 1, self % nG
                 idx = (cIdx - 1) * self % nG + g
@@ -1974,7 +1973,7 @@ module adjointFSTRRMPhysicsPackage_class
       material =  self % geom % geom % graph % getMatFromUID(id) 
       
       ! Guard against void cells
-      if (matIdx >= UNDEF_MAT) then
+      if (material >= UNDEF_MAT) then
         baseIdx = self % ng * (cIdx - 1)
         do g = 1, self % nG
           idx = baseIdx + g
