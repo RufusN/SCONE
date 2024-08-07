@@ -1,7 +1,7 @@
-type fixedSourceTRRMPhysicsPackage;
-// type adjointBackTRRMPhysicsPackage;
+//type fixedSourceTRRMPhysicsPackage;
+type adjointBackTRRMPhysicsPackage;
 
-pop      5000;
+pop      2000;
 active   1000;
 inactive 2000;
 XSdata   mg;
@@ -22,7 +22,7 @@ responseType 1;
 
 Perturbation{XStype 1; XSchange 0.01; material 2; energyGroups (1);} // 1st group concrete capture perturbation 
 
-integrate (detector); //integrate source for adjoint
+integrate (source); //integrate source for adjoint
 detector  (detector);
 
 source { source (
