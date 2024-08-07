@@ -1576,9 +1576,9 @@ contains
         !$omp simd
         do g = 1, self % nG
           tau(g) = lenFlt * totVec(g)
-          attenuate(g) = f1(tau(g))
+          attenuate(g) = f1(tau(g)) * lenFlt
           delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
-          fluxVec(g) = fluxVec(g) - delta(g) * tau(g)
+          fluxVec(g) = fluxVec(g) - delta(g) * totVec(g)
         end do
 
         ! Accumulate to scalar flux
@@ -1589,7 +1589,7 @@ contains
           call OMP_set_lock(self % locks(cIdx))
           !$omp simd
           do g = 1, self % nG
-            scalarVec(g) = scalarVec(g) + delta(g) * lenFlt
+            scalarVec(g) = scalarVec(g) + delta(g) 
           end do
           self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
           call OMP_unset_lock(self % locks(cIdx))
