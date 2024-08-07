@@ -1492,26 +1492,21 @@ contains
     real(defFlt)                                          :: lenFlt
     real(defReal), dimension(3)                           :: r0, mu0
     
-    matIdx  = r % coords % matIdx
-    totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):((matIdx - 1) * self % nG + self % nG))
+    ! matIdx  = r % coords % matIdx
     
     ! Set initial angular flux to angle average of cell source
     cIdx = self % IDToCell(r % coords % uniqueID)
     if (cIdx > 0) then
       do g = 1, self % nG
         idx = (cIdx - 1) * self % nG + g
-        if (totVec(g) > 0.0_defFlt) then
-          fluxVec(g) = self % source(idx) / totVec(g)
-        else
-          fluxVec(g) = self % source(idx)
-        end if
+          fluxVec(g) = self % source(idx) 
       end do
     else
       fluxVec = 0.0_defFlt
     end if
 
     ints = 0
-    matIdx0 = matIdx
+    matIdx0 = 0
     totalLength = ZERO
     activeRay = .false.
     do while (totalLength < self % termination)
@@ -1559,7 +1554,7 @@ contains
       ! Fudge if a non-mapped region is found
       ! Fudge if distance is so short that it would risk dubious results
       ! Simply skips transport for the given movement
-      if (cIdx > 0 .and. length > self % skipLength) then
+      ! if (cIdx > 0 .and. length > self % skipLength) then
       
         totalLength = totalLength + length
  
@@ -1582,8 +1577,8 @@ contains
         do g = 1, self % nG
           tau(g) = lenFlt * totVec(g)
           attenuate(g) = f1(tau(g))
-          delta(g) = (tau(g) * fluxVec(g) - lenFlt * sourceVec(g)) * attenuate(g)
-          fluxVec(g) = fluxVec(g) - delta(g)
+          delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
+          fluxVec(g) = fluxVec(g) - delta(g) * tau(g)
         end do
 
         ! Accumulate to scalar flux
@@ -1594,7 +1589,7 @@ contains
           call OMP_set_lock(self % locks(cIdx))
           !$omp simd
           do g = 1, self % nG
-            scalarVec(g) = scalarVec(g) + delta(g)
+            scalarVec(g) = scalarVec(g) + delta(g) * lenFlt
           end do
           self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
           call OMP_unset_lock(self % locks(cIdx))
@@ -1603,13 +1598,13 @@ contains
       
         end if
 
-      elseif((totalLength + length) >= self % termination) then
-        totalLength = self % termination
+      ! elseif((totalLength + length) >= self % termination) then
+      !   totalLength = self % termination
 
-      elseif ((totalLength + length) >= self % dead .and. .not. activeRay) then
-        totalLength = self % dead
+      ! elseif ((totalLength + length) >= self % dead .and. .not. activeRay) then
+      !   totalLength = self % dead
 
-      end if
+      ! end if
 
       ! Check for a vacuum hit
       if (hitVacuum) then
@@ -1689,12 +1684,17 @@ contains
     do cIdx = 1, self % nCells
       matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
         
+      ! ! Guard against void cells
+      ! if (matIdx > 2000000) then
+      !   do g = 1, self % nG
+      !     idx   = self % nG * (cIdx - 1) + g
+      !     self % scalarFlux(idx) = 0.0_defFlt
+      !   end do
+      !   cycle
+      ! end if 
+
       ! Guard against void cells
-      if (matIdx > 2000000) then
-        do g = 1, self % nG
-          idx   = self % nG * (cIdx - 1) + g
-          self % scalarFlux(idx) = 0.0_defFlt
-        end do
+      if (matIdx >= UNDEF_MAT) then
         cycle
       end if 
       
@@ -1727,7 +1727,7 @@ contains
         total = self % sigmaT((matIdx - 1) * self % nG + g)
         
         if (vol > volume_tolerance) then
-          self % scalarFlux(idx) = self % scalarFlux(idx) * norm/ (total * real(vol,defFlt))
+          self % scalarFlux(idx) = self % scalarFlux(idx) * norm / (real(vol,defFlt))
         else
           corr = ONE
         end if
@@ -1790,8 +1790,15 @@ contains
     id      =  self % CellToID(cIdx)
     matIdx  =  self % geom % geom % graph % getMatFromUID(id) 
 
-    ! Hack to guard against non-material cells
-    if (matIdx >= UNDEF_MAT) return
+     ! Guard against void cells
+    if (matIdx >= UNDEF_MAT) then
+      baseIdx = self % ng * (cIdx - 1)
+      do g = 1, self % nG
+        idx = baseIdx + g
+        self % source(idx) = 0.0_defFlt
+      end do
+      return
+    end if
     
     ! Obtain XSs
     matIdx = (matIdx - 1) * self % nG
@@ -1827,6 +1834,7 @@ contains
       idx = baseIdx + g
 
       self % source(idx) = chi(g) * fission + scatter + self % fixedSource(idx)
+      self % source(idx) = self % source(idx) / total(g)
     end do
 
   end subroutine sourceUpdateKernel
