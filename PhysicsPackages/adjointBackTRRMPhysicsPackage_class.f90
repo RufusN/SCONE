@@ -1895,8 +1895,11 @@ module adjointBackTRRMPhysicsPackage_class
       real(defFlt), allocatable, dimension(:)               :: deltaRecordBuffer
       real(defFlt), target, dimension(self % nG * self % NSegMax*2) :: deltaRecord
           
+      ! matIdx  = r % coords % matIdx
+      
       ! Set initial angular flux to angle average of cell source
       cIdx = self % IDToCell(r % coords % uniqueID)
+      ! matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
       if (cIdx > 0) then
         do g = 1, self % nG
           idx = (cIdx - 1) * self % nG + g
@@ -2364,13 +2367,13 @@ module adjointBackTRRMPhysicsPackage_class
         matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
 
         ! Guard against void cells
-        if (matIdx >= UNDEF_MAT) then
+        if (matIdx >= UNDEF_MAT) cycle !return
           ! do g = 1, self % nG
           !   idx   = self % nG * (cIdx - 1) + g
           !   self % adjscalarFlux(idx) = 0.0_defFlt
           ! end do
-          cycle
-        end if 
+        !   cycle
+        ! end if 
         
         ! Update volume due to additional rays
         self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
@@ -2879,6 +2882,49 @@ module adjointBackTRRMPhysicsPackage_class
       call out % startBlock(name)
       call out % printResult(real(self % sensitivityScore(1),defReal), real(self % sensitivityScore(2),defReal), name)
       call out % endBlock()
+
+      ! Print material integrated fluxes if requested
+      if (allocated(self % intMatIdx)) then
+        name = 'integral reaction rate'
+        resArrayShape = [1]
+        call out % startBlock(name)
+        do i = 1, size(self % intMatIdx)
+          call out % startArray(self % intMatName(i), resArrayShape)
+          res = ZERO
+          std = ZERO
+          totalVol = ZERO
+  
+          do cIdx = 1, self % nCells
+            matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
+  
+            if (self % intMatIdx(i) == matIdx) then
+              vol = self % normVolume * self % volume(cIdx)
+              if (vol < volume_tolerance) continue
+              totalVol = totalVol + real(vol,defReal)
+              do g = 1, self % nG
+                idx = (cIdx - 1)* self % nG + g
+                res = res + self % fluxScores(idx,1) * vol * self % fixedSource(idx)
+                std = std + self % fluxScores(idx,2)**2 * self % fluxScores(idx,1)**2 &
+                  * vol * vol * self % fixedSource(idx) * self % fixedSource(idx)
+              end do
+            end if
+          end do
+          if (res > ZERO) then
+            std = sqrt(std)/res
+          else
+            std = ZERO
+          end if
+          call out % addResult(res, std)
+          call out % endArray()
+        end do
+        call out % endBlock()
+      end if
+
+      name = 'Perturbation'
+      call out % startBlock(name)
+      call out % printValue(real(self % sensitivityScore(1),defReal), name)
+      call out % endBlock()
+
   
       ! Print cell volumes
       if (self % printVolume) then
@@ -3071,43 +3117,6 @@ module adjointBackTRRMPhysicsPackage_class
           call out % endArray()
           call out % endBlock()
         end do
-      end if
-  
-      ! Print material integrated fluxes if requested
-      if (allocated(self % intMatIdx)) then
-        name = 'integral reaction rate'
-        resArrayShape = [1]
-        call out % startBlock(name)
-        do i = 1, size(self % intMatIdx)
-          call out % startArray(self % intMatName(i), resArrayShape)
-          res = ZERO
-          std = ZERO
-          totalVol = ZERO
-  
-          do cIdx = 1, self % nCells
-            matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
-  
-            if (self % intMatIdx(i) == matIdx) then
-              vol = self % normVolume * self % volume(cIdx)
-              if (vol < volume_tolerance) continue
-              totalVol = totalVol + real(vol,defReal)
-              do g = 1, self % nG
-                idx = (cIdx - 1)* self % nG + g
-                res = res + self % fluxScores(idx,1) * vol * self % fixedSource(idx)
-                std = std + self % fluxScores(idx,2)**2 * self % fluxScores(idx,1)**2 &
-                  * vol * vol * self % fixedSource(idx) * self % fixedSource(idx)
-              end do
-            end if
-          end do
-          if (res > ZERO) then
-            std = sqrt(std)/res
-          else
-            std = ZERO
-          end if
-          call out % addResult(res, std)
-          call out % endArray()
-        end do
-        call out % endBlock()
       end if
   
       call out % writeToFile(self % outputFile)
