@@ -1,6 +1,5 @@
 numberOfGroups 2; 
 capture (0.5 1.0) ;
-//capture (0.505 1.00);
 fission (0.5 1.0 );
 nu      (0.25 0.75); 
 chi     (1.0 0.0); 
