@@ -1604,278 +1604,6 @@ module adjointBackTRRMPhysicsPackage_class
   
     end subroutine uncollidedSweep
 
-    ! subroutine transportSweep(self, r, ints)
-    !   class(adjointBackTRRMPhysicsPackage), target, intent(inout) :: self
-    !   type(ray), intent(inout)                              :: r
-    !   integer(longInt), intent(out)                         :: ints
-    !   integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
-    !                                                              segCount, i, segCountCrit, segIdx, gIn, pIdx
-    !   real(defReal)                                         :: totalLength, length
-    !   logical(defBool)                                      :: activeRay, hitVacuum, tally
-    !   type(distCache)                                       :: cache
-    !   real(defFlt)                                          :: lenFlt
-    !   real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, avgFluxVec, tau
-    !   real(defFlt), allocatable, dimension(:)               :: tauBack, tauBackBuffer
-    !   real(shortInt), allocatable, dimension(:)             :: cIdxBack, cIdxBackBuffer
-    !   logical(defBool), allocatable, dimension(:)           :: vacBack, vacBackBuffer 
-    !   real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec
-    !   real(defReal), pointer, dimension(:)                  :: angularProd
-    !   real(defFlt), allocatable, dimension(:)               :: fluxRecord, fluxRecordBuffer 
-    !   ! real(defFlt), allocatable, dimension(:)               :: adjointRecord
-    !   real(defReal), dimension(3)                           :: r0, mu0
-          
-    !   ! Set initial angular flux to angle average of cell source
-    !   cIdx = r % coords % uniqueID
-    !   do g = 1, self % nG
-    !     idx = (cIdx - 1) * self % nG + g
-    !     fluxVec(g) = self % source(idx)
-    !   end do
-  
-    !   ints = 0
-    !   matIdx0 = 0
-    !   segCount = 0
-    !   totalLength = ZERO
-    !   activeRay = .false.
-    !   tally = .true.
-  
-    !   allocate(tauBack(self % nG * 50))    ! could add some kind of termination  / average cell length to get an approx length
-    !   allocate(fluxRecord(self % nG * 50))
-    !   allocate(cIdxBack(50))
-    !   allocate(vacBack(50))
-  
-    !   do while (totalLength < self % termination + self % dead)
-  
-    !     ! Get material and cell the ray is moving through
-    !     matIdx  = r % coords % matIdx
-    !     cIdx    = r % coords % uniqueID
-  
-    !     if (matIdx0 /= matIdx) then
-    !       matIdx0 = matIdx
-    !       ! Cache total cross section
-    !       totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
-    !     end if
-  
-    !     ! Remember co-ordinates to set new cell's position
-    !     if (.not. self % cellFound(cIdx)) then
-    !       r0 = r % rGlobal()
-    !       mu0 = r % dirGlobal()
-    !     end if
-            
-    !     ! Set maximum flight distance and ensure ray is active
-    !     if (totalLength >= self % dead) then
-    !       length = self % termination - totalLength 
-    !       activeRay = .true.
-    !     else
-    !       length = self % dead - totalLength
-    !     end if
-  
-    !     ! Second dead length
-    !     if (totalLength >= self % termination) then
-    !       length = self % termination + self % dead - totalLength
-    !       tally = .false.
-    !     end if
-  
-    !     ! Move ray
-    !     ! Use distance caching or standard ray tracing
-    !     ! Distance caching seems a little bit more unstable
-    !     ! due to FP error accumulation, but is faster.
-    !     ! This can be fixed by resetting the cache after X number
-    !     ! of distance calculations.
-    !     if (self % cache) then
-    !       if (mod(ints,100_longInt) == 0)  cache % lvl = 0
-    !       call self % geom % moveRay_withCache(r % coords, length, event, cache, hitVacuum)
-    !     else
-    !       call self % geom % moveRay_noCache(r % coords, length, event, hitVacuum)
-    !     end if
-    !     totalLength = totalLength + length
-        
-    !     ! Set new cell's position. Use half distance across cell
-    !     ! to try and avoid FP error
-    !     if (.not. self % cellFound(cIdx)) then
-    !       !$omp critical 
-    !       self % cellFound(cIdx) = .true.
-    !       self % cellPos(cIdx,:) = r0 + length * HALF * mu0
-    !       !$omp end critical
-    !     end if
-  
-    !     ints = ints + 1
-    !     lenFlt = real(length,defFlt)
-    !     baseIdx = (cIdx - 1) * self % nG
-    !     sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
-  
-    !     !$omp simd aligned(totVec)
-    !     do g = 1, self % nG
-    !       tau(g) = totVec(g) * lenFlt
-    !     end do
-          
-    !     !$omp simd 
-    !     do g = 1, self % nG
-    !       attenuate(g) = F1(tau(g))
-    !     end do
-  
-    !     !$omp simd
-    !     do g = 1, self % nG
-    !       delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
-    !     end do
-  
-    !     !$omp simd
-    !     do g = 1, self % nG
-    !       fluxVec(g) = fluxVec(g) - delta(g) * tau(g)
-    !     end do
-  
-    !     ! Accumulate to scalar flux
-    !     if (activeRay) then
-    !       segCount = segCount + 1
-  
-    !       if (tally) then
-    !           segCountCrit = segCount
-    !       end if
-   
-    !       if (segCount > size(cIdxBack) - 1) then ! doubles length if needed
-  
-    !         allocate(tauBackBuffer(size(tauBack) * 2))   !record expoentials 
-    !         tauBackBuffer(1:size(tauBack)) = tauBack
-    !         call move_alloc(tauBackBuffer, tauBack)
-  
-    !         allocate(cIdxBackBuffer(size(cIdxBack) * 2)) !add cell id for scalar flux update
-    !         cIdxBackBuffer(1:size(cIdxBack)) = cIdxBack
-    !         call move_alloc(cIdxBackBuffer, cIdxBack)
-  
-    !         allocate(vacBackBuffer(size(vacBack) * 2))   !check vacuum
-    !         vacBackBuffer(1:size(vacBack)) = vacBack
-    !         call move_alloc(vacBackBuffer, vacBack)
-  
-    !         allocate(fluxRecordBuffer(size(fluxRecord) * 2))   !recording of average flux
-    !         fluxRecordBuffer(1:size(fluxRecord)) = fluxRecord
-    !         call move_alloc(fluxRecordBuffer, fluxRecord)
-    !       end if
-  
-    !       !$omp simd
-    !       do g = 1, self % nG
-    !         avgFluxVec(g) = (delta(g) + sourceVec(g))
-    !       end do
-          
-    !       !$omp simd
-    !       do g = 1, self % nG
-    !         tauBack((segCount - 1) * self % nG + g) = tau(g)
-    !       end do
-  
-    !       cIdxBack(segCount) = cIdx
-  
-    !       if ( tally ) then
-  
-    !       !$omp simd
-    !       do g = 1, self % nG
-    !         fluxRecord((segCount - 1) * self % nG + g)  = avgFluxVec(g)  
-    !         !fluxRecord((segCount) * self % nG - g)  = avgFluxVec(g) !?
-    !       end do
-  
-    !         call OMP_set_lock(self % locks(cIdx))
-    !         scalarVec => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
-    !         !$omp simd aligned(scalarVec)
-    !         do g = 1, self % nG
-    !           scalarVec(g) = scalarVec(g) + delta(g) * tau(g)
-    !         end do
-    !         self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length 
-    !         call OMP_unset_lock(self % locks(cIdx))
-    !       end if
-  
-    !       if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
-  
-    !       vacBack(segCount + 1) = hitVacuum
-        
-    !     end if
-  
-    !     ! Check for a vacuum hit
-    !     if (hitVacuum) then
-    !       !$omp simd
-    !       do g = 1, self % nG
-    !         fluxVec(g) = 0.0_defFlt
-    !       end do
-    !     end if 
-    !   end do
-  
-    !   ! Flux guess for new adjoint deadlength
-    !   do g = 1, self % nG
-    !     idx = (cIdx - 1) * self % nG + g
-    !     fluxVec(g) = self % adjSource(idx)
-    !   end do
-  
-    !   ! Could trim arrays here, (tauBack...)
-    !   allocate(tauBackBuffer(segCount))
-    !   tauBackBuffer = tauBack(1 : (segCount * self % nG))
-    !   call move_alloc(tauBackBuffer, tauBack)
-  
-    !   allocate(cIdxBackBuffer(segCount))
-    !   cIdxBackBuffer = cIdxBack(1:segCount)
-    !   call move_alloc(cIdxBackBuffer, cIdxBack)
-  
-    !   allocate(vacBackBuffer(segCount))
-    !   vacBackBuffer = vacBack(1:segCount)
-    !   call move_alloc(vacBackBuffer, vacBack)
-  
-    !   allocate(fluxRecordBuffer(segCount))
-    !   fluxRecordBuffer = fluxRecord(1 : (segCount * self % nG))
-    !   call move_alloc(fluxRecordBuffer, fluxRecord)
-  
-    !   ! Iterate over segments - large array needs changing
-    !   do i = segCount, 1, -1 
-        
-    !     cIdx = cIdxBack(i)
-    !     baseIdx = (cIdx - 1) * self % nG
-    !     segIdx =  (i - 1) * self % nG
-    !     sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
-  
-    !     !$omp simd
-    !     do g = 1, self % nG
-    !       attenuate(g) = F1(tauBack(segIdx + g))
-    !     end do
-  
-    !     !$omp simd
-    !     do g = 1, self % nG
-    !       delta(g) = (fluxVec(g) - sourceVec(g)) * attenuate(g)
-    !     end do
-  
-    !     !$omp simd
-    !     do g = 1, self % nG
-    !       fluxVec(g) = fluxVec(g) - delta(g) * tauBack(segIdx + g)
-    !     end do
-        
-    !     if (i <= segCountCrit) then
-  
-    !       !$omp simd
-    !       do g = 1, self % nG
-    !         avgFluxVec(g) = (sourceVec(g) + delta(g))
-    !       end do
-  
-    !       call OMP_set_lock(self % locks(cIdx))
-  
-    !       scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
-    !       angularProd => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG )
-    !       !$omp simd 
-    !       do g = 1, self % nG
-    !           scalarVec(g) = scalarVec(g) + delta(g) * tauBack(segIdx + g)
-    !           do gIn = 1, self % nG
-    !             pIdx = self % nG * (g - 1) + gIn
-    !             angularProd(pIdx) = angularProd(pIdx) + avgFluxVec(g) * fluxRecord(segIdx + gIn)
-    !           end do
-    !       end do
-    !       call OMP_unset_lock(self % locks(cIdx))
-  
-    !     end if  
-  
-    !     if (vacBack(i)) then
-    !       !$omp simd
-    !       do g = 1, self % nG
-    !         fluxVec(g) = 0.0_defFlt
-    !       end do
-    !     end if
-  
-    !    end do
-  
-    !    !use records to computer inner product etc - seperate subroutine? 
-       
-    ! end subroutine transportSweep  
 
     subroutine transportSweep(self, r, ints, isActive)
       class(adjointBackTRRMPhysicsPackage), target, intent(inout) :: self
@@ -2167,7 +1895,7 @@ module adjointBackTRRMPhysicsPackage_class
           do g = 1, self % nG
               scalarVec(g) = scalarVec(g) + delta(g) * tau(g)
               scalarVecFW(g) = scalarVecFW(g) + deltaFW(g) * tau(g)
-              RR(g) = RR(g) + avgFluxVec(g) * self % fixedSource(baseIdx + g)
+              RR(g) = RR(g) + avgFluxVec(g) !* self % fixedSource(baseIdx + g)
           end do
           
           if (isActive) then
@@ -2269,13 +1997,7 @@ module adjointBackTRRMPhysicsPackage_class
         matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
           
         ! Guard against void cells
-        if (matIdx >= UNDEF_MAT) then
-          ! do g = 1, self % nG
-          !   idx   = self % nG * (cIdx - 1) + g
-          !   self % scalarFlux(idx) = 0.0_defFlt
-          ! end do
-          cycle
-        end if 
+        if (matIdx >= UNDEF_MAT) cycle
         
         ! Update volume due to additional rays unless volume was precomputed
         !if (self % nVolRays <= 0) then 
@@ -2376,13 +2098,7 @@ module adjointBackTRRMPhysicsPackage_class
         matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
 
         ! Guard against void cells
-        if (matIdx >= UNDEF_MAT) cycle !return
-          ! do g = 1, self % nG
-          !   idx   = self % nG * (cIdx - 1) + g
-          !   self % adjscalarFlux(idx) = 0.0_defFlt
-          ! end do
-        !   cycle
-        ! end if 
+        if (matIdx >= UNDEF_MAT) cycle 
         
         ! Update volume due to additional rays
         !self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
@@ -2448,7 +2164,8 @@ module adjointBackTRRMPhysicsPackage_class
         do g = 1, self % nG 
           idx = (cIdx - 1) * self % nG + g
           if (self % volume(cIdx) > volume_tolerance) then
-            self % ReactionRate(idx) = self % ReactionRate(idx) * norm / (self % volume(cIdx))
+            self % ReactionRate(idx) = self % ReactionRate(idx) * norm * & 
+                                              self % fixedSource(idx) / (self % volume(cIdx))
           else
             self % ReactionRate(idx) = 0.0_defFlt
           end if
@@ -2685,7 +2402,7 @@ module adjointBackTRRMPhysicsPackage_class
         self % scalarFlux(idx) = 0.0_defFlt
         self % adjPrevFlux(idx) = self % adjScalarFlux(idx)
         self % adjScalarFlux(idx) = 0.0_defFlt
-        self % ReactionRate = 0.0_defFlt
+        self % ReactionRate(idx) = 0.0_defFlt
       end do
       !$omp end parallel do
   
