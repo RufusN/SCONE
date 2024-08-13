@@ -1293,24 +1293,19 @@ contains
             end do
           end if
 
-          call OMP_set_lock(self % locks(cIdx))
           centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
           momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
           ! Update centroid
-          !$omp simd aligned(centVec)
           do g = 1, nDim
-            
+            !$omp atomic
             centVec(g) = centVec(g) + rC(g)
           end do
 
           ! Update spatial moment scores
-          !$omp simd aligned(momVec)
           do g = 1, matSize
-
+            !$omp atomic
             momVec(g) = momVec(g) + matScore(g)
           end do
-          
-          call OMP_unset_lock(self % locks(cIdx))
 
           if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
         
