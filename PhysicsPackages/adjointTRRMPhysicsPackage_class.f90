@@ -843,20 +843,6 @@ contains
     tally = .true.
     oversized = .false.
 
-    ! allocate(lenBack(5000))         ! could add some kind of termination  / average cell length to get an approx length
-    ! allocate(cIdxBack(5000))
-    ! allocate(vacBack(5000))
-    ! ! allocate(fluxRecord(5000))
-    ! allocate(deltaRecord(self % nG * 5000))
-    ! allocate(tauBack(self % nG * 5000))    
-    
-    ! lenBack = ZERO
-    ! deltaRecord = ZERO
-    ! cIdxBack = 0
-    ! vacBack = .false.
-
-
-
     do while (totalLength < self % termination + self % dead)
 
       ! Get material and cell the ray is moving through
@@ -1247,11 +1233,7 @@ contains
 
       do g = 1, self % nG * self % nG
         idx = (cIdx - 1) * self % nG * self % nG + g
-        if (self % volume(cIdx) > volume_tolerance) then
-          self % angularIP(idx) = self % angularIP(idx) / (self % volume(cIdx))
-        else
-          self % angularIP(idx) = 0.0_defFlt
-        end if
+        self % angularIP(idx) = self % angularIP(idx) * (self % volume(cIdx))
       end do
 
     end do
@@ -1428,40 +1410,34 @@ contains
     end do
 
     if (mat == self % matPert .and. self % XStype == 1) then ! capture - complete 
-      do i = 1, size(self % energyId)
-        g1Pert = self % energyId(1)
-        delta = 0.0_defFlt
-        delta = self % XSchange * capture(g1Pert) * IPVec((g1Pert - 1) * self % nG + g1Pert)
-        numSum = numSum - delta
-      end do
+      g1Pert = self % energyId(1)
+      delta = 0.0_defFlt
+      delta = self % XSchange * capture(g1Pert) * IPVec((g1Pert - 1) * self % nG + g1Pert)
+      numSum = numSum - delta
 
     elseif ( mat == self % matPert .and. self % XStype == 2) then ! fission - complete
-      do i = 1, size(self % energyId)
-        g1Pert = self % energyId(i)
-        do g = 1, self % nG 
-          delta = 0.0_defFlt
-          fission_pert = 0.0_defFlt
-          fission_pert = fission_pert + IPVec(self % nG * (g - 1) + g1Pert) * nuFission(g1Pert) * self % XSchange
-          if ( g == g1Pert ) then 
-            delta = IPVec((g - 1) * self % nG + g) * fissVec(g) * self % XSchange
-          end if
-          delta = fission_pert * chi(g) * ONE_KEFF - delta
-          numSum = numSum + delta
-        end do
+      g1Pert = self % energyId(1)
+      do g = 1, self % nG 
+        delta = 0.0_defFlt
+        fission_pert = 0.0_defFlt
+        fission_pert = fission_pert + IPVec(self % nG * (g - 1) + g1Pert) * nuFission(g1Pert) * self % XSchange
+        if ( g == g1Pert ) then 
+          delta = IPVec((g - 1) * self % nG + g) * fissVec(g) * self % XSchange
+        end if
+        delta = fission_pert * chi(g) * ONE_KEFF - delta
+        numSum = numSum + delta
       end do
 
     elseif (mat == self % matPert .and. self % XStype == 3) then !scatter - complete
-      do i = 1, size(self % energyId), 2
-        g1Pert = self % energyId(i)
-        g2Pert = self % energyId(i+1)
-        delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * &
-                      self % XSchange   
-           
-        scatter_pert = scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
-                                    IPVec((g2Pert - 1 ) * self % nG + g1Pert) * self % XSchange
-        delta = scatter_pert - delta
-        numSum = numSum + delta
-      end do
+      g1Pert = self % energyId(1)
+      g2Pert = self % energyId(2)
+      delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * &
+                    self % XSchange   
+          
+      scatter_pert = scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
+                                  IPVec((g2Pert - 1 ) * self % nG + g1Pert) * self % XSchange
+      delta = scatter_pert - delta
+      numSum = numSum + delta
     end if
 
 
@@ -1549,8 +1525,8 @@ contains
     !$omp end parallel do
 
     !$omp parallel do schedule(static)
-    do idx = 1, size(self % angularIP)
-      self % angularIP(idx) = 0.0_defFlt
+    do g = 1, size(self % angularIP)
+      self % angularIP(g) = 0.0_defFlt
     end do
     !$omp end parallel do
 
