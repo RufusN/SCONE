@@ -1685,11 +1685,7 @@ contains
 
       do g = 1, self % nG * self % nG
         idx = (cIdx - 1) * self % nG * self % nG + g
-        if (self % volume(cIdx) > volume_tolerance) then
-          self % angularIP(idx) = self % angularIP(idx) / (self % volume(cIdx))
-        else
-          self % angularIP(idx) = 0.0_defFlt
-        end if
+        self % angularIP(idx) = self % angularIP(idx) * (self % volume(cIdx))
       end do
 
     end do
