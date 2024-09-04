@@ -1,0 +1,25 @@
+{
+  "seed":5,
+  "pop":1500,
+  "Inactive_Cycles":600,
+  "Active_Cycles":400,
+  "Total_CPU_Time":1.18203E+03,
+  "Total_Transport_Time":1.20946E+02,
+  "Time_Per_Integration":6.35446E-09,
+  "Clock_Time":1.33835E+02,
+  "keff":{
+    "keff":[1.18679E+00,3.97227E-04]
+  },
+  "Adjoint_keff":{
+    "Adjoint_keff":[1.18647E+00,1.30800E-04]
+  },
+  "delta_keff":{
+    "delta_keff":[-3.04692E-04,2.21905E-07]
+  },
+  "pert_keff":{
+    "pert_keff":[1.18649E+00,1.18710E+00]
+  },
+  "sensitivity":{
+    "sensitivity":[-2.56725E-03,-4.67729E-04]
+  }
+}
