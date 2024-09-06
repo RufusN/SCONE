@@ -736,8 +736,8 @@ contains
       adj_KEFF = 1.0_defFlt / self % adjkeff
       !$omp parallel do schedule(static)
       do i = 1, self % nCells
-        call self % sourceUpdateKernel(i, ONE_KEFF)
-        call self % adjointSourceUpdateKernel(i, adj_KEFF)
+        call self % sourceUpdateKernel(i, ONE_KEFF, it)
+        call self % adjointSourceUpdateKernel(i, adj_KEFF, it)
       end do
       !$omp end parallel do
 
@@ -1696,10 +1696,11 @@ contains
   !!
   !! Kernel to update sources given a cell index
   !!
-  subroutine sourceUpdateKernel(self, cIdx, ONE_KEFF)
+  subroutine sourceUpdateKernel(self, cIdx, ONE_KEFF, it)
     class(adjointLSRRPhysicsPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
     real(defFlt), intent(in)                              :: ONE_KEFF
+    integer(shortInt), intent(in)                         :: it
     real(defFlt)                                          :: scatter, xScatter, yScatter, zScatter, &
                                                              fission, xFission, yFission, zFission, &
                                                              xSource, ySource, zSource
@@ -1732,7 +1733,7 @@ contains
     - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
     + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-    if ((abs(det) > volume_tolerance) .and. self % volume(cIdx) > 1E-6) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
+    if ((abs(det) > volume_tolerance) .and. self % volume(cIdx) > 1E-10) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
       one_det = ONE/det
       invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
       invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
@@ -1812,26 +1813,30 @@ contains
       zSource = chi(g) * zFission + zScatter
       zSource = zSource / total(g)
         
-      ! Calculate source gradients by inverting the moment matrix
-      self % sourceX(baseIdx + g) = invMxx * xSource + &
-              invMxy * ySource + invMxz * zSource
-      self % sourceY(baseIdx + g) = invMxy * xSource + &
-              invMyy * ySource + invMyz * zSource
-      ! self % sourceZ(baseIdx + g) = invMxz * xSource + &
-      !      invMyz * ySource + invMzz * zSource
-      ! self % sourceX(baseIdx + g) = 0.0_defFlt
-      ! self % sourceY(baseIdx + g) = 0.0_defFlt
-      self % sourceZ(baseIdx + g) = 0.0_defFlt
-
+      
+      if (it > 10) then
+        self % sourceX(baseIdx + g) = invMxx * xSource + &
+                invMxy * ySource + invMxz * zSource
+        self % sourceY(baseIdx + g) = invMxy * xSource + &
+                invMyy * ySource + invMyz * zSource
+        ! self % sourceZ(baseIdx + g) = invMxz * xSource + &
+        !      invMyz * ySource + invMzz * zSource
+        self % sourceZ(baseIdx + g) = 0.0_defFlt
+      else
+        self % sourceX(baseIdx + g) = 0.0_defFlt
+        self % sourceY(baseIdx + g) = 0.0_defFlt
+        self % sourceZ(baseIdx + g) = 0.0_defFlt
+      end if
     end do
 
   end subroutine sourceUpdateKernel
 
 
-  subroutine adjointSourceUpdateKernel(self, cIdx, ONE_KEFF)
+  subroutine adjointSourceUpdateKernel(self, cIdx, ONE_KEFF, it)
     class(adjointLSRRPhysicsPackage), target, intent(inout) :: self
     integer(shortInt), intent(in)                         :: cIdx
     real(defFlt), intent(in)                              :: ONE_KEFF
+    integer(shortInt), intent(in)                         :: it
     real(defFlt)                                          :: scatter, xScatter, yScatter, zScatter, &
                                                              fission, xFission, yFission, zFission, &
                                                              xSource, ySource, zSource
@@ -1864,7 +1869,7 @@ contains
     - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
     + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-    if ((abs(det) > volume_tolerance) .and. self % volume(cIdx) > 1E-6) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
+    if ((abs(det) > volume_tolerance) .and. self % volume(cIdx) > 1E-10) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
       one_det = ONE/det
       invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
       invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
@@ -1944,16 +1949,20 @@ contains
       zSource = chi(g) * zFission + zScatter
       zSource = zSource / total(g)
         
-      !Calculate source gradients by inverting the moment matrix
-      self % adjSourceX(baseIdx + g) = invMxx * xSource + &
-              invMxy * ySource + invMxz * zSource
-      self % adjSourceY(baseIdx + g) = invMxy * xSource + &
-              invMyy * ySource + invMyz * zSource
-      ! self % adjSourceZ(baseIdx + g) = invMxz * xSource + &
-      !      invMyz * ySource + invMzz * zSource
-      ! self % adjSourceX(baseIdx + g) = 0.0_defFlt
-      ! self % adjSourceY(baseIdx + g) = 0.0_defFlt
-      self % adjSourceZ(baseIdx + g) = 0.0_defFlt
+      if (it > 10) then
+        !Calculate source gradients by inverting the moment matrix
+        self % adjSourceX(baseIdx + g) = invMxx * xSource + &
+                invMxy * ySource + invMxz * zSource
+        self % adjSourceY(baseIdx + g) = invMxy * xSource + &
+                invMyy * ySource + invMyz * zSource
+        ! self % adjSourceZ(baseIdx + g) = invMxz * xSource + &
+        !      invMyz * ySource + invMzz * zSource
+        self % adjSourceZ(baseIdx + g) = 0.0_defFlt
+      else
+        self % adjSourceX(baseIdx + g) = 0.0_defFlt
+        self % adjSourceY(baseIdx + g) = 0.0_defFlt
+        self % adjSourceZ(baseIdx + g) = 0.0_defFlt
+      end if
     end do
 
   end subroutine adjointSourceUpdateKernel
@@ -2106,8 +2115,8 @@ contains
   !! Same for flux moments
   !!
   subroutine resetFluxes(self)
-    class(adjointLSRRPhysicsPackage), intent(inout) :: self
-    integer(shortInt)                                  :: idx
+    class(adjointLSRRPhysicsPackage), intent(inout)    :: self
+    integer(shortInt)                                  :: idx, g
 
     !$omp parallel do schedule(static)
     do idx = 1, size(self % scalarFlux)
@@ -2132,8 +2141,8 @@ contains
     !$omp end parallel do
 
     !$omp parallel do schedule(static)
-    do idx = 1, size(self % angularIP)
-      self % angularIP(idx) = 0.0_defFlt
+    do g = 1, size(self % angularIP)
+      self % angularIP(g) = 0.0_defFlt
     end do
     !$omp end parallel do
     
