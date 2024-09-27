@@ -2054,13 +2054,111 @@ contains
               case(1)
                 Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
               case(2)
-                Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
-              case(3)
                 Sigma = real(mat % getCaptureXS(g, self % rand),defFlt)
+              ! case(3)
+              !   Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
               end select
               idx = (cIdx - 1)* self % nG + g
               res = res + self % fluxScores(idx,1)*vol * Sigma
               std = std + self % fluxScores(idx,2)**2*self % fluxScores(idx,1)**2*vol*vol*sigma*sigma
+            end do
+          end if
+        end do
+        if (res > ZERO) then
+          std = sqrt(std)/res
+        else
+          std = ZERO
+        end if
+        call out % addResult(res, std)
+        call out % endArray()
+      end do
+      call out % endBlock()
+    end if
+
+        ! Print material integrated fluxes if requested
+    if (allocated(self % intMatIdx)) then
+      name = 'integral flux rate '
+      resArrayShape = [1]
+      call out % startBlock(name)
+      do i = 1, size(self % intMatIdx)
+        call out % startArray(self % intMatName(i), resArrayShape)
+        res = ZERO
+        std = ZERO
+        totalVol = ZERO
+
+        matPtr  => self % mgData % getMaterial(self % intMatIdx(i))
+        mat     => baseMgNeutronMaterial_CptrCast(matPtr)
+
+        do cIdx = 1, self % nCells
+          s % r = self % cellPos(cIdx,:)
+          i2 = self % fluxMap % map(s)
+          matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
+          if (i2 > 0 ) continue
+          if (self % intMatIdx(i) == matIdx) then
+            vol = self % normVolume * self % volume(cIdx)
+            if (vol < volume_tolerance) continue
+            totalVol = totalVol + real(vol,defReal)
+            do g = 1, self % nG
+              select case(self % mapResponse)
+              case(1)
+                Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
+              case(2)
+                Sigma = real(mat % getCaptureXS(g, self % rand),defFlt)
+              ! case(3)
+              !   Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
+              end select
+              idx = (cIdx - 1)* self % nG + g
+              res = res + self % fluxScores(idx,1)*vol
+              std = std + self % fluxScores(idx,2)**2*self % fluxScores(idx,1)**2*vol*vol
+            end do
+          end if
+        end do
+        if (res > ZERO) then
+          std = sqrt(std)/res
+        else
+          std = ZERO
+        end if
+        call out % addResult(res, std)
+        call out % endArray()
+      end do
+      call out % endBlock()
+    end if
+
+            ! Print material integrated fluxes if requested
+    if (allocated(self % intMatIdx)) then
+      name = 'integral RR rate no vol'
+      resArrayShape = [1]
+      call out % startBlock(name)
+      do i = 1, size(self % intMatIdx)
+        call out % startArray(self % intMatName(i), resArrayShape)
+        res = ZERO
+        std = ZERO
+        totalVol = ZERO
+
+        matPtr  => self % mgData % getMaterial(self % intMatIdx(i))
+        mat     => baseMgNeutronMaterial_CptrCast(matPtr)
+
+        do cIdx = 1, self % nCells
+          s % r = self % cellPos(cIdx,:)
+          i2 = self % fluxMap % map(s)
+          matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
+          if (i2 > 0 ) continue
+          if (self % intMatIdx(i) == matIdx) then
+            vol = self % normVolume * self % volume(cIdx)
+            if (vol < volume_tolerance) continue
+            totalVol = totalVol + real(vol,defReal)
+            do g = 1, self % nG
+              select case(self % mapResponse)
+              case(1)
+                Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
+              case(2)
+                Sigma = real(mat % getCaptureXS(g, self % rand),defFlt)
+              ! case(3)
+              !   Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
+              end select
+              idx = (cIdx - 1)* self % nG + g
+              res = res + self % fluxScores(idx,1) * sigma
+              std = std + 0.0_defFlt
             end do
           end if
         end do
@@ -2151,9 +2249,9 @@ contains
             case(1)
               Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
             case(2)
-              Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
-            case(3)
               Sigma = real(mat % getCaptureXS(g, self % rand),defFlt)
+            ! case(3)
+            !   Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
             end select
             idx = (cIdx - 1)* self % nG + g
             Response(i) = Response(i) + vol * self % fluxScores(idx,1) * Sigma

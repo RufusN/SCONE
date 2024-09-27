@@ -2511,7 +2511,7 @@ module adjointBackTRRMPhysicsPackage_class
 
       end if
 
-      if (self % XStype == self % mapResponse .and. any(self % detectorInt == mat)) then
+      if (self % XStype == self % mapResponse .and. self % detectorInt(1) == mat .and. mat == self % matPert) then
         do i = 1, size(self % energyId)
           g1Pert = self % energyId(i)
           FFlux => self % FWFlux((baseIdx + 1):(baseIdx + self % nG))
@@ -2690,7 +2690,7 @@ module adjointBackTRRMPhysicsPackage_class
   
             if (self % intMatIdx(i) == matIdx) then
               vol = self % normVolume * self % volume(cIdx)
-              if (vol < volume_tolerance) continue
+              ! if (vol < volume_tolerance) continue
               totalVol = totalVol + real(vol,defReal)
               do g = 1, self % nG
                 idx = (cIdx - 1)* self % nG + g
