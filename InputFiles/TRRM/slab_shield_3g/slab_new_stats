@@ -1,0 +1,155 @@
+// type fixedSourceTRRMPhysicsPackage;
+type adjointBackTRRMPhysicsPackage;
+
+pop      2000;
+active   1000;
+inactive 2000;
+XSdata   mg;
+dataType mg;
+dead   20;
+termination 220; 
+plot 1;
+cache 1;
+outputFile slab_shield_3g;
+volume 225;
+//zeroNeg 0;
+//itVol 0;
+//rho 0.3;
+//cellCheck 1;
+seed 500;
+outputFormat asciiJSON;
+responseType 1;
+
+Perturbation{XStype 2; XSchange 0.01; material 2; energyGroups (1);} // 1st group concrete capture perturbation 
+
+integrate (source); //integrate source for adjoint
+detector  (detector);
+
+source { source (
+  0.0 5.0
+  ); }
+
+// samplePoints {
+//     A3_1   ( -4.25 -2.25 0.0 );
+//     A3_2   ( 4.25 2.25 0.0 );
+// }
+
+fluxMap {type multiMap;
+  energy 1;
+  maps (xax yax);
+  xax { type spaceMap; axis x; grid lin; min -4.5; max 4.5; N 36; }
+  yax { type spaceMap; axis y; grid lin; min -2.5; max 2.5; N 20; }
+}
+
+responseMap {type multiMap;
+  maps (xax yax);
+  xax { type spaceMap; axis x; grid lin; min -4.5; max 4.5; N 36; }
+  yax { type spaceMap; axis y; grid lin; min -2.5; max 2.5; N 20; }
+}
+
+
+geometry {
+    type geometryStd;
+    boundary (1 0 0 0 1 1);
+    graph {type extended;}
+
+    surfaces
+    {
+    domain   { id 1; type box; origin (0.0 0.0 0.0);  halfwidth (4.5 2.5 2.5); }
+    source   { id 2; type box; origin (-4.0 0.0 0.0);  halfwidth (0.5 2.5 2.5); }
+    detector { id 3; type box; origin (4.0 0.0 0.0);  halfwidth (0.5 2.5 2.5); } 
+    }
+
+    cells
+    {
+    source { id 30; type simpleCell; surfaces (-2);      filltype mat; material source; }
+    detector { id 40; type simpleCell; surfaces (-3);      filltype mat; material detector; }
+    shield { id 50; type simpleCell; surfaces (2 3 -1) ; filltype mat; material concrete; }
+    }
+
+    universes  
+    {
+        all    { id 10; type cellUniverse; cells ( 30 40 50 ); }
+        root   { id 1; type rootUniverse; border 1; fill u<20>; }
+
+
+      lattice { id 20; type latUniverse;
+      origin (0.0 0.0 0.0);
+      pitch (0.25 0.25 0.0);
+      shape (36 20 0);
+      offset 0;
+      padMat concrete;
+      map (
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+        10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10  10 
+      );
+       
+      }
+    }
+}
+viz {
+    plotz { type bmp; axis z; centre (0.0 0.0 0.0); res (700 400); what uniqueID; output geom1; }
+    plotz2 { type bmp; axis z; centre (0.0 0.0 0.0); res (700 400); what material; output geom2; }
+    myVTK {
+        type vtk;
+        what uniqueID; 
+        corner (-4.5 -2.5 -1.0);
+        width (9.0 5.0 2.0);
+        vox (2000 2000 1);
+      }
+   }
+   
+   nuclearData {
+   
+     handles { 
+       mg { type baseMgNeutronDatabase; PN P0;} 
+     } 
+   
+   
+   materials {
+   
+       concrete {
+         temp  273;
+         xsFile ./XS_slab_shield_3g/concrete.txt;
+         composition {
+         }
+       }
+   
+        source {
+        temp 273; 
+        xsFile ./XS_slab_shield_3g/source.txt;
+        composition {
+             } 
+        }
+
+        detector {
+        temp 273; 
+        xsFile ./XS_slab_shield_3g/detector.txt;
+        composition {
+            } 
+        }
+       
+   }
+   
+   }
+   
+   
+   
