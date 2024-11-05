@@ -1,9 +1,6 @@
 // type fixedSourceTRRMPhysicsPackage;
 type adjointBackTRRMPhysicsPackage;
 
-// pop      1000;
-// active   500;
-// inactive 1000;
 pop      600;
 active   100;
 inactive 200;
@@ -23,7 +20,8 @@ seed 500;
 outputFormat asciiJSON;
 responseType 1;
 
-Perturbation{XStype 1; XSchange 0.1; material 2; energyGroups (1);} // 1st group concrete capture perturbation 
+// Perturbation{XStype 1; XSchange 0.01; material 3; energyGroups (1);} // 1st group concrete capture perturbation 
+Perturbation{XStype 2; XSchange 0.1; material 1; energyGroups (1);} 
 
 integrate (source); //integrate source for adjoint
 detector  (detector);
@@ -53,26 +51,30 @@ responseMap {type multiMap;
 
 geometry {
     type geometryStd;
-    boundary (1 0 0 0 1 1);
+    boundary (1 1 1 1 1 1);
     graph {type extended;}
 
     surfaces
     {
     domain   { id 1; type box; origin (0.0 0.0 0.0);  halfwidth (4.5 2.5 2.5); }
-    source   { id 2; type box; origin (-4.0 0.0 0.0);  halfwidth (0.5 2.5 2.5); }
-    detector { id 3; type box; origin (4.0 0.0 0.0);  halfwidth (0.5 2.5 2.5); } 
+    // source   { id 2; type box; origin (-4.0 0.0 0.0);  halfwidth (0.5 2.5 2.5); }
+    // slab { id 3; type box; origin (4.0 0.0 0.0);  halfwidth (0.5 2.5 2.5); } 
+    detector { id 4; type zCylinder; origin (3.0 0.0 0.0); halfwidth 2.5; radius 1.0; } 
+    source { id 2; type zCylinder; origin (-3.0 0.0 0.0); halfwidth 2.5; radius 1.0; } 
     }
 
     cells
     {
     source { id 30; type simpleCell; surfaces (-2);      filltype mat; material source; }
-    detector { id 40; type simpleCell; surfaces (-3);      filltype mat; material detector; }
-    shield { id 50; type simpleCell; surfaces (2 3 -1) ; filltype mat; material concrete; }
+    // slab { id 40; type simpleCell; surfaces (-3 4);      filltype mat; material source; }
+    shield { id 50; type simpleCell; surfaces (2 4 -1); filltype mat; material concrete; }
+    detector { id 60; type simpleCell; surfaces (-4); filltype mat; material detector; }
+    
     }
 
     universes  
     {
-        all    { id 10; type cellUniverse; cells ( 30 40 50 ); }
+        all    { id 10; type cellUniverse; cells ( 30 50 60); }
         root   { id 1; type rootUniverse; border 1; fill u<20>; }
 
 
@@ -131,6 +133,7 @@ geometry {
 viz {
     plotz { type bmp; axis z; centre (0.0 0.0 0.0); res (700 400); what uniqueID; output geom1; }
     plotz2 { type bmp; axis z; centre (0.0 0.0 0.0); res (700 400); what material; output geom2; }
+    plotz3 { type bmp; axis y; centre (0.0 0.0 0.0); res (700 400); what material; output geom3; }
     myVTK {
         type vtk;
         what uniqueID; 

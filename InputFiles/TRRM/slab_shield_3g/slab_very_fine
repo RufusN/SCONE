@@ -18,9 +18,9 @@ volume 225;
 // cellCheck 1;
 seed 500;
 outputFormat asciiJSON;
-responseType 2;
+responseType 1;
 
-Perturbation{XStype 2; XSchange 0.01; material 3; energyGroups (2);} // 1st group detector capture perturbation 
+Perturbation{XStype 1; XSchange 0.01; material 3; energyGroups (1);} // 1st group detector capture perturbation 
 
 integrate (source); //integrate source for adjoint
 detector  (detector);
@@ -62,7 +62,7 @@ geometry {
 
     cells
     {
-    source { id 30; type simpleCell; surfaces (-2);      filltype mat; material source; }
+    source { id 30; type simpleCell; surfaces (-2 -1);      filltype mat; material source; }
     detector { id 40; type simpleCell; surfaces (-3);      filltype mat; material detector; }
     shield { id 50; type simpleCell; surfaces (2 3 -1) ; filltype mat; material concrete; }
     }
@@ -430,6 +430,13 @@ viz {
         composition {
              } 
         }
+
+        source2 {
+          temp 273; 
+          xsFile ./XS_slab_shield_3g/source.txt;
+          composition {
+               } 
+          }
 
         detector {
         temp 273; 
