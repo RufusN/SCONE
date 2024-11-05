@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Load the JSON data from a file
-file_name = '/Users/ru/SCONE/InputFiles/TRRM/slab_shield_3g/slab_shield_3g.json'  # Replace with your actual file path
+file_name = '/Users/ru/SCONE/InputFiles/TRRM/slab_shield_3g/pin_test.json'  # Replace with your actual file path
 
 try:
     with open(file_name, 'r') as f:

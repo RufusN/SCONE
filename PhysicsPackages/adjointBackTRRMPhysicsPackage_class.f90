@@ -928,7 +928,7 @@ module adjointBackTRRMPhysicsPackage_class
       doVolume = .false.
         
       !$omp parallel do schedule(dynamic)
-      do i = 1, self % pop * 1000
+      do i = 1, self % pop * 20
         ! Set seed
         pRNG = self % rand
         call pRNG % stride(i)
