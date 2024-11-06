@@ -1239,17 +1239,16 @@ module adjointBackTRRMPhysicsPackage_class
           ! Accumulate flux scores
           numTotal = ZERO
           denTotal = ZERO 
-  
           !$omp parallel do schedule(static) reduction(+: numTotal, denTotal)
           do i = 1, self % nCells
+            if (self % cellhit(i) == 0) cycle
             call self % sensitivityCalculation(i, it, numSum, denSum)
             numTotal = numTotal + numSum
             denTotal = denTotal + denSum
           end do
           !$omp end parallel do
-  
           self % deltaR  =  (numTotal) 
-          self % sensitivity = (self % deltaR) 
+          self % sensitivity = (self % deltaR/self % XSchange) ! need to divide by reaction rate for actual sensitivity
           call self % accumulateFluxScores()
         end if
   
@@ -2474,17 +2473,6 @@ module adjointBackTRRMPhysicsPackage_class
       numSum = ZERO
       denSum = ZERO
 
-      ! do g = 1, self % nG
-      !   idx = baseIdx + g
-      !   fission = 0.0_defFlt
-      !   !$omp simd
-      !   do gIn = 1, self % nG 
-      !     fission = fission + IPVec((g - 1) * self % nG + gIn) * nuFission(gIn)
-      !   end do
-      !   fission  = fission * chi(g)
-      !   denSum = denSum + fission
-      ! end do
-  
       if (mat == self % matPert .and. self % XStype == 1) then ! fission - complete
         !do i = 1, size(self % energyId)
           g1Pert = self % energyId(1)
@@ -2503,7 +2491,6 @@ module adjointBackTRRMPhysicsPackage_class
         !end do
   
       elseif ( mat == self % matPert .and. self % XStype == 2) then ! capture - complete 
-        ! print *, '2', self % XSchange
         !do i = 1, size(self % energyId)
           g1Pert = self % energyId(1)
           delta = 0.0_defFlt
