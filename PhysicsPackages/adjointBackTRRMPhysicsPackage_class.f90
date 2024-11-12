@@ -2353,7 +2353,7 @@ module adjointBackTRRMPhysicsPackage_class
         ! Output index
         idx = baseIdx + g
         
-        self % adjSource(idx) = chi(g) * fission + scatter + Sigma 
+        self % adjSource(idx) = chi(g) * fission + scatter + Sigma !* self % volume(cIdx)
         self % adjSource(idx) = self % adjSource(idx) / total(g) 
   
       end do
@@ -2499,9 +2499,9 @@ module adjointBackTRRMPhysicsPackage_class
         !end do
   
       elseif (mat == self % matPert .and. self % XStype == 3) then !scatter - complete
-        delta = 0.0_defFlt
-        scatter_pert = 0.0_defFlt
         !do i = 1, size(self % energyId), 2
+          delta = 0.0_defFlt
+          scatter_pert = 0.0_defFlt
           g1Pert = self % energyId(1)
           g2Pert = self % energyId(2)
           delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * &
