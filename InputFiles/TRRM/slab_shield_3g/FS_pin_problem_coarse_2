@@ -10,7 +10,7 @@ plot 1;
 cache 1;
 XSdata   mg; 
 dataType mg;
-outputFile pin_test;
+outputFile pin_test_coarse;
 seed 500;
 outputFormat asciiJSON;
 responseType 2;
@@ -45,7 +45,7 @@ geometry {
   graph {type extended;}
 
   surfaces { 
-             Domain   { id 3; type box; origin (0.0 0.0 0.0); halfwidth (3.15 3.15 3.15);}
+             Domain   { id 3; type box; origin (0.0 0.0 0.0); halfwidth (3.15 3.15 32.15);}
             //  source          { id 4; type box; origin (-4.0 0.0 0.0);  halfwidth (0.5 2.5 2.5); }  	
   }
   
@@ -55,60 +55,42 @@ geometry {
     	root { id 1000; type rootUniverse; border 3; fill u<100>; }  
     
     // Pin universes 
-    pin1 { id 1; type azimPinUniverse; naz 8; radii (0.311769 0.440908 0.5400 0.63 0.72 0.0 ); rotation (22.5 0 0);  fills (UO2 UO2 UO2 water water water);}
-    pin2 { id 2; type azimPinUniverse; naz 8; radii (0.311769 0.440908 0.5400 0.63 0.72 0.0 ); rotation (22.5 0 0);  fills (GT GT GT water water water);}
+    pin1 {id 1; type azimPinUniverse; naz 8; radii (0.5400 0.0); rotation (0 0 0); fills (UO2 water);}
+    pin2 {id 2; type azimPinUniverse; naz 8; radii (0.5400 0.0); rotation (0 0 0); fills (GT water);}
 
     // Infinite moderator
     pin30 { id 30; type pinUniverse; radii (0.0); fills (water);}      
-
-latFineModer
-{
-id 40;
-type latUniverse;
-origin (0.0 0.0 0.0);
-pitch (0.063 0.063 0.0);
-shape (20 20 0);
-padMat water;
-map (
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30
-);
-}
 
 // latFineModer
 // {
 // id 40;
 // type latUniverse;
 // origin (0.0 0.0 0.0);
-// pitch (0.252 0.252 0.0);
-// shape (5 5 0);
+// pitch (0.63 0.63 0.0);
+// shape (2 2 0);
 // padMat water;
 // map (
-// 30 30 30 30 30
-// 30 30 30 30 30
-// 30 30 30 30 30
-// 30 30 30 30 30
-// 30 30 30 30 30
+// 30 30 
+// 30 30 
 // );
 // }
+
+latFineModer
+{
+id 40;
+type latUniverse;
+origin (0.0 0.0 0.0);
+pitch (0.252 0.252 0.0);
+shape (5 5 0);
+padMat water;
+map (
+30 30 30 30 30
+30 30 30 30 30
+30 30 30 30 30
+30 30 30 30 30
+30 30 30 30 30
+);
+}
 
 lat
 {
