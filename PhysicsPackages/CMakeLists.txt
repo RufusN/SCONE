@@ -10,5 +10,6 @@ add_sources( ./physicsPackage_inter.f90
 	         ./fixedSourceTRRMPhysicsPackage_class.f90
              ./adjointFSTRRMPhysicsPackage_class.f90
              ./adjointBackTRRMPhysicsPackage_class.f90
+             ./adjointLSTRRMPhysicsPackage_class.f90
              )
-             #./dynamPhysicsPackage_class.f90)
+             
