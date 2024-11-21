@@ -683,10 +683,6 @@ module adjointLSTRRMPhysicsPackage_class
       allocate(self % adjPrevFlux(self % nCells * self % nG))
       allocate(self % adjSource(self % nCells * self % nG))
 
-      allocate(self % ReactionRate(self % nCells * self % nG))
-      allocate(self % FWFlux(self % nCells * self % nG))
-      allocate(self % RRScores(self % nCells * self % nG, 2))
-
       allocate(self % angularIP(self % nCells * self % nG * self % nG))
 
       allocate(self % momMat(self % nCells * matSize))
@@ -734,9 +730,6 @@ module adjointLSTRRMPhysicsPackage_class
       self % adjScalarFlux = 0.0_defFlt
       self % adjPrevFlux   = 1.0_defFlt
       self % adjSource     = 0.0_defFlt
-      self % ReactionRate = 0.0_defFlt
-      self % FWFlux   = 0.0_defFlt
-      self % RRScores = ZERO
 
       self % scalarX  = 0.0_defFlt
       self % scalarY  = 0.0_defFlt
@@ -1713,7 +1706,7 @@ module adjointLSTRRMPhysicsPackage_class
                                                                 flatQ0, Gn
       real(defReal), dimension(matSize)                     :: matScore
       real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, &
-                                                                sourceVecFW, deltaFW, RR, FFlux, xGradVec, yGradVec, &
+                                                                sourceVecFW, deltaFW, xGradVec, yGradVec, &
                                                                 zGradVec, xMomVec, yMomVec, zMomVec, &
                                                                 xMomVecFW, yMomVecFW, zMomVecFW, &
                                                                 xIncFW, yIncFW, zIncFW, scalarVecFW, &
@@ -1741,11 +1734,9 @@ module adjointLSTRRMPhysicsPackage_class
       real(defFlt), target, dimension(self % nG * self % NSegMax*2) :: avgRecord
       real(defFlt), dimension(3)                            :: muFlt, rNormFlt, r0NormFlt
           
-      ! matIdx  = r % coords % matIdx
-      
+
       ! Set initial angular flux to angle average of cell source
       cIdx = self % IDToCell(r % coords % uniqueID)
-      ! matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
       if (cIdx > 0) then
         do g = 1, self % nG
           idx = (cIdx - 1) * self % nG + g
@@ -1764,11 +1755,6 @@ module adjointLSTRRMPhysicsPackage_class
       oversized = .false.
   
       do while (totalLength < self % termination + self % dead)
-  
-        ! Get material and cell the ray is moving through
-        ! Get ray coords for LS calculations
-        ! mu0 = r % dirGlobal()
-        ! r0  = r % rGlobal() !CHECK? ?????
 
         matIdx  = r % coords % matIdx
         cIdx    = self % IDToCell(r % coords % uniqueID)
@@ -1781,10 +1767,8 @@ module adjointLSTRRMPhysicsPackage_class
   
         ! Remember co-ordinates to set new cell's position
         if (cIdx > 0) then
-          ! if (.not. self % cellFound(cIdx)) then
             r0 = r % rGlobal()
             mu0 = r % dirGlobal()
-        !   end if
         end if
             
         ! Set maximum flight distance and ensure ray is active
@@ -2062,7 +2046,7 @@ module adjointLSTRRMPhysicsPackage_class
                 lenBack(segCount) = length
                 vacBack(segCount + 1) = hitVacuum
                 rNormFltRecord(:, segCount) = rNormFlt
-                r0NormFltRecord(:, segCount) = r0Norm + length * mu0 !r0NormFlt
+                r0NormFltRecord(:, segCount) = r0Norm + length * mu0 
                 muFltRecord(:, segCount) = -muFlt
               end if
     
@@ -2088,29 +2072,20 @@ module adjointLSTRRMPhysicsPackage_class
                   end do
                 end if
 
-                ! call OMP_set_lock(self % locks(cIdx))
                 centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
                 momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
-                ! Update centroid
-                !!$omp simd
+
                 do g = 1, nDim
                   !$omp atomic
                   centVec(g) = centVec(g) + rC(g)
-                  ! print *, rC(g)
                 end do
       
-                ! Update spatial moment scores
-                !!$omp simd
                 do g = 1, matSize
                   !$omp atomic
                   momVec(g) = momVec(g) + matScore(g)
-                  ! print *, matScore(g)
-                end do
-                !$omp atomic
-                self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
+                end do   
               end if
   
-              ! call OMP_unset_lock(self % locks(cIdx))
               if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
             end if
 
@@ -2150,7 +2125,7 @@ module adjointLSTRRMPhysicsPackage_class
             cIdx = cIdxBackOversized(i)
             rNormFlt = rNormFltOversized(:,i)
             muFlt = muFltOversized(:,i)
-            r0NormFlt = r0NormFltOversized(:,i) !- muFlt * length
+            r0NormFlt = r0NormFltOversized(:,i) 
     
             avgFluxVecFW => avgRecordOversized((segIdx + 1) : (segIdx + self % nG))
             deltaFW => deltaRecordOversized((segIdx + 1) : (segIdx + self % nG))
@@ -2164,7 +2139,7 @@ module adjointLSTRRMPhysicsPackage_class
             cIdx = cIdxBack(i)
             rNormFlt = rNormFltRecord(:,i)
             muFlt = muFltRecord(:,i)
-            r0NormFlt = r0NormFltRecord(:,i) !- muFlt * length
+            r0NormFlt = r0NormFltRecord(:,i) 
     
             avgFluxVecFW => avgRecord((segIdx + 1) : (segIdx + self % nG))
             deltaFW => deltaRecord((segIdx + 1) : (segIdx + self % nG))
@@ -2174,13 +2149,10 @@ module adjointLSTRRMPhysicsPackage_class
           end if
 
         lenFlt2_2 = lenFlt * lenFlt * one_two
-  
         matIdx   =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
         baseIdx = (cIdx - 1) * self % nG
-        ! segIdx =  (i - 1) * self % nG
 
         sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
-        ! sourceVecFW => self % source((baseIdx + 1):(baseIdx + self % nG))
         xGradVec  => self % adjSourceX((baseIdx + 1):(baseIdx + self % nG))
         yGradVec  => self % adjSourceY((baseIdx + 1):(baseIdx + self % nG))
         zGradVec  => self % adjSourceZ((baseIdx + 1):(baseIdx + self % nG))
@@ -2232,13 +2204,11 @@ module adjointLSTRRMPhysicsPackage_class
                       - one_two * gradQ(g) * F2(g) 
         end do
   
-        ! Intermediate flux variable creation or update
         !$omp simd
         do g = 1, self % nG
           fluxVec0(g) = fluxVec(g)
         end do
   
-        ! Flux vector update
         !$omp simd
         do g = 1, self % nG
           fluxVec(g) = fluxVec(g) - delta(g) * tau(g) 
@@ -2296,15 +2266,8 @@ module adjointLSTRRMPhysicsPackage_class
           yMomVecFW => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
           zMomVecFW => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))  
 
-          RR => self % ReactionRate((baseIdx + 1):(baseIdx + self % nG))
-          FFlux => self % FWFlux((baseIdx + 1):(baseIdx + self % nG))  
-
-          ! aligned(scalarVec, scalarVecFW, RR, FFlux)
-          !$omp simd 
+          !$omp simd aligned(scalarVec, scalarVecFW, xMomVec, xMomVecFW, yMomVec, yMomVecFW, zMomVec, zMomVecFW)
           do g = 1, self % nG
-              RR(g) = RR(g) + avgFluxVec(g) * length
-              FFlux(g) = FFlux(g) + (avgFluxVecFW(g)) * length
-
               scalarVec(g) = scalarVec(g) + delta(g) * lenFlt
               xMomVec(g) = xMomVec(g) + xInc(g)
               yMomVec(g) = yMomVec(g) + yInc(g)
@@ -2321,13 +2284,12 @@ module adjointLSTRRMPhysicsPackage_class
               associate(angProd => angularProd(self % nG * (g - 1) + 1 : self % nG * g))
                 !$omp simd 
                 do gIn = 1, self % nG
-                !   angProd(gIn) = angProd(gIn) + avgFluxVec(g) * (deltaFW(gIn) + sourceVecFW(gIn)) * length
                   angProd(gIn) = angProd(gIn) + avgFluxVec(g) * avgFluxVecFW(gIn) * length
                 end do
               end associate
             end do
           end if
-          ! self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
+          self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
           if (segCount > self % NSegMax) then
             self % NSegMaxTemp = segCount
           end if
@@ -2344,8 +2306,6 @@ module adjointLSTRRMPhysicsPackage_class
   
       end do
   
-      
-       
     end subroutine transportSweep
     
     !!
@@ -2401,12 +2361,12 @@ module adjointLSTRRMPhysicsPackage_class
       integer(shortInt), intent(in)                       :: it
       real(defReal)                                       :: normVol
       real(defFlt)                                        :: norm
-      real(defFlt), save                                  :: total, sigGG, D, NTV
+      real(defFlt), save                                  :: NTV ! sigGG, D, 
       real(defReal), save                                 :: invVol
       real(defReal), save                                 :: vol, corr
       integer(shortInt), save                             :: g, matIdx, idx, dIdx, mIdx
       integer(shortInt)                                   :: cIdx
-      !$omp threadprivate(total, idx, g, matIdx, vol, corr, sigGG, D, NTV, didx, midx, invvol)
+      !$omp threadprivate(idx, g, matIdx, vol, corr, NTV, didx, midx, invvol)
   
       norm = real(ONE / lengthPerIt, defFlt)
       normVol = ONE / ( lengthPerIt * it)
@@ -2422,7 +2382,7 @@ module adjointLSTRRMPhysicsPackage_class
         if (matIdx >= UNDEF_MAT) cycle
         
         ! Update volume due to additional rays unless volume was precomputed
-        !if (self % nVolRays <= 0) then 
+        ! if (self % nVolRays <= 0) then 
         ! Forget the above - use precomputed volumes only for first collided
         
         ! if (self % itVol) then
@@ -2439,9 +2399,10 @@ module adjointLSTRRMPhysicsPackage_class
         !   if (corr /= corr) corr = ONE
         ! else
         !   ! Standard volume approach
-          self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
+          ! self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
         ! end if
-  
+
+        self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
         vol = self % volume(cIdx)
 
         if (self % volume(cIdx) > volume_tolerance) then
@@ -2478,7 +2439,6 @@ module adjointLSTRRMPhysicsPackage_class
   
           idx   = self % nG * (cIdx - 1) + g
           NTV = norm / vol
-          !total = self % sigmaT((matIdx - 1) * self % nG + g)
           
           if (vol > volume_tolerance) then
             self % scalarFlux(idx) =  self % scalarFlux(idx) * NTV
@@ -2533,10 +2493,6 @@ module adjointLSTRRMPhysicsPackage_class
   
       end do
       !$omp end parallel do
-
-      print *, 'source'
-      print *, maxval(self % scalarFlux), maxval(self % scalarX), maxval(self % scalarY)
-      print *, maxval(self % source), maxval(self % sourceX), maxval(self % sourceY)
   
     end subroutine normaliseFluxAndVolume
 
@@ -2545,14 +2501,13 @@ module adjointLSTRRMPhysicsPackage_class
       integer(shortInt), intent(in)                 :: it
       real(defReal), intent(in)                     :: lengthPerIt
       real(defFlt)                                  :: norm
-      ! real(defReal)                                 :: normVol
-      real(defFlt), save                            :: total, vol, NTV ! sigGG, D
+      real(defFlt), save                            :: NTV ! sigGG, D, total
+      real(defReal), save                           :: vol
       integer(shortInt), save                       :: g, matIdx, idx
       integer(shortInt)                             :: cIdx
-      !$omp threadprivate(total, vol, idx, g, matIdx, NTV)
+      !$omp threadprivate(vol, idx, g, matIdx, NTV)
   
       norm = real(ONE / lengthPerIt)
-      ! normVol = ONE / (lengthPerIt * it)
   
       !$omp parallel do schedule(static)
       do cIdx = 1, self % nCells
@@ -2561,13 +2516,10 @@ module adjointLSTRRMPhysicsPackage_class
         ! Guard against void cells
         if (matIdx >= UNDEF_MAT) cycle 
         
-        ! Update volume due to additional rays
-        !self % volume(cIdx) = self % volumeTracks(cIdx) * normVol
-        vol = real(self % volume(cIdx),defFlt)
+        vol = self % volume(cIdx)
   
         do g = 1, self % nG
   
-        !   total = self % sigmaT((matIdx - 1) * self % nG + g)
           idx   = self % nG * (cIdx - 1) + g
           NTV = norm / vol
   
@@ -2600,10 +2552,6 @@ module adjointLSTRRMPhysicsPackage_class
   
       end do
       !$omp end parallel do
-
-      print *, 'adjoint source'
-      print *, maxval(self % adjscalarFlux), maxval(self % adjscalarX), maxval(self % adjscalarY)
-      print *, maxval(self % adjsource), maxval(self % adjsourceX), maxval(self % adjsourceY)
   
     end subroutine adjointNormaliseFluxAndVolume
 
@@ -2619,40 +2567,12 @@ module adjointLSTRRMPhysicsPackage_class
       norm = real(ONE / self % lengthPerIt)
 
       ! !$omp parallel do schedule(static)
-      ! do cIdx = 1, self % nCells
-  
-      !   do g = 1, self % nG * self % nG
-      !     idx = (cIdx - 1) * self % nG * self % nG + g
-      !    !if (self % volume(cIdx) > volume_tolerance) then
-      !       self % angularIP(idx) = self % angularIP(idx) * norm !* (self % volume(cIdx))
-      !     ! else
-      !     !   self % angularIP(idx) = 0.0_defFlt
-      !     ! end if
-      !   end do
-
-      !   do g = 1, self % nG 
-      !     idx = (cIdx - 1) * self % nG + g
-      !     !if (self % volume(cIdx) > volume_tolerance) then
-      !       self % ReactionRate(idx) = self % ReactionRate(idx) * & 
-      !                                         self % fixedSource(idx) * norm !* (self % volume(cIdx)) 
-      !       self % FWFlux(idx) = self % FWFlux(idx) * norm !* (self % volume(cIdx))                                  
-      !     !else
-      !     !   self % ReactionRate(idx) = 0.0_defFlt
-      !     !   self % FWFlux(idx) = 0.0_defFlt
-      !     ! end if
-      !   end do
-  
+      ! do cIdx = 1, size(self % ReactionRate)
+      !     self % ReactionRate(cIdx) = self % ReactionRate(cIdx) * & 
+      !                               self % fixedSource(cIdx) * norm 
+      !     self % FWFlux(cIdx) = self % FWFlux(cIdx) * norm 
       ! end do
-  
       ! !$omp end parallel do
-
-      !$omp parallel do schedule(static)
-      do cIdx = 1, size(self % ReactionRate)
-          self % ReactionRate(cIdx) = self % ReactionRate(cIdx) * & 
-                                    self % fixedSource(cIdx) * norm 
-          self % FWFlux(cIdx) = self % FWFlux(cIdx) * norm 
-      end do
-      !$omp end parallel do
 
       !$omp parallel do schedule(static)
       do cIdx = 1, size(self % angularIP)
@@ -2742,8 +2662,8 @@ module adjointLSTRRMPhysicsPackage_class
       xFission = 0.0_defFlt
       yFission = 0.0_defFlt
       zFission = 0.0_defFlt
-      !reduction(+:fission, xFission, yFission, zFission) aligned(fluxVec, xFluxVec, yFluxVec, zFluxVec, nuFission)
-      !$omp simd 
+
+      !$omp simd reduction(+:fission, xFission, yFission, zFission) aligned(fluxVec, xFluxVec, yFluxVec, zFluxVec, nuFission)
       do gIn = 1, self % nG
         fission = fission + fluxVec(gIn) * nuFission(gIn)
         xFission = xFission + xFluxVec(gIn) * nuFission(gIn)
@@ -2762,8 +2682,8 @@ module adjointLSTRRMPhysicsPackage_class
         zScatter = 0.0_defFlt
   
         ! Sum contributions from all energies
-        ! reduction(+:scatter)
-        !$omp simd 
+
+        !$omp simd reduction(+:scatter, xScatter, yScatter, zScatter) aligned(fluxVec, xFluxVec, yFluxVec, zFluxVec, scatterVec)
         do gIn = 1, self % nG
           scatter = scatter + fluxVec(gIn) * scatterVec(gIn)
           xScatter = xScatter + xFluxVec(gIn) * scatterVec(gIn)
@@ -2793,7 +2713,6 @@ module adjointLSTRRMPhysicsPackage_class
             ! self % sourceX(baseIdx + g) = 0.0_defFlt
             ! self % sourceY(baseIdx + g) = 0.0_defFlt
             self % sourceZ(baseIdx + g) = 0.0_defFlt !2D tracing
-            ! print *, self % sourceX(baseIdx + 1 : baseIdx + 7)
           else
             self % sourceX(baseIdx + g) = 0.0_defFlt
             self % sourceY(baseIdx + g) = 0.0_defFlt
@@ -2827,7 +2746,6 @@ module adjointLSTRRMPhysicsPackage_class
   
       ! Identify material
       id       =  self % CellToID(cIdx)
-      matIdx   =  self % geom % geom % graph % getMatFromUID(id) 
       material =  self % geom % geom % graph % getMatFromUID(id) 
       
       ! Guard against void cells
@@ -2869,10 +2787,10 @@ module adjointLSTRRMPhysicsPackage_class
   
       ! Obtain XSs
 
-      matPtr => self % mgData % getMaterial(matIdx)
+      matPtr => self % mgData % getMaterial(material)
       mat    => baseMgNeutronMaterial_CptrCast(matPtr)
 
-      matIdx = (matIdx - 1) * self % nG
+      matIdx = (material - 1) * self % nG
       total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
       scatterXS => self % adjSigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
       nuFission => self % adjNuSigmaF((matIdx + 1):(matIdx + self % nG))
@@ -2889,8 +2807,8 @@ module adjointLSTRRMPhysicsPackage_class
       xFission = 0.0_defFlt
       yFission = 0.0_defFlt
       zFission = 0.0_defFlt
-      !reduction(+:fission) aligned(fluxVec)
-      !$omp simd 
+      
+      !$omp simd reduction(+:fission, xFission, yFission, zFission) aligned(fluxVec, xFluxVec, yFluxVec, zFluxVec, nuFission)
       do gIn = 1, self % nG
         fission = fission + fluxVec(gIn) * nuFission(gIn)
         xFission = xFission + xFluxVec(gIn) * nuFission(gIn)
@@ -2909,8 +2827,8 @@ module adjointLSTRRMPhysicsPackage_class
         zScatter = 0.0_defFlt
   
         ! Sum contributions from all energies
-        !reduction(+:scatter) aligned(fluxVec)
-        !$omp simd 
+
+        !$omp simd reduction(+:scatter, xScatter, yScatter, zScatter) aligned(fluxVec, xFluxVec, yFluxVec, zFluxVec, scatterVec)
         do gIn = 1, self % nG
             scatter = scatter + fluxVec(gIn) * scatterVec(gIn)
             xScatter = xScatter + xFluxVec(gIn) * scatterVec(gIn)
@@ -2959,7 +2877,6 @@ module adjointLSTRRMPhysicsPackage_class
                 !  invMyz * ySource + invMzz * zSource
             ! self % adjSourceX(baseIdx + g) = 0.0_defFlt
             ! self % adjSourceY(baseIdx + g) = 0.0_defFlt
-            ! print *, self % adjSourceX(baseIdx + 1 : baseIdx + 7)
             self % adjSourceZ(baseIdx + g) = 0.0_defFlt
           else
             self % adjSourceX(baseIdx + g) = 0.0_defFlt
@@ -3035,8 +2952,6 @@ module adjointLSTRRMPhysicsPackage_class
   
       !$omp parallel do schedule(static)
       do idx = 1, size(self % scalarFlux)
-        self % ReactionRate(idx) = 0.0_defFlt
-        self % FWFlux(idx) = 0.0_defFlt
 
         self % prevFlux(idx) = self % scalarFlux(idx)
         self % scalarFlux(idx) = 0.0_defFlt
@@ -3093,7 +3008,6 @@ module adjointLSTRRMPhysicsPackage_class
       chi => self % chi((matIdx + 1):(matIdx + self % nG))
       capture => self % sigmaC((matIdx + 1):(matIdx + self % nG)) 
       scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
-      ! FFlux => self % FWFlux((baseIdx + 1):(baseIdx + self % nG))
   
       numSum = ZERO
       denSum = ZERO
@@ -3123,20 +3037,20 @@ module adjointLSTRRMPhysicsPackage_class
           numSum = (numSum - delta) 
         !end do
   
-      elseif (mat == self % matPert .and. self % XStype == 3) then !scatter - complete
-        !do i = 1, size(self % energyId), 2
-          delta = 0.0_defFlt
-          scatter_pert = 0.0_defFlt
-          g1Pert = self % energyId(1)
-          g2Pert = self % energyId(2)
-          delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * &
-                        self % XSchange   
+      ! elseif (mat == self % matPert .and. self % XStype == 3) then !scatter - complete
+      !   !do i = 1, size(self % energyId), 2
+      !     delta = 0.0_defFlt
+      !     scatter_pert = 0.0_defFlt
+      !     g1Pert = self % energyId(1)
+      !     g2Pert = self % energyId(2)
+      !     delta = IPVec((g1Pert - 1) * self % nG + g1Pert) * scatterXS((g2Pert - 1) * self % nG + g1Pert) * &
+      !                   self % XSchange   
              
-          scatter_pert = scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
-                                      IPVec((g2Pert - 1 ) * self % nG + g1Pert) * self % XSchange
-          delta = scatter_pert - delta
-          numSum = numSum + delta
-        !end do
+      !     scatter_pert = scatterXS( (g2Pert - 1) * self % nG + g1Pert ) * &
+      !                                 IPVec((g2Pert - 1 ) * self % nG + g1Pert) * self % XSchange
+      !     delta = scatter_pert - delta
+      !     numSum = numSum + delta
+      !   !end do
 
       end if
 
@@ -3151,35 +3065,12 @@ module adjointLSTRRMPhysicsPackage_class
             Sigma = real(material % getFissionXS(g1Pert, self % rand),defFlt)
           case(2)
             Sigma = real(material % getCaptureXS(g1Pert, self % rand),defFlt)
-          ! case(3)
-          !   Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
           end select
           delta = 0.0_defFlt
           delta = FFlux(g1Pert) * Sigma * self % XSchange * self % volume(cIdx)
           numSum = numSum + delta
         ! end do
       end if
-
-      ! if (self % XStype == self % mapResponse ) then
-      !   ! do i = 1, size(self % energyId)
-      !     ! print *, 'yes', self % detectorInt, self % matPert, self % mapResponse
-      !     g1Pert = self % energyId(1)
-      !     FFlux => self % FWFlux((baseIdx + 1):(baseIdx + self % nG))
-      !     ! matPtr => self % mgData % getMaterial(mat)
-      !     ! material => baseMgNeutronMaterial_CptrCast(matPtr)
-      !     select case(self % mapResponse)
-      !     case(1)
-      !       Sigma = fissVec(g1Pert)!real(material % getFissionXS(g1Pert, self % rand),defFlt)
-      !     case(2)
-      !       Sigma = capture(g1Pert)!real(material % getCaptureXS(g1Pert, self % rand),defFlt)
-      !     ! case(3)
-      !     !   Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
-      !     end select
-      !     delta = 0.0_defFlt
-      !     delta = FFlux(g1Pert) * Sigma * self % XSchange
-      !     numSum = numSum + delta
-      !   ! end do
-      ! end if
   
   
     end subroutine sensitivityCalculation
@@ -3208,13 +3099,6 @@ module adjointLSTRRMPhysicsPackage_class
         self % FWfluxScores(idx,2) = self % FWfluxScores(idx, 2) + flux*flux
       end do
       !$omp end parallel do
-
-      !$omp parallel do schedule(static)
-      do idx = 1, size(self % adjscalarFlux)
-        self % RRScores(idx,1) = self % RRScores(idx, 1) + self % ReactionRate(idx)
-      end do
-      !$omp end parallel do
-
 
 
       self % sensitivityScore(1) = self % sensitivityScore(1) + self % sensitivity
@@ -3269,12 +3153,6 @@ module adjointLSTRRMPhysicsPackage_class
             self % FWfluxScores(idx,2) = self % FWfluxScores(idx,2) / abs(self % FWfluxScores(idx,1))
           end if
         end if
-      end do
-      !$omp end parallel do
-
-      !$omp parallel do schedule(static)
-      do idx = 1, size(self % ReactionRate)
-          self % RRScores(idx,1) = self % RRScores(idx,1) * N1 
       end do
       !$omp end parallel do
 
@@ -3345,8 +3223,8 @@ module adjointLSTRRMPhysicsPackage_class
   
       name = 'Clock_Time'
       call out % printValue(timerTime(self % timerMain),name)
-      
-      name = 'sensitivity'
+
+      name = 'Delta Reaction Rate'
       call out % startBlock(name)
       call out % printResult(real(self % sensitivityScore(1),defReal), real(self % sensitivityScore(2),defReal), name)
       call out % endBlock()
@@ -3419,12 +3297,10 @@ module adjointLSTRRMPhysicsPackage_class
                     Sigma = real(mat % getFissionXS(g, self % rand),defFlt)
                   case(2)
                     Sigma = real(mat % getCaptureXS(g, self % rand),defFlt)
-                  case(3)
-                    Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
                   end select
                   idx = (cIdx - 1)* self % nG + g
                   res = res + self % fwfluxScores(idx,1) * Sigma * vol
-                  std = 0.0_defFlt!std + self % fwfluxScores(idx,2)**2*self % fluxScores(idx,1)**2*vol*vol*sigma*sigma
+                  std = std + self % fwfluxScores(idx,2)**2*self % fluxScores(idx,1)**2*vol*vol*sigma*sigma
                 end do
               end if
             end do
@@ -3440,68 +3316,10 @@ module adjointLSTRRMPhysicsPackage_class
           call out % endBlock()
         end if
 
-      ! ! Print material integrated fluxes if requested
-      ! if (allocated(self % intMatIdx)) then
-      !   name = 'FW Reaction Rate'
-      !   resArrayShape = [1]
-      !   call out % startBlock(name)
-      !   res = ZERO
-      !   std = ZERO
-      !   do i = 1, size(self % intMatIdx)
-      !     call out % startArray(self % intMatName(i), resArrayShape)
-  
-      !     do cIdx = 1, self % nCells
-      !       matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
-  
-      !       if (self % intMatIdx(i) == matIdx) then
-      !         vol = self % volume(cIdx)
-      !         if (vol < volume_tolerance) continue
-      !         do g = 1, self % nG
-      !           idx = (cIdx - 1)* self % nG + g
-      !           res = res + self % fluxScores(idx,1) * self % fixedSource(idx) * vol
-      !           std = 0.0!std + self % fluxScores(idx,2)**2 * self % fluxScores(idx,1)**2 &
-      !             !* self % fixedSource(idx) * self % fixedSource(idx)
-      !         end do
-      !       end if
-      !     end do
-      !     if (res > ZERO) then
-      !       std = sqrt(std)/res
-      !     else
-      !       std = ZERO
-      !     end if
-      !     call out % addResult(res, std)
-      !     call out % endArray()
-      !   end do
-      !   call out % endBlock()
-      ! end if
-
-      ! ! Print material integrated fluxes if requested
-      ! if (allocated(self % intMatIdx)) then
-      !   name = 'integral reaction rate - AF'
-      !   resArrayShape = [1]
-      !   call out % startBlock(name)
-      !   res = ZERO
-      !   std = ZERO
-      !   do i = 1, size(self % intMatIdx)
-      !     call out % startArray(self % intMatName(i), resArrayShape)
-      !     do cIdx = 1, self % nCells
-      !       vol = self % volume(cIdx) !self % normVolume * 
-      !       ! if (vol < volume_tolerance) continue
-      !       matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
-      !       if (self % intMatIdx(i) == matIdx) then
-      !         do g = 1, self % nG
-      !           idx = (cIdx - 1)* self % nG + g
-      !           res = res + self % RRScores(idx,1) !* vol
-      !           std = 0.0
-      !         end do
-      !       end if
-      !     end do
-      !   end do
-      !     call out % addResult(res, std)
-      !     call out % endArray()
-      !   call out % endBlock()
-      ! end if
-
+        name = 'sensitivity'
+        call out % startBlock(name)
+        call out % printResult(real(self % sensitivityScore(1)/res,defReal), real(self % sensitivityScore(2)/res,defReal), name)
+        call out % endBlock()
   
       ! Print cell volumes
       if (self % printVolume) then
@@ -3902,10 +3720,6 @@ module adjointLSTRRMPhysicsPackage_class
       if(allocated(self % intMatName)) deallocate(self % intMatName)
       if(allocated(self % detectorInt)) deallocate(self % detectorInt)
       if(allocated(self % detectorName)) deallocate(self % detectorName)
-
-      if(allocated(self % RRScores)) deallocate(self % RRScores)
-      if(allocated(self % ReactionRate)) deallocate(self % ReactionRate)
-      if(allocated(self % FWFlux)) deallocate(self % FWFlux)
 
       if(allocated(self % momMat)) deallocate(self % momMat)
       if(allocated(self % momTracks)) deallocate(self % momTracks)
