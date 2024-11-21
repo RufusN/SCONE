@@ -2566,14 +2566,6 @@ module adjointLSTRRMPhysicsPackage_class
   
       norm = real(ONE / self % lengthPerIt)
 
-      ! !$omp parallel do schedule(static)
-      ! do cIdx = 1, size(self % ReactionRate)
-      !     self % ReactionRate(cIdx) = self % ReactionRate(cIdx) * & 
-      !                               self % fixedSource(cIdx) * norm 
-      !     self % FWFlux(cIdx) = self % FWFlux(cIdx) * norm 
-      ! end do
-      ! !$omp end parallel do
-
       !$omp parallel do schedule(static)
       do cIdx = 1, size(self % angularIP)
           self % angularIP(cIdx) = self % angularIP(cIdx) * norm  
