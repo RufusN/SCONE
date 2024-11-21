@@ -1,16 +1,17 @@
 // type adjointBackTRRMPhysicsPackage;
 type adjointLSTRRMPhysicsPackage;
+// type adjointFSTRRMPhysicsPackage;
 
 pop      1500; 
-active   500;  
-inactive 1000; 
+active   300;  
+inactive 600; 
 dead     20;  
 termination 220;  
 plot 1;
 cache 1;
 XSdata   mg; 
 dataType mg;
-outputFile pin_test_coarse;
+outputFile pin_test_coarse_2;
 seed 500;
 outputFormat asciiJSON;
 responseType 2;
@@ -61,36 +62,36 @@ geometry {
     // Infinite moderator
     pin30 { id 30; type pinUniverse; radii (0.0); fills (water);}      
 
-// latFineModer
-// {
-// id 40;
-// type latUniverse;
-// origin (0.0 0.0 0.0);
-// pitch (0.63 0.63 0.0);
-// shape (2 2 0);
-// padMat water;
-// map (
-// 30 30 
-// 30 30 
-// );
-// }
-
 latFineModer
 {
 id 40;
 type latUniverse;
 origin (0.0 0.0 0.0);
-pitch (0.252 0.252 0.0);
-shape (5 5 0);
+pitch (0.63 0.63 0.0);
+shape (2 2 0);
 padMat water;
 map (
-30 30 30 30 30
-30 30 30 30 30
-30 30 30 30 30
-30 30 30 30 30
-30 30 30 30 30
+30 30 
+30 30 
 );
 }
+
+// latFineModer
+// {
+// id 40;
+// type latUniverse;
+// origin (0.0 0.0 0.0);
+// pitch (0.252 0.252 0.0);
+// shape (5 5 0);
+// padMat water;
+// map (
+// 30 30 30 30 30
+// 30 30 30 30 30
+// 30 30 30 30 30
+// 30 30 30 30 30
+// 30 30 30 30 30
+// );
+// }
 
 lat
 {
