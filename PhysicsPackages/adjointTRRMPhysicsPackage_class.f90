@@ -1010,24 +1010,24 @@ contains
 
     !iterate over segments
     do i = segCount, 1, -1
+      segIdx =  (i - 1) * self % nG
 
       if (oversized) then
         lenFlt = real(lenBackOversized(i),defFlt)
         length = lenBackOversized(i)
         hitVacuum = vacBackOversized(i)
-        deltaFW => deltaRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
+        deltaFW => deltaRecordOversized((segIdx + 1) : (segIdx + self % nG))
         cIdx = cIdxBackOversized(i)
       else
         lenFlt = real(lenBack(i),defFlt)
         length = lenBack(i)
         hitVacuum = vacBack(i)
-        deltaFW => deltaRecord((i - 1) * self % nG + 1 : i * self % nG)
+        deltaFW => deltaRecord((segIdx + 1) : (segIdx + self % nG))
         cIdx = cIdxBack(i)
       end if
 
       matIdx = self % geom % geom % graph % getMatFromUID(cIdx)
       baseIdx = (cIdx - 1) * self % nG
-      segIdx =  (i - 1) * self % nG
       sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
       sourceVecFW => self % source((baseIdx + 1):(baseIdx + self % nG))
       

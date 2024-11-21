@@ -1260,17 +1260,16 @@ contains
           lenBackOversized(segCount) = length
           vacBackOversized(segCount + 1) = hitVacuum
           rNormFltOversized(:, segCount) = rNormFlt
-          r0NormFltOversized(:, segCount) = r0NormFlt
-          muFltOversized(:, segCount) = muFlt
+          r0NormFltOversized(:, segCount) = r0Norm + length * mu0 
+          muFltOversized(:, segCount) = -muFlt
         else
           cIdxBack(segCount) = cIdx
           lenBack(segCount) = length
           vacBack(segCount + 1) = hitVacuum
           rNormFltRecord(:, segCount) = rNormFlt
-          r0NormFltRecord(:, segCount) = r0NormFlt
-          muFltRecord(:, segCount) = muFlt
+          r0NormFltRecord(:, segCount) = r0Norm + length * mu0 
+          muFltRecord(:, segCount) = -muFlt
         end if
-
 
         if (tally) then
           if (oversized) then
@@ -1331,6 +1330,7 @@ contains
 
     !iterate over segments
     do i = segCount, 1, -1
+      segIdx =  (i - 1) * self % nG
 
       if (oversized) then
         lenFlt = real(lenBackOversized(i),defFlt)
@@ -1341,11 +1341,11 @@ contains
         muFlt = muFltOversized(:,i)
         r0NormFlt = r0NormFltOversized(:,i)
 
-        avgFluxVecFW => avgRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-        deltaFW => deltaRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-        xIncFW  => xIncRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-        yIncFW  => yIncRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-        zIncFW  => zIncRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
+        avgFluxVecFW => avgRecordOversized((segIdx + 1) : (segIdx + self % nG))
+        deltaFW => deltaRecordOversized((segIdx + 1) : (segIdx + self % nG))
+        xIncFW  => xIncRecordOversized((segIdx + 1) : (segIdx + self % nG))
+        yIncFW  => yIncRecordOversized((segIdx + 1) : (segIdx + self % nG))
+        zIncFW  => zIncRecordOversized((segIdx + 1) : (segIdx + self % nG))
       else
         lenFlt = real(lenBack(i),defFlt)
         length = lenBack(i)
@@ -1355,25 +1355,22 @@ contains
         muFlt = muFltRecord(:,i)
         r0NormFlt = r0NormFltRecord(:,i)
 
-        avgFluxVecFW => avgRecord((i - 1) * self % nG + 1 : i * self % nG)
-        deltaFW => deltaRecord((i - 1) * self % nG + 1 : i * self % nG)
-        xIncFW  => xIncRecord((i - 1) * self % nG + 1 : i * self % nG)
-        yIncFW  => yIncRecord((i - 1) * self % nG + 1 : i * self % nG)
-        zIncFW  => zIncRecord((i - 1) * self % nG + 1 : i * self % nG)
+        avgFluxVecFW => avgRecord((segIdx + 1) : (segIdx + self % nG))
+        deltaFW => deltaRecord((segIdx + 1) : (segIdx + self % nG))
+        xIncFW  => xIncRecord((segIdx + 1) : (segIdx + self % nG))
+        yIncFW  => yIncRecord((segIdx + 1) : (segIdx + self % nG))
+        zIncFW  => zIncRecord((segIdx + 1) : (segIdx + self % nG))
       end if
 
       lenFlt2_2 = lenFlt * lenFlt * one_two
 
       matIdx = self % geom % geom % graph % getMatFromUID(cIdx)
       baseIdx = (cIdx - 1) * self % nG
-      segIdx =  (i - 1) * self % nG
 
       sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
       xGradVec  => self % adjSourceX((baseIdx + 1):(baseIdx + self % nG))
       yGradVec  => self % adjSourceY((baseIdx + 1):(baseIdx + self % nG))
       zGradVec  => self % adjSourceZ((baseIdx + 1):(baseIdx + self % nG))
-
-      !sourceVecFW => self % source((baseIdx + 1):(baseIdx + self % nG))
       
       if (matIdx0 /= matIdx) then
         matIdx0 = matIdx
