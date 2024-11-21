@@ -693,6 +693,7 @@ module adjointLSTRRMPhysicsPackage_class
       allocate(self % momTracks(self % nCells * matSize))
       allocate(self % centroid(self % nCells * nDim))
       allocate(self % centroidTracks(self % nCells * nDim))
+      
 
       allocate(self % scalarX(self % nCells * self % nG))
       allocate(self % scalarY(self % nCells * self % nG))
@@ -1699,30 +1700,27 @@ module adjointLSTRRMPhysicsPackage_class
       type(ray), intent(inout)                              :: r
       integer(longInt), intent(out)                         :: ints
       logical(defBool), intent(in)                          :: isActive
-      integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, &
-                                                               matIdx0, baseIdx, centIdx, momIdx
+      integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
+                                                                 segCount, i, segCountCrit, segIdx, gIn, pIdx, &
+                                                                 centIdx, momIdx
       real(defReal)                                         :: totalLength, length, len2_12
-      logical(defBool)                                      :: activeRay, hitVacuum
+      logical(defBool)                                      :: activeRay, hitVacuum, tally, oversized
       type(distCache)                                       :: cache
       real(defFlt)                                          :: lenFlt, lenFlt2_2
-      real(defFlt), dimension(self % nG)                    :: F1, F2, G1, G2, H, tau, delta, fluxVec, &
-                                                               flatQ, gradQ, xInc, yInc, zInc, fluxVec0, &
+      real(defFlt), dimension(self % nG)                    :: delta, fluxVec, avgFluxVec, tau
+      real(defFlt), dimension(self % nG)                    :: F1, F2, G1, G2, H, &
+                                                                flatQ, gradQ, xInc, yInc, zInc, fluxVec0, &
                                                                 flatQ0, Gn
       real(defReal), dimension(matSize)                     :: matScore
       real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, &
-                                                               xGradVec, yGradVec, zGradVec, &
-                                                               xMomVec, yMomVec, zMomVec, &
-                                                               xMomVecFW, yMomVecFW, zMomVecFW, &
-                                                               xIncFW, yIncFW, zIncFW, scalarVecFW, &
-                                                               sourceVecFW, deltaFW, avgFluxVecFW, RR, FFlux
-      real(defReal), pointer, dimension(:)                  :: mid, momVec, centVec
-      real(defReal), pointer                                :: volTrack
-      real(defReal), dimension(3)                           :: r0, mu0, rC, r0Norm, rNorm
-      real(defFlt), dimension(3)                            :: muFlt, rNormFlt, r0NormFlt
-      integer(shortInt)                                     :: segCount, i, segCountCrit, segIdx, gIn, pIdx
-      logical(defBool)                                      :: tally,  oversized
-      real(defFlt), dimension(self % nG)                    :: avgFluxVec
+                                                                sourceVecFW, deltaFW, RR, FFlux, xGradVec, yGradVec, &
+                                                                zGradVec, xMomVec, yMomVec, zMomVec, &
+                                                                xMomVecFW, yMomVecFW, zMomVecFW, &
+                                                                xIncFW, yIncFW, zIncFW, scalarVecFW, &
+                                                                avgFluxVecFW
       real(defReal), pointer, dimension(:)                  :: angularProd
+      real(defReal), pointer, dimension(:)                  :: mid, momVec, centVec
+      real(defReal), dimension(3)                           :: r0, mu0, rC, r0Norm, rNorm
       real(defFlt), dimension(self % NSegMax*2)             :: lenBack
       real(shortInt), dimension(self % NSegMax*2)           :: cIdxBack
       logical(defBool), dimension(self % NSegMax*2)         :: vacBack
@@ -1741,11 +1739,13 @@ module adjointLSTRRMPhysicsPackage_class
       real(defFlt), target, allocatable, dimension(:)       :: avgRecordOversized
       real(defFlt), allocatable, dimension(:)               :: avgRecordBuffer
       real(defFlt), target, dimension(self % nG * self % NSegMax*2) :: avgRecord
+      real(defFlt), dimension(3)                            :: muFlt, rNormFlt, r0NormFlt
+          
+      ! matIdx  = r % coords % matIdx
       
       ! Set initial angular flux to angle average of cell source
-      ! Perhaps this should be different for linear source?
-      ! Could in principle use the position and source gradient
       cIdx = self % IDToCell(r % coords % uniqueID)
+      ! matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
       if (cIdx > 0) then
         do g = 1, self % nG
           idx = (cIdx - 1) * self % nG + g
@@ -1765,21 +1765,29 @@ module adjointLSTRRMPhysicsPackage_class
   
       do while (totalLength < self % termination + self % dead)
   
-        ! Get ray coords for LS calculations
-        mu0 = r % dirGlobal()
-        r0  = r % rGlobal()
-  
         ! Get material and cell the ray is moving through
+        ! Get ray coords for LS calculations
+        ! mu0 = r % dirGlobal()
+        ! r0  = r % rGlobal() !CHECK? ?????
+
         matIdx  = r % coords % matIdx
         cIdx    = self % IDToCell(r % coords % uniqueID)
-
+  
         if (matIdx0 /= matIdx) then
           matIdx0 = matIdx
           ! Cache total cross section
           totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
         end if
   
-         ! Set maximum flight distance and ensure ray is active
+        ! Remember co-ordinates to set new cell's position
+        if (cIdx > 0) then
+          ! if (.not. self % cellFound(cIdx)) then
+            r0 = r % rGlobal()
+            mu0 = r % dirGlobal()
+        !   end if
+        end if
+            
+        ! Set maximum flight distance and ensure ray is active
         if (totalLength >= self % dead) then
           length = self % termination - totalLength 
           activeRay = .true.
@@ -1806,11 +1814,10 @@ module adjointLSTRRMPhysicsPackage_class
           call self % geom % moveRay_noCache(r % coords, length, event, hitVacuum)
         end if
 
-        if (cIdx > 0) then
-
+        if (cIdx > 0 .and. length > self % skipLength) then
+          totalLength = totalLength + length
           ! Calculate the track centre
           rC = r0 + length * HALF * mu0
-          totalLength = totalLength + length
           
           ! Set new cell's position. Use half distance across cell
           ! to try and avoid FP error
@@ -1822,14 +1829,14 @@ module adjointLSTRRMPhysicsPackage_class
           end if
     
           ints = ints + 1
-    
+          ! lenFlt = real(length,defFlt)
           baseIdx = (cIdx - 1) * self % nG
+          sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
           xGradVec => self % sourceX((baseIdx + 1):(baseIdx + self % nG))
           yGradVec => self % sourceY((baseIdx + 1):(baseIdx + self % nG))
           zGradVec => self % sourceZ((baseIdx + 1):(baseIdx + self % nG))
-          sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
           mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
-    
+
           if (self % volume(cIdx) > volume_tolerance) then
             ! Compute the track centroid in local co-ordinates
             rNorm = rC - mid(1:nDim)
@@ -1839,14 +1846,13 @@ module adjointLSTRRMPhysicsPackage_class
             rNorm = 0
             r0Norm = - mu0 * HALF * length
           end if 
-    
+
           ! Convert to floats for speed
           r0NormFlt = real(r0Norm,defFlt)
           rNormFlt = real(rNorm,defFlt)
           muFlt = real(mu0,defFlt)
           lenFlt = real(length,defFlt)
-    
-          ! Calculate source terms
+
           !$omp simd aligned(xGradVec, yGradVec, zGradVec, sourceVec)
           do g = 1, self % nG
             flatQ(g) = rNormFlt(x) * xGradVec(g)
@@ -1858,7 +1864,8 @@ module adjointLSTRRMPhysicsPackage_class
             gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
             gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
           end do
-          
+    
+ 
           ! Compute exponentials necessary for angular flux update
           !$omp simd
           do g = 1, self % nG
@@ -1873,7 +1880,7 @@ module adjointLSTRRMPhysicsPackage_class
             Gn(g) = expG(tau(g))
           end do
     
-        !$omp simd
+         !$omp simd
           do g = 1, self % nG
             F1(g)  = 1.0_defFlt - tau(g) * Gn(g) !expTau(tau(g)) * lenFlt
           end do
@@ -1909,7 +1916,7 @@ module adjointLSTRRMPhysicsPackage_class
           ! Accumulate to scalar flux
           if (activeRay) then
             segCount = segCount + 1
-            ! Precompute geometric info to keep it out of the lock
+
             len2_12 = length * length / 12
             matScore(xx) = length * (rnorm(x) * rnorm(x) + mu0(x) * mu0(x) * len2_12)
             matScore(xy) = length * (rnorm(x) * rnorm(y) + mu0(x) * mu0(y) * len2_12)
@@ -1919,18 +1926,15 @@ module adjointLSTRRMPhysicsPackage_class
             matScore(zz) = length * (rnorm(z) * rnorm(z) + mu0(z) * mu0(z) * len2_12)
             centIdx = nDim * (cIdx - 1)
             momIdx = matSize * (cIdx - 1)
-            
+
             rC = rC * length
-            
-            ! Compute necessary exponential quantities
-            ! Follows those in Gunow
             lenFlt2_2 = lenFlt * lenFlt * one_two
-            
-          !$omp simd
+
+            !$omp simd
             do g = 1, self % nG
-              H(g) = ( F1(g) - Gn(g) ) !expH(tau(g))
+                H(g) = ( F1(g) - Gn(g) ) !expH(tau(g))
             end do
-          
+            
             !$omp simd
             do g = 1, self % nG
                 G1(g) = one_two - H(g)
@@ -1938,23 +1942,22 @@ module adjointLSTRRMPhysicsPackage_class
     
             !$omp simd 
             do g = 1, self % nG
-              G2(g) = expG2(tau(g)) 
+                G2(g) = expG2(tau(g)) 
             end do
-            
-            !$omp simd 
+    
             do g = 1, self % nG
-              G1(g) = G1(g) * flatQ(g) * lenFlt
-              G2(g) = G2(g) * gradQ(g) * lenFlt2_2
-              H(g)  = H(g) * fluxVec0(g) * lenFlt
-              H(g) = (G1(g) + G2(g) + H(g)) * lenFlt
-              flatQ(g) = flatQ(g) * lenFlt + delta(g) * lenFlt
+                G1(g) = G1(g) * flatQ(g) * lenFlt
+                G2(g) = G2(g) * gradQ(g) * lenFlt2_2
+                H(g)  = H(g) * fluxVec0(g) * lenFlt
+                H(g) = (G1(g) + G2(g) + H(g)) * lenFlt
+                flatQ(g) = flatQ(g) * lenFlt + delta(g) * lenFlt
             end do
     
             !$omp simd
             do g = 1, self % nG
-              xInc(g) = r0NormFlt(x) * flatQ(g) + muFlt(x) * H(g) 
-              yInc(g) = r0NormFlt(y) * flatQ(g) + muFlt(y) * H(g) 
-              zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g)
+                xInc(g) = r0NormFlt(x) * flatQ(g) + muFlt(x) * H(g) 
+                yInc(g) = r0NormFlt(y) * flatQ(g) + muFlt(y) * H(g) 
+                zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g)
             end do
     
             if (tally) then
@@ -1963,155 +1966,160 @@ module adjointLSTRRMPhysicsPackage_class
     
             if ( (segCount >= (self % NSegMax - 1)) .and. .not. oversized) then
     
-              oversized = .true.
-              allocate(lenBackOversized(size(lenBack) * 2))
-              lenBackOversized(1:size(lenBack)) = lenBack
-    
-              allocate(cIdxBackOversized(size(cIdxBack) * 2))
-              cIdxBackOversized(1:size(cIdxBack)) = cIdxBack
-    
-              allocate(vacBackOversized(size(vacBack) * 2))
-              vacBackOversized(1:size(vacBack)) = vacBack
-    
-              allocate(deltaRecordOversized(size(deltaRecord) * 2))
-              deltaRecordOversized(1:size(deltaRecord)) = deltaRecord
-    
-              allocate(xIncRecordOversized(size(xIncRecord) * 2))
-              xIncRecordOversized(1:size(xIncRecord)) = xIncRecord
-    
-              allocate(yIncRecordOversized(size(yIncRecord) * 2))
-              yIncRecordOversized(1:size(yIncRecord)) = yIncRecord
-    
-              allocate(zIncRecordOversized(size(zIncRecord) * 2))
-              zIncRecordOversized(1:size(zIncRecord)) = zIncRecord
-    
-              allocate(rNormFltOversized(3, size(rNormFltRecord(1,:)) * 2))
-              rNormFltOversized(:, 1:size(rNormFltRecord(1,:))) = rNormFltRecord
-    
-              allocate(r0NormFltOversized(3, size(r0NormFltRecord(1,:)) * 2))
-              r0NormFltOversized(:, 1:size(r0NormFltRecord(1,:))) = r0NormFltRecord
-    
-              allocate(muFltOversized(3, size(muFltRecord(1,:)) * 2))
-              muFltOversized(:, 1:size(muFltRecord(1,:))) = muFltRecord
-    
-              allocate(avgRecordOversized(size(avgRecord) * 2))
-              avgRecordOversized(1:size(avgRecord)) = avgRecord
+                oversized = .true.
+                allocate(lenBackOversized(size(lenBack) * 2))
+                lenBackOversized(1:size(lenBack)) = lenBack
+      
+                allocate(cIdxBackOversized(size(cIdxBack) * 2))
+                cIdxBackOversized(1:size(cIdxBack)) = cIdxBack
+      
+                allocate(vacBackOversized(size(vacBack) * 2))
+                vacBackOversized(1:size(vacBack)) = vacBack
+      
+                allocate(deltaRecordOversized(size(deltaRecord) * 2))
+                deltaRecordOversized(1:size(deltaRecord)) = deltaRecord
+      
+                allocate(xIncRecordOversized(size(xIncRecord) * 2))
+                xIncRecordOversized(1:size(xIncRecord)) = xIncRecord
+      
+                allocate(yIncRecordOversized(size(yIncRecord) * 2))
+                yIncRecordOversized(1:size(yIncRecord)) = yIncRecord
+      
+                allocate(zIncRecordOversized(size(zIncRecord) * 2))
+                zIncRecordOversized(1:size(zIncRecord)) = zIncRecord
+      
+                allocate(rNormFltOversized(3, size(rNormFltRecord(1,:)) * 2))
+                rNormFltOversized(:, 1:size(rNormFltRecord(1,:))) = rNormFltRecord
+      
+                allocate(r0NormFltOversized(3, size(r0NormFltRecord(1,:)) * 2))
+                r0NormFltOversized(:, 1:size(r0NormFltRecord(1,:))) = r0NormFltRecord
+      
+                allocate(muFltOversized(3, size(muFltRecord(1,:)) * 2))
+                muFltOversized(:, 1:size(muFltRecord(1,:))) = muFltRecord
+      
+                allocate(avgRecordOversized(size(avgRecord) * 2))
+                avgRecordOversized(1:size(avgRecord)) = avgRecord
     
             elseif (oversized) then
     
-              if  (segCount >= (size(vacBackOversized) - 1) ) then
-                allocate(lenBackBuffer(size(lenBackOversized) * 2)) 
-                lenBackBuffer(1:size(lenBackOversized)) = lenBackOversized
-                call move_alloc(lenBackBuffer, lenBackOversized)
-    
-                allocate(cIdxBackBuffer(size(cIdxBackOversized) * 2)) 
-                cIdxBackBuffer(1:size(cIdxBackOversized)) = cIdxBackOversized
-                call move_alloc(cIdxBackBuffer, cIdxBackOversized)
-    
-                allocate(vacBackBuffer(size(vacBackOversized) * 2))  
-                vacBackBuffer(1:size(vacBackOversized)) = vacBackOversized
-                call move_alloc(vacBackBuffer, vacBackOversized)
-    
-                allocate(deltaRecordBuffer(size(deltaRecordOversized) * 2)) 
-                deltaRecordBuffer(1:size(deltaRecordOversized)) = deltaRecordOversized
-                call move_alloc(deltaRecordBuffer, deltaRecordOversized)
-    
-                allocate(xIncRecordBuffer(size(xIncRecordOversized) * 2))  
-                xIncRecordBuffer(1:size(xIncRecordOversized)) = xIncRecordOversized 
-                call move_alloc(xIncRecordBuffer, xIncRecordOversized)
-    
-                allocate(yIncRecordBuffer(size(yIncRecordOversized) * 2))  
-                yIncRecordBuffer(1:size(yIncRecordOversized)) = yIncRecordOversized
-                call move_alloc(yIncRecordBuffer, yIncRecordOversized)
-    
-                allocate(zIncRecordBuffer(size(zIncRecordOversized) * 2))   
-                zIncRecordBuffer(1:size(zIncRecordOversized)) = zIncRecordOversized
-                call move_alloc(zIncRecordBuffer, zIncRecordOversized)
-    
-                allocate(rNormFltBuffer(3, size(rNormFltOversized(1,:)) * 2))
-                rNormFltBuffer(:, 1:size(rNormFltOversized,2)) = rNormFltOversized
-                call move_alloc(rNormFltBuffer, rNormFltOversized)
-    
-                allocate(r0NormFltBuffer(3, size(r0NormFltOversized(1,:)) * 2))
-                r0NormFltBuffer(:, 1:size(r0NormFltOversized,2)) = r0NormFltOversized
-                call move_alloc(r0NormFltBuffer, r0NormFltOversized)
-    
-                allocate(muFltBuffer(3, size(muFltOversized(1,:)) * 2))
-                muFltBuffer(:, 1:size(muFltOversized,2)) = muFltOversized
-                call move_alloc(muFltBuffer, muFltOversized)
-    
-                allocate(avgRecordBuffer(size(avgRecordOversized) * 2))
-                avgRecordBuffer(1:size(avgRecordOversized)) = avgRecordOversized
-                call move_alloc(avgRecordBuffer, avgRecordOversized)
-    
+                if  (segCount >= (size(vacBackOversized) - 1) ) then
+                    allocate(lenBackBuffer(size(lenBackOversized) * 2)) 
+                    lenBackBuffer(1:size(lenBackOversized)) = lenBackOversized
+                    call move_alloc(lenBackBuffer, lenBackOversized)
+        
+                    allocate(cIdxBackBuffer(size(cIdxBackOversized) * 2)) 
+                    cIdxBackBuffer(1:size(cIdxBackOversized)) = cIdxBackOversized
+                    call move_alloc(cIdxBackBuffer, cIdxBackOversized)
+        
+                    allocate(vacBackBuffer(size(vacBackOversized) * 2))  
+                    vacBackBuffer(1:size(vacBackOversized)) = vacBackOversized
+                    call move_alloc(vacBackBuffer, vacBackOversized)
+        
+                    allocate(deltaRecordBuffer(size(deltaRecordOversized) * 2)) 
+                    deltaRecordBuffer(1:size(deltaRecordOversized)) = deltaRecordOversized
+                    call move_alloc(deltaRecordBuffer, deltaRecordOversized)
+        
+                    allocate(xIncRecordBuffer(size(xIncRecordOversized) * 2))  
+                    xIncRecordBuffer(1:size(xIncRecordOversized)) = xIncRecordOversized 
+                    call move_alloc(xIncRecordBuffer, xIncRecordOversized)
+        
+                    allocate(yIncRecordBuffer(size(yIncRecordOversized) * 2))  
+                    yIncRecordBuffer(1:size(yIncRecordOversized)) = yIncRecordOversized
+                    call move_alloc(yIncRecordBuffer, yIncRecordOversized)
+        
+                    allocate(zIncRecordBuffer(size(zIncRecordOversized) * 2))   
+                    zIncRecordBuffer(1:size(zIncRecordOversized)) = zIncRecordOversized
+                    call move_alloc(zIncRecordBuffer, zIncRecordOversized)
+        
+                    allocate(rNormFltBuffer(3, size(rNormFltOversized(1,:)) * 2))
+                    rNormFltBuffer(:, 1:size(rNormFltOversized,2)) = rNormFltOversized
+                    call move_alloc(rNormFltBuffer, rNormFltOversized)
+        
+                    allocate(r0NormFltBuffer(3, size(r0NormFltOversized(1,:)) * 2))
+                    r0NormFltBuffer(:, 1:size(r0NormFltOversized,2)) = r0NormFltOversized
+                    call move_alloc(r0NormFltBuffer, r0NormFltOversized)
+        
+                    allocate(muFltBuffer(3, size(muFltOversized(1,:)) * 2))
+                    muFltBuffer(:, 1:size(muFltOversized,2)) = muFltOversized
+                    call move_alloc(muFltBuffer, muFltOversized)
+        
+                    allocate(avgRecordBuffer(size(avgRecordOversized) * 2))
+                    avgRecordBuffer(1:size(avgRecordOversized)) = avgRecordOversized
+                    call move_alloc(avgRecordBuffer, avgRecordOversized)        
               end if
     
             end if
     
             if (oversized) then
-              cIdxBackOversized(segCount) = cIdx
-              lenBackOversized(segCount) = length
-              vacBackOversized(segCount + 1) = hitVacuum
-              rNormFltOversized(:, segCount) = rNormFlt
-              r0NormFltOversized(:, segCount) = r0NormFlt
-              muFltOversized(:, segCount) = muFlt
-            else
-              cIdxBack(segCount) = cIdx
-              lenBack(segCount) = length
-              vacBack(segCount + 1) = hitVacuum
-              rNormFltRecord(:, segCount) = rNormFlt
-              r0NormFltRecord(:, segCount) = r0NormFlt
-              muFltRecord(:, segCount) = muFlt
-            end if
-    
-    
-            if (tally) then
-              if (oversized) then
-                !$omp simd
-                do g = 1, self % nG
-                  avgRecordOversized((segCount - 1) * self % nG + g) = (flatQ0(g) + delta(g))
-                  deltaRecordOversized((segCount - 1) * self % nG + g) = delta(g) 
-                  xIncRecordOversized((segCount - 1) * self % nG + g) = xInc(g)
-                  yIncRecordOversized((segCount - 1) * self % nG + g) = yInc(g)
-                  zIncRecordOversized((segCount - 1) * self % nG + g) = zInc(g)
-                end do
+                cIdxBackOversized(segCount) = cIdx
+                lenBackOversized(segCount) = length
+                vacBackOversized(segCount + 1) = hitVacuum
+                rNormFltOversized(:, segCount) = rNormFlt
+                r0NormFltOversized(:, segCount) = r0Norm + length * mu0
+                muFltOversized(:, segCount) = -muFlt
               else
-                !$omp simd
-                do g = 1, self % nG
-                  avgRecord((segCount - 1) * self % nG + g) = (flatQ0(g) + delta(g))
-                  deltaRecord((segCount - 1) * self % nG + g) = delta(g)  
-                  xIncRecord((segCount - 1) * self % nG + g) = xInc(g)
-                  yIncRecord((segCount - 1) * self % nG + g) = yInc(g)
-                  zIncRecord((segCount - 1) * self % nG + g) = zInc(g)
-                end do
+                cIdxBack(segCount) = cIdx
+                lenBack(segCount) = length
+                vacBack(segCount + 1) = hitVacuum
+                rNormFltRecord(:, segCount) = rNormFlt
+                r0NormFltRecord(:, segCount) = r0Norm + length * mu0 !r0NormFlt
+                muFltRecord(:, segCount) = -muFlt
               end if
     
-              centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
-              momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
-              ! Update centroid
-              do g = 1, nDim
-                !$omp atomic
-                centVec(g) = centVec(g) + rC(g)
-              end do
     
-              ! Update spatial moment scores
-              do g = 1, matSize
-                !$omp atomic
-                momVec(g) = momVec(g) + matScore(g)
-              end do
+              if (tally) then
+                if (oversized) then
+                  !$omp simd
+                  do g = 1, self % nG
+                    avgRecordOversized((segCount - 1) * self % nG + g) = (flatQ0(g) + delta(g))
+                    deltaRecordOversized((segCount - 1) * self % nG + g) = delta(g) 
+                    xIncRecordOversized((segCount - 1) * self % nG + g) = xInc(g)
+                    yIncRecordOversized((segCount - 1) * self % nG + g) = yInc(g)
+                    zIncRecordOversized((segCount - 1) * self % nG + g) = zInc(g)
+                  end do
+                else
+                  !$omp simd
+                  do g = 1, self % nG
+                    avgRecord((segCount - 1) * self % nG + g) = (flatQ0(g) + delta(g))
+                    deltaRecord((segCount - 1) * self % nG + g) = delta(g)  
+                    xIncRecord((segCount - 1) * self % nG + g) = xInc(g)
+                    yIncRecord((segCount - 1) * self % nG + g) = yInc(g)
+                    zIncRecord((segCount - 1) * self % nG + g) = zInc(g)
+                  end do
+                end if
 
-            end if
-    
+                ! call OMP_set_lock(self % locks(cIdx))
+                centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
+                momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
+                ! Update centroid
+                !!$omp simd
+                do g = 1, nDim
+                  !$omp atomic
+                  centVec(g) = centVec(g) + rC(g)
+                  ! print *, rC(g)
+                end do
+      
+                ! Update spatial moment scores
+                !!$omp simd
+                do g = 1, matSize
+                  !$omp atomic
+                  momVec(g) = momVec(g) + matScore(g)
+                  ! print *, matScore(g)
+                end do
+                !$omp atomic
+                self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
+              end if
+  
+              ! call OMP_unset_lock(self % locks(cIdx))
               if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
-    
-          end if
+            end if
 
-          elseif((totalLength + length) >= self % termination) then
-            totalLength = self % termination
-    
-          elseif ((totalLength + length) >= self % dead .and. .not. activeRay) then
-            totalLength = self % dead
-
+        elseif((totalLength + length) >= self % termination + self % dead) then
+          totalLength = self % termination + self % dead
+  
+        elseif ((totalLength + length) >= self % dead .and. .not. activeRay) then
+          totalLength = self % dead
+  
         end if
   
         ! Check for a vacuum hit
@@ -2120,11 +2128,11 @@ module adjointLSTRRMPhysicsPackage_class
           do g = 1, self % nG
             fluxVec(g) = 0.0_defFlt
           end do
-        end if
-  
+        end if 
       end do
   
       ! Flux guess for new adjoint deadlength
+      !$omp simd
       do g = 1, self % nG
         idx = (cIdx - 1) * self % nG + g
         fluxVec(g) = self % adjSource(idx)
@@ -2132,67 +2140,67 @@ module adjointLSTRRMPhysicsPackage_class
   
       !iterate over segments
       do i = segCount, 1, -1
-  
-        if (oversized) then
-          lenFlt = real(lenBackOversized(i),defFlt)
-          length = lenBackOversized(i)
-          hitVacuum = vacBackOversized(i)
-          cIdx = cIdxBackOversized(i)
-          rNormFlt = rNormFltOversized(:,i)
-          muFlt = muFltOversized(:,i)
-          r0NormFlt = r0NormFltOversized(:,i)
-  
-          avgFluxVecFW => avgRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-          deltaFW => deltaRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-          xIncFW  => xIncRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-          yIncFW  => yIncRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-          zIncFW  => zIncRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-        else
-          lenFlt = real(lenBack(i),defFlt)
-          length = lenBack(i)
-          hitVacuum = vacBack(i)
-          cIdx = cIdxBack(i)
-          rNormFlt = rNormFltRecord(:,i)
-          muFlt = muFltRecord(:,i)
-          r0NormFlt = r0NormFltRecord(:,i)
-  
-          avgFluxVecFW => avgRecord((i - 1) * self % nG + 1 : i * self % nG)
-          deltaFW => deltaRecord((i - 1) * self % nG + 1 : i * self % nG)
-          xIncFW  => xIncRecord((i - 1) * self % nG + 1 : i * self % nG)
-          yIncFW  => yIncRecord((i - 1) * self % nG + 1 : i * self % nG)
-          zIncFW  => zIncRecord((i - 1) * self % nG + 1 : i * self % nG)
-        end if
-  
-        lenFlt2_2 = lenFlt * lenFlt * one_two
-  
-        ! matIdx = self % geom % geom % graph % getMatFromUID(cIdx)
-        matIdx   =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
-        baseIdx = (cIdx - 1) * self % nG
+
         segIdx =  (i - 1) * self % nG
   
+        if (oversized) then
+            lenFlt = real(lenBackOversized(i),defFlt)
+            length = lenBackOversized(i)
+            hitVacuum = vacBackOversized(i)
+            cIdx = cIdxBackOversized(i)
+            rNormFlt = rNormFltOversized(:,i)
+            muFlt = muFltOversized(:,i)
+            r0NormFlt = r0NormFltOversized(:,i) !- muFlt * length
+    
+            avgFluxVecFW => avgRecordOversized((segIdx + 1) : (segIdx + self % nG))
+            deltaFW => deltaRecordOversized((segIdx + 1) : (segIdx + self % nG))
+            xIncFW  => xIncRecordOversized((segIdx + 1) : (segIdx + self % nG))
+            yIncFW  => yIncRecordOversized((segIdx + 1) : (segIdx + self % nG))
+            zIncFW  => zIncRecordOversized((segIdx + 1) : (segIdx + self % nG))
+          else
+            lenFlt = real(lenBack(i),defFlt)
+            length = lenBack(i)
+            hitVacuum = vacBack(i)
+            cIdx = cIdxBack(i)
+            rNormFlt = rNormFltRecord(:,i)
+            muFlt = muFltRecord(:,i)
+            r0NormFlt = r0NormFltRecord(:,i) !- muFlt * length
+    
+            avgFluxVecFW => avgRecord((segIdx + 1) : (segIdx + self % nG))
+            deltaFW => deltaRecord((segIdx + 1) : (segIdx + self % nG))
+            xIncFW  => xIncRecord((segIdx + 1) : (segIdx + self % nG))
+            yIncFW  => yIncRecord((segIdx + 1) : (segIdx + self % nG))
+            zIncFW  => zIncRecord((segIdx + 1) : (segIdx + self % nG))
+          end if
+
+        lenFlt2_2 = lenFlt * lenFlt * one_two
+  
+        matIdx   =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
+        baseIdx = (cIdx - 1) * self % nG
+        ! segIdx =  (i - 1) * self % nG
+
         sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
+        ! sourceVecFW => self % source((baseIdx + 1):(baseIdx + self % nG))
         xGradVec  => self % adjSourceX((baseIdx + 1):(baseIdx + self % nG))
         yGradVec  => self % adjSourceY((baseIdx + 1):(baseIdx + self % nG))
         zGradVec  => self % adjSourceZ((baseIdx + 1):(baseIdx + self % nG))
-  
-        !sourceVecFW => self % source((baseIdx + 1):(baseIdx + self % nG))
         
         if (matIdx0 /= matIdx) then
           matIdx0 = matIdx
           ! Cache total cross section
           totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
         end if
-  
+
         !$omp simd aligned(xGradVec, yGradVec, zGradVec)
         do g = 1, self % nG
-          flatQ(g) = rNormFlt(x) * xGradVec(g)
-          flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
-          flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
-          flatQ(g) = flatQ(g) + sourceVec(g)
-  
-          gradQ(g) = muFlt(x) * xGradVec(g)
-          gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
-          gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
+            flatQ(g) = rNormFlt(x) * xGradVec(g)
+            flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
+            flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
+            flatQ(g) = flatQ(g) + sourceVec(g)
+    
+            gradQ(g) = muFlt(x) * xGradVec(g)
+            gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
+            gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
         end do
   
         !$omp simd
@@ -2207,8 +2215,8 @@ module adjointLSTRRMPhysicsPackage_class
         do g = 1, self % nG
           Gn(g) = expG(tau(g))
         end do
-  
-       !$omp simd
+    
+        !$omp simd
         do g = 1, self % nG
           F1(g)  = 1.0_defFlt - tau(g) * Gn(g) 
         end do
@@ -2235,15 +2243,13 @@ module adjointLSTRRMPhysicsPackage_class
         do g = 1, self % nG
           fluxVec(g) = fluxVec(g) - delta(g) * tau(g) 
         end do
-  
+        
         if (i <= segCountCrit) then
   
           !$omp simd
           do g = 1, self % nG
             avgFluxVec(g) = (flatQ(g) + delta(g))
           end do
-  
-          lenFlt2_2 = lenFlt * lenFlt * one_two
           
           !$omp simd
           do g = 1, self % nG
@@ -2252,15 +2258,15 @@ module adjointLSTRRMPhysicsPackage_class
         
           !$omp simd
           do g = 1, self % nG
-              G1(g) = one_two - H(g)
+            G1(g) = one_two - H(g)
           end do
   
           !$omp simd 
           do g = 1, self % nG
             G2(g) = expG2(tau(g)) 
           end do
-  
-          !$omp simd
+
+          !$omp simd 
           do g = 1, self % nG
             G1(g) = G1(g) * flatQ(g) * lenFlt
             G2(g) = G2(g) * gradQ(g) * lenFlt2_2
@@ -2289,14 +2295,16 @@ module adjointLSTRRMPhysicsPackage_class
           xMomVecFW => self % scalarX((baseIdx + 1):(baseIdx + self % nG))
           yMomVecFW => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
           zMomVecFW => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))  
+
           RR => self % ReactionRate((baseIdx + 1):(baseIdx + self % nG))
           FFlux => self % FWFlux((baseIdx + 1):(baseIdx + self % nG))  
 
+          ! aligned(scalarVec, scalarVecFW, RR, FFlux)
           !$omp simd 
           do g = 1, self % nG
               RR(g) = RR(g) + avgFluxVec(g) * length
               FFlux(g) = FFlux(g) + (avgFluxVecFW(g)) * length
-            
+
               scalarVec(g) = scalarVec(g) + delta(g) * lenFlt
               xMomVec(g) = xMomVec(g) + xInc(g)
               yMomVec(g) = yMomVec(g) + yInc(g)
@@ -2307,16 +2315,19 @@ module adjointLSTRRMPhysicsPackage_class
               yMomVecFW(g) = yMomVecFW(g) + yIncFW(g)
               zMomVecFW(g) = zMomVecFW(g) + zIncFW(g)
           end do
+          
           if (isActive) then
-            !$omp simd 
             do g = 1, self % nG
+              associate(angProd => angularProd(self % nG * (g - 1) + 1 : self % nG * g))
+                !$omp simd 
                 do gIn = 1, self % nG
-                  pIdx = self % nG * (g - 1) + gIn
-                  angularProd(pIdx) = angularProd(pIdx) + avgFluxVec(g) * avgFluxVecFW(gIn) * length
+                !   angProd(gIn) = angProd(gIn) + avgFluxVec(g) * (deltaFW(gIn) + sourceVecFW(gIn)) * length
+                  angProd(gIn) = angProd(gIn) + avgFluxVec(g) * avgFluxVecFW(gIn) * length
                 end do
+              end associate
             end do
           end if
-          self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
+          ! self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
           if (segCount > self % NSegMax) then
             self % NSegMaxTemp = segCount
           end if
@@ -2331,657 +2342,11 @@ module adjointLSTRRMPhysicsPackage_class
           end do
         end if
   
-       end do
+      end do
   
-       !use records to computer inner product etc - seperate subroutine? 
+      
        
     end subroutine transportSweep
-    
-
-!     subroutine transportSweep(self, r, ints, isActive)
-!       class(adjointLSTRRMPhysicsPackage), target, intent(inout) :: self
-!       type(ray), intent(inout)                              :: r
-!       integer(longInt), intent(out)                         :: ints
-!       logical(defBool), intent(in)                          :: isActive
-!       integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
-!                                                                  segCount, i, segCountCrit, segIdx, gIn, pIdx, &
-!                                                                  centIdx, momIdx
-!       real(defReal)                                         :: totalLength, length, len2_12
-!       logical(defBool)                                      :: activeRay, hitVacuum, tally, oversized
-!       type(distCache)                                       :: cache
-!       real(defFlt)                                          :: lenFlt, lenFlt2_2
-!       real(defFlt), dimension(self % nG)                    :: delta, fluxVec, avgFluxVec, tau
-!       real(defFlt), dimension(self % nG)                    :: F1, F2, G1, G2, H, &
-!                                                                 flatQ, gradQ, xInc, yInc, zInc, fluxVec0, &
-!                                                                 flatQ0, Gn
-!       real(defReal), dimension(matSize)                     :: matScore
-!       real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, &
-!                                                                 sourceVecFW, deltaFW, RR, FFlux, xGradVec, yGradVec, &
-!                                                                 zGradVec, xMomVec, yMomVec, zMomVec, &
-!                                                                 xMomVecFW, yMomVecFW, zMomVecFW, &
-!                                                                 xIncFW, yIncFW, zIncFW, scalarVecFW, &
-!                                                                 avgFluxVecFW
-!       real(defReal), pointer, dimension(:)                  :: angularProd
-!       real(defReal), pointer, dimension(:)                  :: mid, momVec, centVec
-!       real(defReal), dimension(3)                           :: r0, mu0, rC, r0Norm, rNorm
-!       real(defFlt), dimension(self % NSegMax*2)             :: lenBack
-!       real(shortInt), dimension(self % NSegMax*2)           :: cIdxBack
-!       logical(defBool), dimension(self % NSegMax*2)         :: vacBack
-!       real(defReal), allocatable, dimension(:)              :: lenBackOversized, lenBackBuffer
-!       real(shortInt), allocatable, dimension(:)             :: cIdxBackOversized, cIdxBackBuffer
-!       logical(defBool), allocatable, dimension(:)           :: vacBackOversized, vacBackBuffer 
-!       real(defFlt), target, allocatable, dimension(:)       :: deltaRecordOversized
-!       real(defFlt), allocatable, dimension(:)               :: deltaRecordBuffer
-!       real(defFlt), target, dimension(self % nG * self % NSegMax*2) :: deltaRecord
-!       real(defFlt), target, dimension(self % nG * self % NSegMax*2) :: xIncRecord, yIncRecord,zIncRecord
-!       real(defFlt), target, allocatable, dimension(:)               :: xIncRecordOversized, yIncRecordOversized, zIncRecordOversized
-!       real(defFlt), allocatable, dimension(:)                       :: xIncRecordBuffer, yIncRecordBuffer, zIncRecordBuffer
-!       real(defFlt), target, dimension(3, self % NSegMax*2)          :: muFltRecord, rNormFltRecord, r0NormFltRecord
-!       real(defFlt), target, allocatable, dimension(:,:)             :: muFltOversized, rNormFltOversized, r0NormFltOversized
-!       real(defFlt), allocatable, dimension(:,:)                     :: muFltBuffer, rNormFltBuffer, r0NormFltBuffer
-!       real(defFlt), target, allocatable, dimension(:)       :: avgRecordOversized
-!       real(defFlt), allocatable, dimension(:)               :: avgRecordBuffer
-!       real(defFlt), target, dimension(self % nG * self % NSegMax*2) :: avgRecord
-!       real(defFlt), dimension(3)                            :: muFlt, rNormFlt, r0NormFlt
-          
-!       ! matIdx  = r % coords % matIdx
-      
-!       ! Set initial angular flux to angle average of cell source
-!       cIdx = self % IDToCell(r % coords % uniqueID)
-!       ! matIdx =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx))
-!       if (cIdx > 0) then
-!         do g = 1, self % nG
-!           idx = (cIdx - 1) * self % nG + g
-!           fluxVec(g) = self % source(idx)
-!         end do
-!       else
-!         fluxVec(g) = 0.0_defFlt
-!       end if
-  
-!       ints = 0
-!       matIdx0 = 0
-!       segCount = 0
-!       totalLength = ZERO
-!       activeRay = .false.
-!       tally = .true.
-!       oversized = .false.
-  
-!       do while (totalLength < self % termination + self % dead)
-  
-!         ! Get material and cell the ray is moving through
-!         ! Get ray coords for LS calculations
-!         ! mu0 = r % dirGlobal()
-!         ! r0  = r % rGlobal() !CHECK? ?????
-
-!         matIdx  = r % coords % matIdx
-!         cIdx    = self % IDToCell(r % coords % uniqueID)
-  
-!         if (matIdx0 /= matIdx) then
-!           matIdx0 = matIdx
-!           ! Cache total cross section
-!           totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
-!         end if
-  
-!         ! Remember co-ordinates to set new cell's position
-!         ! if (cIdx > 0) then
-!           ! if (.not. self % cellFound(cIdx)) then
-!             r0 = r % rGlobal()
-!             mu0 = r % dirGlobal()
-!         !   end if
-!         ! end if
-            
-!         ! Set maximum flight distance and ensure ray is active
-!         if (totalLength >= self % dead) then
-!           length = self % termination - totalLength 
-!           activeRay = .true.
-!         else
-!           length = self % dead - totalLength
-!         end if
-  
-!         !second dead length
-!         if (totalLength >= self % termination) then
-!           length = self % termination + self % dead - totalLength
-!           tally = .false.
-!         end if
-  
-!         ! Move ray
-!         ! Use distance caching or standard ray tracing
-!         ! Distance caching seems a little bit more unstable
-!         ! due to FP error accumulation, but is faster.
-!         ! This can be fixed by resetting the cache after X number
-!         ! of distance calculations.
-!         if (self % cache) then
-!           if (mod(ints,100_longInt) == 0)  cache % lvl = 0
-!           call self % geom % moveRay_withCache(r % coords, length, event, cache, hitVacuum)
-!         else
-!           call self % geom % moveRay_noCache(r % coords, length, event, hitVacuum)
-!         end if
-
-!         if (cIdx > 0 .and. length > self % skipLength) then
-!           totalLength = totalLength + length
-!           ! Calculate the track centre
-!           rC = r0 + length * HALF * mu0
-          
-!           ! Set new cell's position. Use half distance across cell
-!           ! to try and avoid FP error
-!           if (.not. self % cellFound(cIdx)) then
-!             !$omp critical 
-!             self % cellFound(cIdx) = .true.
-!             self % cellPos(cIdx,:) = rC(:)
-!             !$omp end critical
-!           end if
-    
-!           ints = ints + 1
-!           ! lenFlt = real(length,defFlt)
-!           baseIdx = (cIdx - 1) * self % nG
-!           sourceVec => self % source((baseIdx + 1):(baseIdx + self % nG))
-!           xGradVec => self % sourceX((baseIdx + 1):(baseIdx + self % nG))
-!           yGradVec => self % sourceY((baseIdx + 1):(baseIdx + self % nG))
-!           zGradVec => self % sourceZ((baseIdx + 1):(baseIdx + self % nG))
-!           mid => self % centroid(((cIdx - 1) * nDim + 1):(cIdx * nDim))
-
-!           if (self % volume(cIdx) > volume_tolerance) then
-!             ! Compute the track centroid in local co-ordinates
-!             rNorm = rC - mid(1:nDim)
-!             ! Compute the entry point in local co-ordinates
-!             r0Norm = r0 - mid(1:nDim)
-!           else
-!             rNorm = 0
-!             r0Norm = - mu0 * HALF * length
-!           end if 
-
-!           ! Convert to floats for speed
-!           r0NormFlt = real(r0Norm,defFlt)
-!           rNormFlt = real(rNorm,defFlt)
-!           muFlt = real(mu0,defFlt)
-!           lenFlt = real(length,defFlt)
-!           !aligned(xGradVec, yGradVec, zGradVec, sourceVec)
-!           !$omp simd 
-!           do g = 1, self % nG
-!             flatQ(g) = rNormFlt(x) * xGradVec(g)
-!             flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
-!             flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
-!             flatQ(g) = flatQ(g) + sourceVec(g)
-    
-!             gradQ(g) = muFlt(x) * xGradVec(g)
-!             gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
-!             gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
-!           end do
-    
- 
-!           ! Compute exponentials necessary for angular flux update
-!           !$omp simd
-!           do g = 1, self % nG
-!             tau(g) = totVec(g) * lenFlt
-!             if (tau(g) < 1E-8_defFlt) then 
-!               tau(g) = 0.0_defFlt
-!             end if
-!           end do
-    
-!           !$omp simd
-!           do g = 1, self % nG
-!             Gn(g) = expG(tau(g))
-!           end do
-    
-!           !$omp simd
-!           do g = 1, self % nG
-!             F1(g)  = 1.0_defFlt - tau(g) * Gn(g) !expTau(tau(g)) * lenFlt
-!           end do
-    
-!           !$omp simd
-!           do g = 1, self % nG
-!             F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt 
-!           end do
-    
-!           !$omp simd
-!           do g = 1, self % nG
-!             delta(g) = (fluxVec(g) - flatQ(g)) * F1(g)  & 
-!                         - one_two * gradQ(g) * F2(g) 
-!           end do
-    
-!           ! Intermediate flux variable creation or update
-!           !$omp simd
-!           do g = 1, self % nG
-!             fluxVec0(g) = fluxVec(g)
-!           end do
-    
-!           ! Flux vector update
-!           !$omp simd
-!           do g = 1, self % nG
-!             fluxVec(g) = fluxVec(g) - delta(g) * tau(g) 
-!           end do
-    
-!           !$omp simd
-!           do g = 1, self % nG
-!             flatQ0(g) = flatQ(g)
-!           end do
-    
-!           ! Accumulate to scalar flux
-!           if (activeRay) then
-!             segCount = segCount + 1
-
-!             len2_12 = length * length / 12
-!             matScore(xx) = length * (rnorm(x) * rnorm(x) + mu0(x) * mu0(x) * len2_12)
-!             matScore(xy) = length * (rnorm(x) * rnorm(y) + mu0(x) * mu0(y) * len2_12)
-!             matScore(xz) = length * (rnorm(x) * rnorm(z) + mu0(x) * mu0(z) * len2_12)
-!             matScore(yy) = length * (rnorm(y) * rnorm(y) + mu0(y) * mu0(y) * len2_12)
-!             matScore(yz) = length * (rnorm(y) * rnorm(z) + mu0(y) * mu0(z) * len2_12)
-!             matScore(zz) = length * (rnorm(z) * rnorm(z) + mu0(z) * mu0(z) * len2_12)
-!             centIdx = nDim * (cIdx - 1)
-!             momIdx = matSize * (cIdx - 1)
-
-!             rC = rC * length
-!             lenFlt2_2 = lenFlt * lenFlt * one_two
-
-!             !$omp simd
-!             do g = 1, self % nG
-!                 H(g) = ( F1(g) - Gn(g) ) !expH(tau(g))
-!             end do
-            
-!             !$omp simd
-!             do g = 1, self % nG
-!                 G1(g) = one_two - H(g)
-!             end do
-    
-!             !$omp simd 
-!             do g = 1, self % nG
-!                 G2(g) = expG2(tau(g)) 
-!             end do
-    
-!             do g = 1, self % nG
-!                 G1(g) = G1(g) * flatQ(g) * lenFlt
-!                 G2(g) = G2(g) * gradQ(g) * lenFlt2_2
-!                 H(g)  = H(g) * fluxVec0(g) * lenFlt
-!                 H(g) = (G1(g) + G2(g) + H(g)) * lenFlt
-!                 flatQ(g) = flatQ(g) * lenFlt + delta(g) * lenFlt
-!             end do
-    
-!             !$omp simd
-!             do g = 1, self % nG
-!                 xInc(g) = r0NormFlt(x) * flatQ(g) + muFlt(x) * H(g) 
-!                 yInc(g) = r0NormFlt(y) * flatQ(g) + muFlt(y) * H(g) 
-!                 zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g)
-!             end do
-    
-!             if (tally) then
-!                 segCountCrit = segCount
-!             end if
-    
-!             if ( (segCount >= (self % NSegMax - 1)) .and. .not. oversized) then
-    
-!                 oversized = .true.
-!                 allocate(lenBackOversized(size(lenBack) * 2))
-!                 lenBackOversized(1:size(lenBack)) = lenBack
-      
-!                 allocate(cIdxBackOversized(size(cIdxBack) * 2))
-!                 cIdxBackOversized(1:size(cIdxBack)) = cIdxBack
-      
-!                 allocate(vacBackOversized(size(vacBack) * 2))
-!                 vacBackOversized(1:size(vacBack)) = vacBack
-      
-!                 allocate(deltaRecordOversized(size(deltaRecord) * 2))
-!                 deltaRecordOversized(1:size(deltaRecord)) = deltaRecord
-      
-!                 allocate(xIncRecordOversized(size(xIncRecord) * 2))
-!                 xIncRecordOversized(1:size(xIncRecord)) = xIncRecord
-      
-!                 allocate(yIncRecordOversized(size(yIncRecord) * 2))
-!                 yIncRecordOversized(1:size(yIncRecord)) = yIncRecord
-      
-!                 allocate(zIncRecordOversized(size(zIncRecord) * 2))
-!                 zIncRecordOversized(1:size(zIncRecord)) = zIncRecord
-      
-!                 allocate(rNormFltOversized(3, size(rNormFltRecord(1,:)) * 2))
-!                 rNormFltOversized(:, 1:size(rNormFltRecord(1,:))) = rNormFltRecord
-      
-!                 allocate(r0NormFltOversized(3, size(r0NormFltRecord(1,:)) * 2))
-!                 r0NormFltOversized(:, 1:size(r0NormFltRecord(1,:))) = r0NormFltRecord
-      
-!                 allocate(muFltOversized(3, size(muFltRecord(1,:)) * 2))
-!                 muFltOversized(:, 1:size(muFltRecord(1,:))) = muFltRecord
-      
-!                 allocate(avgRecordOversized(size(avgRecord) * 2))
-!                 avgRecordOversized(1:size(avgRecord)) = avgRecord
-    
-!             elseif (oversized) then
-    
-!                 if  (segCount >= (size(vacBackOversized) - 1) ) then
-!                     allocate(lenBackBuffer(size(lenBackOversized) * 2)) 
-!                     lenBackBuffer(1:size(lenBackOversized)) = lenBackOversized
-!                     call move_alloc(lenBackBuffer, lenBackOversized)
-        
-!                     allocate(cIdxBackBuffer(size(cIdxBackOversized) * 2)) 
-!                     cIdxBackBuffer(1:size(cIdxBackOversized)) = cIdxBackOversized
-!                     call move_alloc(cIdxBackBuffer, cIdxBackOversized)
-        
-!                     allocate(vacBackBuffer(size(vacBackOversized) * 2))  
-!                     vacBackBuffer(1:size(vacBackOversized)) = vacBackOversized
-!                     call move_alloc(vacBackBuffer, vacBackOversized)
-        
-!                     allocate(deltaRecordBuffer(size(deltaRecordOversized) * 2)) 
-!                     deltaRecordBuffer(1:size(deltaRecordOversized)) = deltaRecordOversized
-!                     call move_alloc(deltaRecordBuffer, deltaRecordOversized)
-        
-!                     allocate(xIncRecordBuffer(size(xIncRecordOversized) * 2))  
-!                     xIncRecordBuffer(1:size(xIncRecordOversized)) = xIncRecordOversized 
-!                     call move_alloc(xIncRecordBuffer, xIncRecordOversized)
-        
-!                     allocate(yIncRecordBuffer(size(yIncRecordOversized) * 2))  
-!                     yIncRecordBuffer(1:size(yIncRecordOversized)) = yIncRecordOversized
-!                     call move_alloc(yIncRecordBuffer, yIncRecordOversized)
-        
-!                     allocate(zIncRecordBuffer(size(zIncRecordOversized) * 2))   
-!                     zIncRecordBuffer(1:size(zIncRecordOversized)) = zIncRecordOversized
-!                     call move_alloc(zIncRecordBuffer, zIncRecordOversized)
-        
-!                     allocate(rNormFltBuffer(3, size(rNormFltOversized(1,:)) * 2))
-!                     rNormFltBuffer(:, 1:size(rNormFltOversized,2)) = rNormFltOversized
-!                     call move_alloc(rNormFltBuffer, rNormFltOversized)
-        
-!                     allocate(r0NormFltBuffer(3, size(r0NormFltOversized(1,:)) * 2))
-!                     r0NormFltBuffer(:, 1:size(r0NormFltOversized,2)) = r0NormFltOversized
-!                     call move_alloc(r0NormFltBuffer, r0NormFltOversized)
-        
-!                     allocate(muFltBuffer(3, size(muFltOversized(1,:)) * 2))
-!                     muFltBuffer(:, 1:size(muFltOversized,2)) = muFltOversized
-!                     call move_alloc(muFltBuffer, muFltOversized)
-        
-!                     allocate(avgRecordBuffer(size(avgRecordOversized) * 2))
-!                     avgRecordBuffer(1:size(avgRecordOversized)) = avgRecordOversized
-!                     call move_alloc(avgRecordBuffer, avgRecordOversized)        
-!               end if
-    
-!             end if
-    
-!             if (oversized) then
-!                 cIdxBackOversized(segCount) = cIdx
-!                 lenBackOversized(segCount) = length
-!                 vacBackOversized(segCount + 1) = hitVacuum
-!                 rNormFltOversized(:, segCount) = rNormFlt
-!                 r0NormFltOversized(:, segCount) = r0NormFlt
-!                 muFltOversized(:, segCount) = muFlt
-!               else
-!                 cIdxBack(segCount) = cIdx
-!                 lenBack(segCount) = length
-!                 vacBack(segCount + 1) = hitVacuum
-!                 rNormFltRecord(:, segCount) = rNormFlt
-!                 r0NormFltRecord(:, segCount) = r0NormFlt
-!                 muFltRecord(:, segCount) = muFlt
-!               end if
-    
-    
-!               if (tally) then
-!                 if (oversized) then
-!                   !$omp simd
-!                   do g = 1, self % nG
-!                     avgRecordOversized((segCount - 1) * self % nG + g) = (flatQ0(g) + delta(g))
-!                     deltaRecordOversized((segCount - 1) * self % nG + g) = delta(g) 
-!                     xIncRecordOversized((segCount - 1) * self % nG + g) = xInc(g)
-!                     yIncRecordOversized((segCount - 1) * self % nG + g) = yInc(g)
-!                     zIncRecordOversized((segCount - 1) * self % nG + g) = zInc(g)
-!                   end do
-!                 else
-!                   !$omp simd
-!                   do g = 1, self % nG
-!                     avgRecord((segCount - 1) * self % nG + g) = (flatQ0(g) + delta(g))
-!                     deltaRecord((segCount - 1) * self % nG + g) = delta(g)  
-!                     xIncRecord((segCount - 1) * self % nG + g) = xInc(g)
-!                     yIncRecord((segCount - 1) * self % nG + g) = yInc(g)
-!                     zIncRecord((segCount - 1) * self % nG + g) = zInc(g)
-!                   end do
-!                 end if
-!               end if
-
-!               centVec => self % centroidTracks((centIdx + 1):(centIdx + nDim))
-!               momVec => self % momTracks((momIdx + 1):(momIdx + matSize))
-!               ! Update centroid
-!               do g = 1, nDim
-!                 !$omp atomic
-!                 centVec(g) = centVec(g) + rC(g)
-!                 ! print *, rC(g)
-!               end do
-    
-!               ! Update spatial moment scores
-!               do g = 1, matSize
-!                 !$omp atomic
-!                 momVec(g) = momVec(g) + matScore(g)
-!                 ! print *, matScore(g)
-!               end do
-  
-!               if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
-!             end if
-
-!         elseif((totalLength + length) >= self % termination + self % dead) then
-!           totalLength = self % termination + self % dead
-  
-!         elseif ((totalLength + length) >= self % dead .and. .not. activeRay) then
-!           totalLength = self % dead
-  
-!         end if
-  
-!         ! Check for a vacuum hit
-!         if (hitVacuum) then
-!           !$omp simd
-!           do g = 1, self % nG
-!             fluxVec(g) = 0.0_defFlt
-!           end do
-!         end if 
-!       end do
-  
-!       ! Flux guess for new adjoint deadlength
-!       !$omp simd
-!       do g = 1, self % nG
-!         idx = (cIdx - 1) * self % nG + g
-!         fluxVec(g) = self % adjSource(idx)
-!       end do
-  
-!       !iterate over segments
-!       do i = segCount, 1, -1
-  
-!         if (oversized) then
-!             lenFlt = real(lenBackOversized(i),defFlt)
-!             length = lenBackOversized(i)
-!             hitVacuum = vacBackOversized(i)
-!             cIdx = cIdxBackOversized(i)
-!             rNormFlt = rNormFltOversized(:,i)
-!             muFlt = muFltOversized(:,i)
-!             r0NormFlt = r0NormFltOversized(:,i)
-    
-!             avgFluxVecFW => avgRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-!             deltaFW => deltaRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-!             xIncFW  => xIncRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-!             yIncFW  => yIncRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-!             zIncFW  => zIncRecordOversized((i - 1) * self % nG + 1 : i * self % nG)
-!           else
-!             lenFlt = real(lenBack(i),defFlt)
-!             length = lenBack(i)
-!             hitVacuum = vacBack(i)
-!             cIdx = cIdxBack(i)
-!             rNormFlt = rNormFltRecord(:,i)
-!             muFlt = muFltRecord(:,i)
-!             r0NormFlt = r0NormFltRecord(:,i)
-    
-!             avgFluxVecFW => avgRecord((i - 1) * self % nG + 1 : i * self % nG)
-!             deltaFW => deltaRecord((i - 1) * self % nG + 1 : i * self % nG)
-!             xIncFW  => xIncRecord((i - 1) * self % nG + 1 : i * self % nG)
-!             yIncFW  => yIncRecord((i - 1) * self % nG + 1 : i * self % nG)
-!             zIncFW  => zIncRecord((i - 1) * self % nG + 1 : i * self % nG)
-!           end if
-
-!         lenFlt2_2 = lenFlt * lenFlt * one_two
-  
-!         matIdx   =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
-!         baseIdx = (cIdx - 1) * self % nG
-!         segIdx =  (i - 1) * self % nG
-
-!         sourceVec => self % adjSource((baseIdx + 1):(baseIdx + self % nG))
-!         ! sourceVecFW => self % source((baseIdx + 1):(baseIdx + self % nG))
-!         xGradVec  => self % adjSourceX((baseIdx + 1):(baseIdx + self % nG))
-!         yGradVec  => self % adjSourceY((baseIdx + 1):(baseIdx + self % nG))
-!         zGradVec  => self % adjSourceZ((baseIdx + 1):(baseIdx + self % nG))
-        
-!         if (matIdx0 /= matIdx) then
-!           matIdx0 = matIdx
-!           ! Cache total cross section
-!           totVec => self % sigmaT(((matIdx - 1) * self % nG + 1):(matIdx * self % nG))
-!         end if
-
-! !aligned(xGradVec, yGradVec, zGradVec)
-!         !$omp simd 
-!         do g = 1, self % nG
-!             flatQ(g) = rNormFlt(x) * xGradVec(g)
-!             flatQ(g) = flatQ(g) + rNormFlt(y) * yGradVec(g)
-!             flatQ(g) = flatQ(g) + rNormFlt(z) * zGradVec(g)
-!             flatQ(g) = flatQ(g) + sourceVec(g)
-    
-!             gradQ(g) = muFlt(x) * xGradVec(g)
-!             gradQ(g) = gradQ(g) + muFlt(y) * yGradVec(g)
-!             gradQ(g) = gradQ(g) + muFlt(z) * zGradVec(g)
-!         end do
-  
-!         !$omp simd
-!         do g = 1, self % nG
-!           tau(g) = totVec(g) * lenFlt
-!           if (tau(g) < 1E-8_defFlt) then 
-!             tau(g) = 0.0_defFlt
-!           end if
-!         end do
-  
-!         !$omp simd
-!         do g = 1, self % nG
-!           Gn(g) = expG(tau(g))
-!         end do
-    
-!         !$omp simd
-!         do g = 1, self % nG
-!           F1(g)  = 1.0_defFlt - tau(g) * Gn(g) 
-!         end do
-  
-!         !$omp simd
-!         do g = 1, self % nG
-!           F2(g) = (2.0_defFlt * Gn(g) - F1(g)) * lenFlt
-!         end do
-  
-!         !$omp simd
-!         do g = 1, self % nG
-!           delta(g) = (fluxVec(g) - flatQ(g)) * F1(g) & 
-!                       - one_two * gradQ(g) * F2(g) 
-!         end do
-  
-!         ! Intermediate flux variable creation or update
-!         !$omp simd
-!         do g = 1, self % nG
-!           fluxVec0(g) = fluxVec(g)
-!         end do
-  
-!         ! Flux vector update
-!         !$omp simd
-!         do g = 1, self % nG
-!           fluxVec(g) = fluxVec(g) - delta(g) * tau(g) 
-!         end do
-        
-!         if (i <= segCountCrit) then
-  
-!           !$omp simd
-!           do g = 1, self % nG
-!             avgFluxVec(g) = (flatQ(g) + delta(g))
-!           end do
-          
-!           !$omp simd
-!           do g = 1, self % nG
-!             H(g) = ( F1(g) - Gn(g) ) 
-!           end do
-        
-!           !$omp simd
-!           do g = 1, self % nG
-!             G1(g) = one_two - H(g)
-!           end do
-  
-!           !$omp simd 
-!           do g = 1, self % nG
-!             G2(g) = expG2(tau(g)) 
-!           end do
-
-!           !$omp simd 
-!           do g = 1, self % nG
-!             G1(g) = G1(g) * flatQ(g) * lenFlt
-!             G2(g) = G2(g) * gradQ(g) * lenFlt2_2
-!             H(g)  = H(g) * fluxVec0(g) * lenFlt
-!             H(g) = (G1(g) + G2(g) + H(g)) * lenFlt
-!             flatQ(g) = flatQ(g) * lenFlt + delta(g) * lenFlt
-!           end do
-  
-!           !$omp simd
-!           do g = 1, self % nG
-!             xInc(g) = r0NormFlt(x) * flatQ(g) + muFlt(x) * H(g) 
-!             yInc(g) = r0NormFlt(y) * flatQ(g) + muFlt(y) * H(g) 
-!             zInc(g) = r0NormFlt(z) * flatQ(g) + muFlt(z) * H(g)
-!           end do
-  
-!           call OMP_set_lock(self % locks(cIdx))
-  
-!           scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
-!           xMomVec => self % adjScalarX((baseIdx + 1):(baseIdx + self % nG))
-!           yMomVec => self % adjScalarY((baseIdx + 1):(baseIdx + self % nG)) 
-!           zMomVec => self % adjScalarZ((baseIdx + 1):(baseIdx + self % nG))
-  
-!           angularProd => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG )
-  
-!           scalarVecFW => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
-!           xMomVecFW => self % scalarX((baseIdx + 1):(baseIdx + self % nG))
-!           yMomVecFW => self % scalarY((baseIdx + 1):(baseIdx + self % nG))
-!           zMomVecFW => self % scalarZ((baseIdx + 1):(baseIdx + self % nG))  
-
-!           RR => self % ReactionRate((baseIdx + 1):(baseIdx + self % nG))
-!           FFlux => self % FWFlux((baseIdx + 1):(baseIdx + self % nG))  
-
-!           ! aligned(scalarVec, scalarVecFW, RR, FFlux)
-!           !$omp simd 
-!           do g = 1, self % nG
-!               RR(g) = RR(g) + avgFluxVec(g) * length
-!               FFlux(g) = FFlux(g) + (avgFluxVecFW(g)) * length
-
-!               scalarVec(g) = scalarVec(g) + delta(g) * lenFlt
-!               xMomVec(g) = xMomVec(g) + xInc(g)
-!               yMomVec(g) = yMomVec(g) + yInc(g)
-!               zMomVec(g) = zMomVec(g) + zInc(g)
-  
-!               scalarVecFW(g) = scalarVecFW(g) + deltaFW(g) * lenFlt
-!               xMomVecFW(g) = xMomVecFW(g) + xIncFW(g)
-!               yMomVecFW(g) = yMomVecFW(g) + yIncFW(g)
-!               zMomVecFW(g) = zMomVecFW(g) + zIncFW(g)
-!           end do
-          
-!           if (isActive) then
-!             do g = 1, self % nG
-!               associate(angProd => angularProd(self % nG * (g - 1) + 1 : self % nG * g))
-!                 !$omp simd 
-!                 do gIn = 1, self % nG
-!                   angProd(gIn) = angProd(gIn) + avgFluxVec(g) * avgFluxVecFW(gIn) * length
-!                 end do
-!               end associate
-!             end do
-!           end if
-!           self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
-!           if (segCount > self % NSegMax) then
-!             self % NSegMaxTemp = segCount
-!           end if
-!           call OMP_unset_lock(self % locks(cIdx))
-  
-!         end if  
-  
-!         if (hitVacuum) then
-!           !$omp simd
-!           do g = 1, self % nG
-!             fluxVec(g) = 0.0_defFlt
-!           end do
-!         end if
-  
-!        end do
-  
-!        !use records to computer inner product etc - seperate subroutine? 
-       
-!     end subroutine transportSweep
     
     !!
     !! Normalise flux from uncollided calculation
@@ -3168,6 +2533,10 @@ module adjointLSTRRMPhysicsPackage_class
   
       end do
       !$omp end parallel do
+
+      print *, 'source'
+      print *, maxval(self % scalarFlux), maxval(self % scalarX), maxval(self % scalarY)
+      print *, maxval(self % source), maxval(self % sourceX), maxval(self % sourceY)
   
     end subroutine normaliseFluxAndVolume
 
@@ -3231,6 +2600,10 @@ module adjointLSTRRMPhysicsPackage_class
   
       end do
       !$omp end parallel do
+
+      print *, 'adjoint source'
+      print *, maxval(self % adjscalarFlux), maxval(self % adjscalarX), maxval(self % adjscalarY)
+      print *, maxval(self % adjsource), maxval(self % adjsourceX), maxval(self % adjsourceY)
   
     end subroutine adjointNormaliseFluxAndVolume
 
@@ -3315,7 +2688,7 @@ module adjointLSTRRMPhysicsPackage_class
       matIdx  =  self % geom % geom % graph % getMatFromUID(id) 
   
       ! Guard against void cells
-      if (matIdx >= 20000) then
+      if (matIdx >= UNDEF_MAT) then
         baseIdx = self % ng * (cIdx - 1)
         do g = 1, self % nG
           idx = baseIdx + g
@@ -3327,21 +2700,13 @@ module adjointLSTRRMPhysicsPackage_class
         return
       end if
 
-      ! Obtain XSs
-      matIdx = (matIdx - 1) * self % nG
-      total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
-      scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
-      nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
-      chi => self % chi((matIdx + 1):(matIdx + self % nG))
-  
-
       momVec => self % momMat(((cIdx - 1) * matSize + 1):(cIdx * matSize))
 
       det = momVec(xx) * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)) &
       - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
       + 2 * momVec(xy) * momVec(xz) * momVec(yz)
 
-      if ((abs(det) > volume_tolerance) .and. self % volume(cIdx) > 1E-10) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
+      if ((abs(det) > volume_tolerance)) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
         one_det = ONE/det
         invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
         invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
@@ -3359,6 +2724,13 @@ module adjointLSTRRMPhysicsPackage_class
         det = ONE 
       end if
       
+      ! Obtain XSs
+      matIdx = (matIdx - 1) * self % nG
+      total => self % sigmaT((matIdx + 1):(matIdx + self % nG))
+      scatterXS => self % sigmaS((matIdx * self % nG + 1):(matIdx * self % nG + self % nG*self % nG))
+      nuFission => self % nuSigmaF((matIdx + 1):(matIdx + self % nG))
+      chi => self % chi((matIdx + 1):(matIdx + self % nG))
+  
       baseIdx = self % nG * (cIdx - 1)
       fluxVec => self % prevFlux((baseIdx+1):(baseIdx + self % nG))
       xFluxVec => self % prevX((baseIdx + 1):(baseIdx + self % nG))
@@ -3412,15 +2784,15 @@ module adjointLSTRRMPhysicsPackage_class
         zSource = zSource / total(g)
 
         if (it > 10) then
-            self % sourceX(idx) = invMxx * xSource + &
+            self % sourceX(baseIdx + g) = invMxx * xSource + &
                     invMxy * ySource + invMxz * zSource
-            self % sourceY(idx) = invMxy * xSource + &
+            self % sourceY(baseIdx + g) = invMxy * xSource + &
                     invMyy * ySource + invMyz * zSource
             ! self % sourceZ(baseIdx + g) = invMxz * xSource + &
             !      invMyz * ySource + invMzz * zSource
             ! self % sourceX(baseIdx + g) = 0.0_defFlt
             ! self % sourceY(baseIdx + g) = 0.0_defFlt
-            self % sourceZ(idx) = 0.0_defFlt !2D tracing
+            self % sourceZ(baseIdx + g) = 0.0_defFlt !2D tracing
             ! print *, self % sourceX(baseIdx + 1 : baseIdx + 7)
           else
             self % sourceX(baseIdx + g) = 0.0_defFlt
@@ -3459,7 +2831,7 @@ module adjointLSTRRMPhysicsPackage_class
       material =  self % geom % geom % graph % getMatFromUID(id) 
       
       ! Guard against void cells
-      if (matIdx >= 20000) then
+      if (matIdx >= UNDEF_MAT) then
         baseIdx = self % ng * (cIdx - 1)
         do g = 1, self % nG
           idx = baseIdx + g
@@ -3477,7 +2849,7 @@ module adjointLSTRRMPhysicsPackage_class
       - momVec(yy) * momVec(xz) * momVec(xz) - momVec(zz) * momVec(xy) * momVec(xy) &
       + 2 * momVec(xy) * momVec(xz) * momVec(yz)
   
-      if ((abs(det) > volume_tolerance) .and. self % volume(cIdx) > 1E-10) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
+      if ((abs(det) > volume_tolerance)) then ! maybe: vary volume check depending on avg cell size..and. (self % volume(cIdx) > 1E-6)
         one_det = ONE/det
         invMxx = real(one_det * (momVec(yy) * momVec(zz) - momVec(yz) * momVec(yz)),defFlt)
         invMxy = real(one_det * (momVec(xz) * momVec(yz) - momVec(xy) * momVec(zz)),defFlt)
@@ -3497,7 +2869,7 @@ module adjointLSTRRMPhysicsPackage_class
   
       ! Obtain XSs
 
-      matPtr => self % mgData % getMaterial(material)
+      matPtr => self % mgData % getMaterial(matIdx)
       mat    => baseMgNeutronMaterial_CptrCast(matPtr)
 
       matIdx = (matIdx - 1) * self % nG
@@ -3584,7 +2956,7 @@ module adjointLSTRRMPhysicsPackage_class
             self % adjSourceY(baseIdx + g) = invMxy * xSource + &
                     invMyy * ySource + invMyz * zSource
             ! self % adjSourceZ(baseIdx + g) = invMxz * xSource + &
-            !      invMyz * ySource + invMzz * zSource
+                !  invMyz * ySource + invMzz * zSource
             ! self % adjSourceX(baseIdx + g) = 0.0_defFlt
             ! self % adjSourceY(baseIdx + g) = 0.0_defFlt
             ! print *, self % adjSourceX(baseIdx + 1 : baseIdx + 7)
@@ -3771,7 +3143,7 @@ module adjointLSTRRMPhysicsPackage_class
       if (self % XStype == self % mapResponse .and. self % detectorInt(1) == mat .and. mat == self % matPert) then
         ! do i = 1, size(self % energyId)
           g1Pert = self % energyId(1)
-          FFlux => self % FWFlux((baseIdx + 1):(baseIdx + self % nG))
+          FFlux => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
           matPtr => self % mgData % getMaterial(mat)
           material => baseMgNeutronMaterial_CptrCast(matPtr)
           select case(self % mapResponse)
@@ -3783,7 +3155,7 @@ module adjointLSTRRMPhysicsPackage_class
           !   Sigma = real(mat % getTotalXS(g, self % rand),defFlt)
           end select
           delta = 0.0_defFlt
-          delta = FFlux(g1Pert) * Sigma * self % XSchange
+          delta = FFlux(g1Pert) * Sigma * self % XSchange * self % volume(cIdx)
           numSum = numSum + delta
         ! end do
       end if
@@ -3994,7 +3366,7 @@ module adjointLSTRRMPhysicsPackage_class
             s % r = self % cellPos(cIdx,:)
             i2 = self % fluxMap % map(s)
             matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
-            ! if (i2 > 0 ) continue
+            if (i2 > 0 ) continue
             if (self % intMatIdx(i) == matIdx) then
               vol = self % volume(cIdx) !* norm !self % normVolume * 
               if (vol < volume_tolerance) continue
@@ -4103,32 +3475,32 @@ module adjointLSTRRMPhysicsPackage_class
       !   call out % endBlock()
       ! end if
 
-      ! Print material integrated fluxes if requested
-      if (allocated(self % intMatIdx)) then
-        name = 'integral reaction rate - AF'
-        resArrayShape = [1]
-        call out % startBlock(name)
-        res = ZERO
-        std = ZERO
-        do i = 1, size(self % intMatIdx)
-          call out % startArray(self % intMatName(i), resArrayShape)
-          do cIdx = 1, self % nCells
-            vol = self % volume(cIdx) !self % normVolume * 
-            ! if (vol < volume_tolerance) continue
-            matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
-            if (self % intMatIdx(i) == matIdx) then
-              do g = 1, self % nG
-                idx = (cIdx - 1)* self % nG + g
-                res = res + self % RRScores(idx,1) !* vol
-                std = 0.0
-              end do
-            end if
-          end do
-        end do
-          call out % addResult(res, std)
-          call out % endArray()
-        call out % endBlock()
-      end if
+      ! ! Print material integrated fluxes if requested
+      ! if (allocated(self % intMatIdx)) then
+      !   name = 'integral reaction rate - AF'
+      !   resArrayShape = [1]
+      !   call out % startBlock(name)
+      !   res = ZERO
+      !   std = ZERO
+      !   do i = 1, size(self % intMatIdx)
+      !     call out % startArray(self % intMatName(i), resArrayShape)
+      !     do cIdx = 1, self % nCells
+      !       vol = self % volume(cIdx) !self % normVolume * 
+      !       ! if (vol < volume_tolerance) continue
+      !       matIdx  =  self % geom % geom % graph % getMatFromUID(self % CellToID(cIdx)) 
+      !       if (self % intMatIdx(i) == matIdx) then
+      !         do g = 1, self % nG
+      !           idx = (cIdx - 1)* self % nG + g
+      !           res = res + self % RRScores(idx,1) !* vol
+      !           std = 0.0
+      !         end do
+      !       end if
+      !     end do
+      !   end do
+      !     call out % addResult(res, std)
+      !     call out % endArray()
+      !   call out % endBlock()
+      ! end if
 
   
       ! Print cell volumes
@@ -4550,15 +3922,15 @@ module adjointLSTRRMPhysicsPackage_class
       if(allocated(self % sourceY)) deallocate(self % sourceY)
       if(allocated(self % sourceZ)) deallocate(self % sourceZ)
 
-      if(allocated(self % scalarX)) deallocate(self % adjScalarX)
-      if(allocated(self % scalarY)) deallocate(self % adjScalarY)
-      if(allocated(self % scalarZ)) deallocate(self % adjScalarZ)
-      if(allocated(self % prevX)) deallocate(self % adjPrevX)
-      if(allocated(self % prevY)) deallocate(self % adjPrevY)
-      if(allocated(self % prevZ)) deallocate(self % adjPrevZ)
-      if(allocated(self % sourceX)) deallocate(self % adjSourceX)
-      if(allocated(self % sourceY)) deallocate(self % adjSourceY)
-      if(allocated(self % sourceZ)) deallocate(self % adjSourceZ)
+      if(allocated(self % adjscalarX)) deallocate(self % adjScalarX)
+      if(allocated(self % adjscalarY)) deallocate(self % adjScalarY)
+      if(allocated(self % adjscalarZ)) deallocate(self % adjScalarZ)
+      if(allocated(self % adjprevX)) deallocate(self % adjPrevX)
+      if(allocated(self % adjprevY)) deallocate(self % adjPrevY)
+      if(allocated(self % adjprevZ)) deallocate(self % adjPrevZ)
+      if(allocated(self % adjsourceX)) deallocate(self % adjSourceX)
+      if(allocated(self % adjsourceY)) deallocate(self % adjSourceY)
+      if(allocated(self % adjsourceZ)) deallocate(self % adjSourceZ)
   
 
       if(allocated(self % fluxMap)) then
