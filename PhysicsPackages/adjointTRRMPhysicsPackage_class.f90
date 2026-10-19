@@ -90,6 +90,20 @@ module adjointTRRMPhysicsPackage_class !currently backward
   !!     #fluxMap {<map>}#     // Optionally output one-group fluxes according to a given map
   !!     #plot 1;#             // Optionally make VTK viewable plot of fluxes and uncertainties
   !!     #rho 0;#              // Optional stabilisation for negative in-group scattering XSs
+  !!     #innerProduct scalar;# // Sensitivity inner product, 'scalar' (default) or 'angular':
+  !!                            //  'scalar'  - isotropic gain terms (fission production, in-scatter and
+  !!                            //              the <psi+, F psi> denominator) from cell scalar-flux
+  !!                            //              products; removal terms from the diagonal angular product
+  !!                            //              psi+_g * psi_g, track-length weighted (nG per cell).
+  !!                            //              Outputs the full sensitivity profile (every material;
+  !!                            //              capture and fission per group; scatter per group pair).
+  !!                            //  'angular' - legacy nG x nG angular inner product, one perturbation.
+  !!     #sensBatches 20;#      // Batches of active cycles for profile uncertainties ('scalar' only)
+  !!     #Perturbation {material 5; XStype 2; XSchange 0.01; energyGroups (6);}#
+  !!                            // XStype 1 capture, 2 fission, 3 scatter (groups as from-to pairs).
+  !!                            // Required for 'angular'. Optional for 'scalar': the requested entries
+  !!                            // are summed (first order) and printed as 'sensitivity'/'delta_keff',
+  !!                            // with absolute standard errors of the mean.
   !!
   !!     geometry {<Geometry Definition>}
   !!     nuclearData {<Nuclear data definition>}
@@ -179,6 +193,15 @@ module adjointTRRMPhysicsPackage_class !currently backward
     integer(shortInt)  :: matPert     = 0
     real(defReal)      :: XSchange    = ZERO
 
+    ! Sensitivity inner product method
+    logical(defBool)   :: legacyIP    = .false. ! .true. -> legacy nG x nG angular inner product
+    logical(defBool)   :: hasPert     = .false. ! Was a Perturbation dictionary given?
+    integer(shortInt)  :: nPM         = 0       ! Profile entries per material: 2*nG + nG*nG
+    integer(shortInt)  :: nBatches    = 20      ! Batches of active cycles for uncertainties
+    integer(shortInt)  :: batchLen    = 0
+    integer(shortInt)  :: batchIt     = 0
+    integer(shortInt)  :: batchCount  = 0
+
     character(pathLen) :: outputFile
     character(nameLen) :: outputFormat
     logical(defBool)   :: plotResults = .false.
@@ -219,6 +242,12 @@ module adjointTRRMPhysicsPackage_class !currently backward
     real(defFlt), dimension(:), allocatable    :: adjScalarFlux
     real(defFlt), dimension(:), allocatable    :: adjPrevFlux
     real(defReal), dimension(:), allocatable   :: angularIP
+    real(defReal), dimension(:), allocatable   :: diagIP       ! Cycle sum(length*(psi+ psi - q+ q)), nCells*nG
+    real(defReal), dimension(:), allocatable   :: diagIPScore  ! Active sum of removal inner products
+    real(defReal), dimension(:), allocatable   :: adjFluxScore ! Active sum of adjoint scalar flux
+    real(defReal), dimension(:), allocatable   :: profBatch    ! Sum of cycle profiles in current batch
+    real(defReal), dimension(:,:), allocatable :: profScore    ! Batch means: (:,1) sum, (:,2) sum sq -> SEM
+    real(defReal), dimension(:), allocatable   :: profMean     ! Final sensitivity profile
     real(defReal), dimension(:,:), allocatable :: fluxScores
     real(defFlt), dimension(:), allocatable    :: source
     real(defFlt), dimension(:), allocatable    :: adjSource
@@ -260,6 +289,9 @@ module adjointTRRMPhysicsPackage_class !currently backward
     procedure, private :: normaliseInnerProduct
     procedure, private :: resetFluxes
     procedure, private :: sensitivityCalculation
+    procedure, private :: accumulateSensitivity
+    procedure, private :: sensitivityProfile
+    procedure, private :: finaliseSensitivity
     procedure, private :: accumulateFluxAndKeffScores
     procedure, private :: finaliseFluxAndKeffScores
     procedure, private :: printResults
@@ -284,7 +316,7 @@ contains
     character(:),allocatable                      :: string
     class(dictionary),pointer                     :: tempDict, graphDict
     class(mgNeutronDatabase),pointer              :: db
-    character(nameLen)                            :: geomName, graphType, nucData
+    character(nameLen)                            :: geomName, graphType, nucData, ipMethod
     class(geometry), pointer                      :: geom
     type(outputFile)                              :: test_out
     class(baseMgNeutronMaterial), pointer         :: mat
@@ -348,8 +380,26 @@ contains
       self % mapFission = .false.
     end if
 
-    tempDict => dict % getDictPtr("Perturbation")
-    call self % initPerturbation(tempDict)
+    ! Sensitivity inner product method
+    call dict % getOrDefault(ipMethod, 'innerProduct', 'scalar')
+    select case(ipMethod)
+      case('scalar')
+        self % legacyIP = .false.
+      case('angular')
+        self % legacyIP = .true.
+      case default
+        call fatalError(Here, "Unrecognised innerProduct: "//trim(ipMethod)//". Use 'scalar' or 'angular'.")
+    end select
+    call dict % getOrDefault(self % nBatches, 'sensBatches', 20)
+
+    ! Perturbation is required by the legacy method and optional otherwise
+    self % hasPert = dict % isPresent('Perturbation')
+    if (self % hasPert) then
+      tempDict => dict % getDictPtr("Perturbation")
+      call self % initPerturbation(tempDict)
+    else if (self % legacyIP) then
+      call fatalError(Here, "innerProduct 'angular' requires a Perturbation dictionary.")
+    end if
     
     ! Check whether there is a map for outputting one-group fluxes
     ! If so, read and initialise the map to be used
@@ -466,7 +516,13 @@ contains
     allocate(self % adjPrevFlux(self % nCells * self % nG))
     allocate(self % adjSource(self % nCells * self % nG))
 
-    allocate(self % angularIP(self % nCells * self % nG * self % nG))
+    if (self % legacyIP) then
+      allocate(self % angularIP(self % nCells * self % nG * self % nG))
+    else
+      allocate(self % diagIP(self % nCells * self % nG))
+      allocate(self % diagIPScore(self % nCells * self % nG))
+      allocate(self % adjFluxScore(self % nCells * self % nG))
+    end if
     
     ! Set active length traveled per iteration
     self % lengthPerIt = (self % termination - self % dead) * self % pop 
@@ -522,6 +578,27 @@ contains
         end do
       end do
     end do
+
+    ! Sensitivity profile storage and checks on the requested perturbation ('scalar' only)
+    if (.not. self % legacyIP) then
+      if (self % active < 1) call fatalError(Here, 'At least one active cycle is needed for sensitivities.')
+      self % nPM = 2 * self % nG + self % nG * self % nG
+      allocate(self % profBatch(self % nMat * self % nPM + 1))
+      allocate(self % profScore(self % nMat * self % nPM + 1, 2))
+      allocate(self % profMean(self % nMat * self % nPM + 1))
+      self % nBatches = max(1, min(self % nBatches, self % active))
+      self % batchLen = self % active / self % nBatches
+
+      if (self % hasPert) then
+        if (self % matPert < 1 .or. self % matPert > self % nMat) &
+          call fatalError(Here, 'Perturbation material index out of range: '//numToChar(self % matPert))
+        if (self % XStype < 1 .or. self % XStype > 3) &
+          call fatalError(Here, 'Perturbation XStype must be 1 (capture), 2 (fission) or 3 (scatter).')
+        if (size(self % energyId) < 1) call fatalError(Here, 'Perturbation energyGroups is empty.')
+        if (any(self % energyId < 1) .or. any(self % energyId > self % nG)) &
+          call fatalError(Here, 'Perturbation energyGroups must lie in 1 to '//numToChar(self % nG))
+      end if
+    end if
 
   end subroutine init
 
@@ -601,7 +678,19 @@ contains
     self % adjScalarFlux = 0.0_defFlt
     self % adjPrevFlux   = 1.0_defFlt
     self % adjSource     = 0.0_defFlt
-    self % angularIP     = 0.0_defReal
+    if (allocated(self % angularIP)) self % angularIP = 0.0_defReal
+    if (.not. self % legacyIP) then
+      self % diagIP       = ZERO
+      self % diagIPScore  = ZERO
+      self % adjFluxScore = ZERO
+      self % profBatch    = ZERO
+      self % profScore    = ZERO
+      self % profMean     = ZERO
+      self % batchIt      = 0
+      self % batchCount   = 0
+    end if
+    self % sensitivity = ZERO
+    self % deltaKeff   = ZERO
 
     self % keffScore        = ZERO
     self % adjKeffScore     = ZERO
@@ -684,21 +773,25 @@ contains
       call self % calculateKeff()
        
       if (isActive) then
-        call self % normaliseInnerProduct()
-        ! Accumulate flux scores
-        numTotal = ZERO
-        denTotal = ZERO 
+        if (self % legacyIP) then
+          call self % normaliseInnerProduct()
+          ! Accumulate flux scores
+          numTotal = ZERO
+          denTotal = ZERO 
 
-        !$omp parallel do schedule(static) reduction(+: numTotal, denTotal)
-        do i = 1, self % nCells
-          call self % sensitivityCalculation(i, ONE_KEFF, it, numSum, denSum)
-          numTotal = numTotal + numSum
-          denTotal = denTotal + denSum
-        end do
-        !$omp end parallel do
+          !$omp parallel do schedule(static) reduction(+: numTotal, denTotal)
+          do i = 1, self % nCells
+            call self % sensitivityCalculation(i, ONE_KEFF, it, numSum, denSum)
+            numTotal = numTotal + numSum
+            denTotal = denTotal + denSum
+          end do
+          !$omp end parallel do
 
-        self % deltaKeff  = self % keff * self % keff * (numTotal / denTotal) 
-        self % sensitivity = (self % deltaKeff / ( self % keff * self % XSchange ) ) 
+          self % deltaKeff  = self % keff * self % keff * (numTotal / denTotal) 
+          self % sensitivity = (self % deltaKeff / ( self % keff * self % XSchange ) ) 
+        else
+          call self % accumulateSensitivity(itAct)
+        end if
         call self % accumulateFluxAndKeffScores()
       end if
 
@@ -749,6 +842,7 @@ contains
 
     ! Finalise flux scores
     call self % finaliseFluxAndKeffScores(itAct)
+    if (.not. self % legacyIP) call self % finaliseSensitivity(itAct)
 
   end subroutine cycles
 
@@ -816,14 +910,14 @@ contains
     real(defFlt)                                          :: lenFlt
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, avgFluxVec, tau
     real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, scalarVecFW, sourceVecFW, deltaFW
-    real(defReal), pointer, dimension(:)                  :: angularProd
+    real(defReal), pointer, dimension(:)                  :: angularProd, diagVec
     real(defReal), dimension(3)                           :: r0, mu0
     real(defFlt), dimension(self % NSegMax*2)             :: lenBack
-    real(shortInt), dimension(self % NSegMax*2)           :: cIdxBack
+    integer(shortInt), dimension(self % NSegMax*2)        :: cIdxBack
     logical(defBool), dimension(self % NSegMax*2)         :: vacBack
     real(defFlt), target, dimension(self % nG * self % NSegMax*2) :: deltaRecord
     real(defReal), allocatable, dimension(:)              :: lenBackOversized, lenBackBuffer
-    real(shortInt), allocatable, dimension(:)             :: cIdxBackOversized, cIdxBackBuffer
+    integer(shortInt), allocatable, dimension(:)          :: cIdxBackOversized, cIdxBackBuffer
     logical(defBool), allocatable, dimension(:)           :: vacBackOversized, vacBackBuffer 
     real(defFlt), target, allocatable, dimension(:)       :: deltaRecordOversized
     real(defFlt), allocatable, dimension(:)               :: deltaRecordBuffer
@@ -838,6 +932,7 @@ contains
     ints = 0
     matIdx0 = 0
     segCount = 0
+    vacBack(1) = .false.
     totalLength = ZERO
     activeRay = .false.
     tally = .true.
@@ -1067,7 +1162,6 @@ contains
         call OMP_set_lock(self % locks(cIdx))
 
         scalarVec => self % adjScalarFlux((baseIdx + 1):(baseIdx + self % nG))
-        angularProd => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG )
         scalarVecFW => self % scalarFlux((baseIdx + 1):(baseIdx + self % nG))
 
         !$omp simd aligned(scalarVec, scalarVecFW)
@@ -1076,14 +1170,30 @@ contains
             scalarVecFW(g) = scalarVecFW(g) + deltaFW(g) * tau(g)
         end do
         if (isActive) then
-          do g = 1, self % nG
-            associate(angProd => angularProd(self % nG * (g - 1) + 1 : self % nG * g))
-              !$omp simd 
-              do gIn = 1, self % nG
-                angProd(gIn) = angProd(gIn) + avgFluxVec(g) * (deltaFW(gIn) + sourceVecFW(gIn))
-              end do
-            end associate
-          end do
+          if (self % legacyIP) then
+            ! Legacy: full nG x nG angular inner product, no length weighting
+            angularProd => self % angularIP((baseIdx * self % nG + 1):(baseIdx + self % nG) * self % nG )
+            do g = 1, self % nG
+              associate(angProd => angularProd(self % nG * (g - 1) + 1 : self % nG * g))
+                !$omp simd 
+                do gIn = 1, self % nG
+                  angProd(gIn) = angProd(gIn) + avgFluxVec(g) * (deltaFW(gIn) + sourceVecFW(gIn))
+                end do
+              end associate
+            end do
+          else
+            ! Diagonal angular product only, track-length weighted. With psi = q + delta on each
+            ! segment, accumulate length * (psi+ psi - q+ q); the flat-source part q+ q is added
+            ! per cell with its expected track length in accumulateSensitivity.
+            diagVec => self % diagIP((baseIdx + 1):(baseIdx + self % nG))
+            !$omp simd
+            do g = 1, self % nG
+              diagVec(g) = diagVec(g) + length * &
+                  (real(delta(g), defReal) * real(deltaFW(g), defReal) &
+                 + real(sourceVec(g), defReal) * real(deltaFW(g), defReal) &
+                 + real(delta(g), defReal) * real(sourceVecFW(g), defReal))
+            end do
+          end if
         end if
         self % volumeTracks(cIdx) = self % volumeTracks(cIdx) + length
         if (segCount > self % NSegMax) then
@@ -1401,7 +1511,7 @@ contains
     do g = 1, self % nG
       idx = baseIdx + g
       fission = 0.0_defFlt
-      !$omp simd
+      !$omp simd reduction(+:fission)
       do gIn = 1, self % nG 
         fission = fission + IPVec((g - 1) * self % nG + gIn) * nuFission(gIn)
       end do
@@ -1442,6 +1552,201 @@ contains
 
 
   end subroutine sensitivityCalculation
+
+  !!
+  !! Accumulate 'scalar' inner-product sensitivity scores for one active cycle
+  !!
+  !! Adds this cycle's adjoint flux and removal inner product to the run totals, which give the
+  !! final point estimate, and adds this cycle's full profile to the current batch, which is used
+  !! only for the uncertainty. The forward flux total is already kept in fluxScores.
+  !!
+  subroutine accumulateSensitivity(self, itAct)
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
+    integer(shortInt), intent(in)                   :: itAct
+    real(defReal), dimension(:), allocatable        :: prof
+    real(defReal)                                   :: norm, vol
+    integer(shortInt)                               :: idx, cIdx, g
+
+    norm = ONE / self % lengthPerIt
+
+    ! Removal inner product per cell: sum(length * (psi+ psi - q+ q)) / lengthPerIt + V * q+ q.
+    ! Using the expected track length V * lengthPerIt for the flat-source part, instead of this
+    ! cycle's sampled track length, removes volume-sampling noise without changing the mean
+    ! (the same reasoning as the simulation-averaged volume estimator). Converted in place: diagIP
+    ! is reset every cycle.
+    !$omp parallel do schedule(static) private(vol, idx, g)
+    do cIdx = 1, self % nCells
+      vol = self % volume(cIdx)
+      do g = 1, self % nG
+        idx = (cIdx - 1) * self % nG + g
+        self % diagIP(idx) = self % diagIP(idx) * norm + &
+                             vol * real(self % adjSource(idx), defReal) * real(self % source(idx), defReal)
+        self % diagIPScore(idx)  = self % diagIPScore(idx) + self % diagIP(idx)
+        self % adjFluxScore(idx) = self % adjFluxScore(idx) + real(self % adjScalarFlux(idx), defReal)
+      end do
+    end do
+    !$omp end parallel do
+
+    ! This cycle's profile from this cycle's fluxes
+    allocate(prof(size(self % profMean)))
+    call self % sensitivityProfile(prof, self % scalarFlux, self % adjScalarFlux, self % diagIP, &
+                                   real(self % keff, defReal))
+    self % profBatch = self % profBatch + prof
+    self % batchIt   = self % batchIt + 1
+
+    ! Close the batch; the last batch absorbs any remainder of active / nBatches
+    if ((self % batchIt == self % batchLen .and. self % batchCount < self % nBatches - 1) &
+        .or. itAct == self % active) then
+      prof = self % profBatch / self % batchIt
+      self % profScore(:,1) = self % profScore(:,1) + prof
+      self % profScore(:,2) = self % profScore(:,2) + prof * prof
+      self % batchCount = self % batchCount + 1
+      self % profBatch  = ZERO
+      self % batchIt    = 0
+    end if
+
+  end subroutine accumulateSensitivity
+
+  !!
+  !! Sensitivity profile S = (alpha/k) dk/dalpha for every material and reaction
+  !!
+  !! Gain terms (fission production, in-scatter and the <psi+, F psi> denominator) involve isotropic
+  !! emission, so their inner products reduce exactly to scalar-flux products V * phi+_g' * phi_g.
+  !! Only removal needs the angular product, and only its diagonal:
+  !! removal(cIdx, g) ~ V * <psi+_g psi_g>, see accumulateSensitivity.
+  !! Same first-order formulae as sensitivityCalculation, e.g. dk = k^2 num / den.
+  !!
+  !! Layout of prof, per material m at offset (m - 1) * nPM:
+  !!   capture(g) at g, fission(g) at nG + g, scatter g1 -> g2 at 2*nG + nG*(g2 - 1) + g1.
+  !!   prof(nMat*nPM + 1) is the sum of the entries requested in the Perturbation dictionary (or 0).
+  !!
+  subroutine sensitivityProfile(self, prof, phi, adjPhi, removal, k)
+    class(adjointTRRMPhysicsPackage), intent(in) :: self
+    real(defReal), dimension(:), intent(out)     :: prof
+    real(defFlt), dimension(:), intent(in)       :: phi, adjPhi
+    real(defReal), dimension(:), intent(in)      :: removal
+    real(defReal), intent(in)                    :: k
+    real(defReal), dimension(:), allocatable     :: remM, prodM, scatM
+    real(defReal)                                :: vol, chiAdj, den, sigS
+    integer(shortInt)                            :: cIdx, m, g, g1, g2, baseIdx, mIdx, sIdx, off, i, nG
+
+    nG = self % nG
+    allocate(remM(self % nMat * nG), prodM(self % nMat * nG), scatM(self % nMat * nG * nG))
+    remM  = ZERO
+    prodM = ZERO
+    scatM = ZERO
+
+    ! Reduce cell contributions to per-material sums
+    !$omp parallel do schedule(static) private(m, vol, chiAdj, g, g1, g2, baseIdx, mIdx, sIdx) reduction(+: remM, prodM, scatM)
+    do cIdx = 1, self % nCells
+      m = self % geom % geom % graph % getMatFromUID(cIdx)
+      if (m < 1 .or. m > self % nMat) cycle
+      vol = self % volume(cIdx)
+      if (vol <= volume_tolerance) cycle
+      baseIdx = (cIdx - 1) * nG
+      mIdx    = (m - 1) * nG
+
+      ! Fission-spectrum weighted adjoint flux, chi . phi+
+      chiAdj = ZERO
+      do g = 1, nG
+        chiAdj = chiAdj + self % chi(mIdx + g) * real(adjPhi(baseIdx + g), defReal)
+      end do
+
+      do g = 1, nG
+        remM(mIdx + g)  = remM(mIdx + g)  + removal(baseIdx + g)
+        prodM(mIdx + g) = prodM(mIdx + g) + vol * chiAdj * real(phi(baseIdx + g), defReal)
+      end do
+
+      ! In-scatter g1 -> g2, only where the scattering matrix is non-zero
+      do g2 = 1, nG
+        do g1 = 1, nG
+          sIdx = nG * nG * (m - 1) + nG * (g2 - 1) + g1
+          if (self % sigmaS(sIdx) == 0.0_defFlt) cycle
+          scatM(sIdx) = scatM(sIdx) + vol * real(adjPhi(baseIdx + g2), defReal) * real(phi(baseIdx + g1), defReal)
+        end do
+      end do
+    end do
+    !$omp end parallel do
+
+    ! Denominator <psi+, F psi> = sum over materials and groups of nuSigmaF_g * (chi . phi+) * phi_g
+    den = ZERO
+    do i = 1, self % nMat * nG
+      den = den + self % nuSigmaF(i) * prodM(i)
+    end do
+
+    prof = ZERO
+    if (den <= ZERO) return
+
+    do m = 1, self % nMat
+      mIdx = (m - 1) * nG
+      off  = (m - 1) * self % nPM
+      do g = 1, nG
+        ! Capture: removal only
+        prof(off + g) = -k * self % sigmaC(mIdx + g) * remM(mIdx + g) / den
+        ! Fission: isotropic production minus removal
+        prof(off + nG + g) = (self % nuSigmaF(mIdx + g) * prodM(mIdx + g) &
+                              - k * self % fission(mIdx + g) * remM(mIdx + g)) / den
+      end do
+      ! Scatter g1 -> g2: in-scatter into g2 minus removal from g1
+      do g2 = 1, nG
+        do g1 = 1, nG
+          sIdx = nG * nG * (m - 1) + nG * (g2 - 1) + g1
+          sigS = real(self % sigmaS(sIdx), defReal)
+          prof(off + 2 * nG + nG * (g2 - 1) + g1) = k * sigS * (scatM(sIdx) - remM(mIdx + g1)) / den
+        end do
+      end do
+    end do
+
+    ! Entries requested in the Perturbation dictionary, summed to first order
+    if (self % hasPert) then
+      off = (self % matPert - 1) * self % nPM
+      select case(self % XStype)
+        case(1)
+          do i = 1, size(self % energyId)
+            prof(size(prof)) = prof(size(prof)) + prof(off + self % energyId(i))
+          end do
+        case(2)
+          do i = 1, size(self % energyId)
+            prof(size(prof)) = prof(size(prof)) + prof(off + nG + self % energyId(i))
+          end do
+        case(3)
+          do i = 1, size(self % energyId) - 1, 2
+            prof(size(prof)) = prof(size(prof)) + &
+                    prof(off + 2 * nG + nG * (self % energyId(i + 1) - 1) + self % energyId(i))
+          end do
+      end select
+    end if
+
+  end subroutine sensitivityProfile
+
+  !!
+  !! Final 'scalar' sensitivity profile from run-averaged fluxes and removal products, with the
+  !! standard error of the mean estimated from the spread of the batch means.
+  !! Must follow finaliseFluxAndKeffScores, which turns fluxScores and keffScore into means.
+  !!
+  subroutine finaliseSensitivity(self, itAct)
+    class(adjointTRRMPhysicsPackage), intent(inout) :: self
+    integer(shortInt), intent(in)                   :: itAct
+    real(defReal)                                   :: N1, B
+    integer(shortInt)                               :: j
+
+    N1 = ONE / itAct
+    call self % sensitivityProfile(self % profMean, real(self % fluxScores(:,1), defFlt), &
+                                   real(self % adjFluxScore * N1, defFlt), self % diagIPScore * N1, &
+                                   self % keffScore(1))
+
+    B = real(self % batchCount, defReal)
+    do j = 1, size(self % profMean)
+      if (self % batchCount > 1) then
+        self % profScore(j,2) = (self % profScore(j,2) - self % profScore(j,1)**2 / B) / (B * (B - ONE))
+        self % profScore(j,2) = sqrt(max(self % profScore(j,2), ZERO))
+      else
+        self % profScore(j,2) = ZERO
+      end if
+      self % profScore(j,1) = self % profScore(j,1) / max(B, ONE)
+    end do
+
+  end subroutine finaliseSensitivity
 
   !!
   !! Calculate keff
@@ -1524,11 +1829,21 @@ contains
     end do
     !$omp end parallel do
 
-    !$omp parallel do schedule(static)
-    do g = 1, size(self % angularIP)
-      self % angularIP(g) = 0.0_defFlt
-    end do
-    !$omp end parallel do
+    if (allocated(self % angularIP)) then
+      !$omp parallel do schedule(static)
+      do g = 1, size(self % angularIP)
+        self % angularIP(g) = 0.0_defFlt
+      end do
+      !$omp end parallel do
+    end if
+
+    if (allocated(self % diagIP)) then
+      !$omp parallel do schedule(static)
+      do g = 1, size(self % diagIP)
+        self % diagIP(g) = ZERO
+      end do
+      !$omp end parallel do
+    end if
 
 
   end subroutine resetFluxes
@@ -1635,6 +1950,8 @@ contains
     type(particleState), save                     :: s
     integer(shortInt),dimension(:),allocatable    :: resArrayShape
     real(defReal), dimension(:), allocatable      :: groupFlux, fiss, fissSTD
+    integer(shortInt)                             :: m, off, j, nProf
+    real(defReal)                                 :: dk, dkSTD
     class(baseMgNeutronMaterial), pointer, save   :: mat
     class(materialHandle), pointer, save          :: matPtr
     !$omp threadprivate(idx, matIdx, i, mat, matPtr, vol, s, SigmaF, g)
@@ -1678,23 +1995,97 @@ contains
     call out % printResult(real(self % adjkeffScore(1),defReal), real(self % adjkeffScore(2),defReal), name)
     call out % endBlock()
 
-    name = 'delta_keff'
-    call out % startBlock(name)
-    call out % printResult(real(self % deltaKeffScore(1),defReal), &
-          real(self % deltaKeffScore(2),defReal), name)
-    call out % endBlock()
+    name = 'innerProduct'
+    if (self % legacyIP) then
+      call out % printValue('angular', name)
+    else
+      call out % printValue('scalar', name)
+    end if
 
-    name = 'pert_keff'
-    call out % startBlock(name)
-    call out % printResult(real(self % keffScore(1) + self % deltaKeffScore(1),defReal), &
-          real(self % keffScore(1) - self % deltaKeffScore(1),defReal), name)
-    call out % endBlock()
+    if (self % legacyIP) then
+      name = 'delta_keff'
+      call out % startBlock(name)
+      call out % printResult(real(self % deltaKeffScore(1),defReal), &
+            real(self % deltaKeffScore(2),defReal), name)
+      call out % endBlock()
 
-    name = 'sensitivity'
-    call out % startBlock(name)
-    call out % printResult(real(self % sensitivityScore(1),defReal), real(self % sensitivityScore(2)&
-                                        /self % sensitivityScore(1),defReal), name)
-    call out % endBlock()
+      name = 'pert_keff'
+      call out % startBlock(name)
+      call out % printResult(real(self % keffScore(1) + self % deltaKeffScore(1),defReal), &
+            real(self % keffScore(1) - self % deltaKeffScore(1),defReal), name)
+      call out % endBlock()
+
+      name = 'sensitivity'
+      call out % startBlock(name)
+      call out % printResult(real(self % sensitivityScore(1),defReal), real(self % sensitivityScore(2)&
+                                          /self % sensitivityScore(1),defReal), name)
+      call out % endBlock()
+
+    else
+      ! Requested perturbation; uncertainties are absolute standard errors of the mean
+      if (self % hasPert) then
+        nProf = size(self % profMean)
+        dk    = self % profMean(nProf) * self % keffScore(1) * self % XSchange
+        dkSTD = self % profScore(nProf,2) * self % keffScore(1) * abs(self % XSchange)
+
+        name = 'delta_keff'
+        call out % startBlock(name)
+        call out % printResult(dk, dkSTD, name)
+        call out % endBlock()
+
+        name = 'pert_keff'
+        call out % startBlock(name)
+        call out % printResult(self % keffScore(1) + dk, self % keffScore(1) - dk, name)
+        call out % endBlock()
+
+        name = 'sensitivity'
+        call out % startBlock(name)
+        call out % printResult(self % profMean(nProf), self % profScore(nProf,2), name)
+        call out % endBlock()
+      end if
+
+      name = 'sensitivity_batches'
+      call out % printValue(self % batchCount, name)
+
+      ! Full profile: per material, capture(g), fission(g) and scatter(g_from, g_to)
+      name = 'sensitivity_profile'
+      call out % startBlock(name)
+      do m = 1, self % nMat
+        off  = (m - 1) * self % nPM
+        name = mm_matName(m)
+        call out % startBlock(name)
+
+        resArrayShape = [self % nG]
+        name = 'capture'
+        call out % startArray(name, resArrayShape)
+        do j = 1, self % nG
+          call out % addResult(self % profMean(off + j), self % profScore(off + j, 2))
+        end do
+        call out % endArray()
+
+        name = 'fission'
+        call out % startArray(name, resArrayShape)
+        do j = 1, self % nG
+          call out % addResult(self % profMean(off + self % nG + j), self % profScore(off + self % nG + j, 2))
+        end do
+        call out % endArray()
+
+        ! Written with g_to fastest, so JSON reads scatter[g_from][g_to] (as in the XS file P0 matrix)
+        resArrayShape = [self % nG, self % nG]
+        name = 'scatter'
+        call out % startArray(name, resArrayShape)
+        do g1 = 1, self % nG
+          do j = 1, self % nG
+            call out % addResult(self % profMean(off + 2 * self % nG + self % nG * (j - 1) + g1), &
+                                 self % profScore(off + 2 * self % nG + self % nG * (j - 1) + g1, 2))
+          end do
+        end do
+        call out % endArray()
+
+        call out % endBlock()
+      end do
+      call out % endBlock()
+    end if
 
     ! Print cell volumes
     if (self % printVolume) then
@@ -1907,6 +2298,11 @@ contains
     print *, "Number of cells in the geometry: "// numToChar(self % nCells)
     print *, "Number of energy groups: "// numToChar(self % nG)
     if (self % cache) print *, "Accelerated with distance caching"
+    if (self % legacyIP) then
+      print *, "Sensitivity inner product: angular (legacy nG x nG)"
+    else
+      print *, "Sensitivity inner product: scalar ("//numToChar(self % nBatches)//" batches)"
+    end if
     print *, repeat("<>", MAX_COL/2)
 
   end subroutine printSettings
@@ -1993,6 +2389,19 @@ contains
     if(allocated(self % adjPrevFlux)) deallocate(self % adjPrevFlux)
     if(allocated(self % adjSource)) deallocate(self % adjSource)
     if (allocated(self % angularIP)) deallocate(self % angularIP)
+    if (allocated(self % diagIP)) deallocate(self % diagIP)
+    if (allocated(self % diagIPScore)) deallocate(self % diagIPScore)
+    if (allocated(self % adjFluxScore)) deallocate(self % adjFluxScore)
+    if (allocated(self % profBatch)) deallocate(self % profBatch)
+    if (allocated(self % profScore)) deallocate(self % profScore)
+    if (allocated(self % profMean)) deallocate(self % profMean)
+    self % legacyIP   = .false.
+    self % hasPert    = .false.
+    self % nPM        = 0
+    self % nBatches   = 20
+    self % batchLen   = 0
+    self % batchIt    = 0
+    self % batchCount = 0
 
     if(allocated(self % volume)) deallocate(self % volume)
     if(allocated(self % volumeTracks)) deallocate(self % volumeTracks)
@@ -2002,7 +2411,7 @@ contains
       deallocate(self % resultsMap)
     end if
     if(allocated(self % fluxMap)) then
-      call self % resultsMap % kill()
+      call self % fluxMap % kill()
       deallocate(self % fluxMap)
     end if
 
