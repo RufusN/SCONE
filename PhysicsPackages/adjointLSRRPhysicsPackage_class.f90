@@ -110,6 +110,14 @@ module adjointLSRRPhysicsPackage_class
   !!                            //              capture and fission per group; scatter per group pair).
   !!                            //  'angular' - legacy nG x nG angular inner product, one perturbation.
   !!     #sensBatches 20;#      // Batches of active cycles for profile uncertainties ('scalar' only)
+  !!     #slopeProduct split;#  // Within-cell slope products in the gain terms ('scalar' only):
+  !!                            //  'split' (default) - forward slopes from one half of the active
+  !!                            //              cycles times adjoint slopes from the other half, and
+  !!                            //              vice versa. Forward and adjoint slopes tallied on the
+  !!                            //              same rays have correlated errors, so multiplying averages
+  !!                            //              over the same cycles biases the product upwards.
+  !!                            //              The same-cycle profile is also printed for comparison.
+  !!                            //  'same'    - run averages over the same cycles (tag sens-eigen-v1).
   !!     #Perturbation {material 5; XStype 2; XSchange 0.01; energyGroups (6);}#
   !!                            // XStype 1 capture, 2 fission, 3 scatter (groups as from-to pairs).
   !!                            // Required for 'angular'. Optional for 'scalar': the requested entries
@@ -239,6 +247,7 @@ module adjointLSRRPhysicsPackage_class
     logical(defBool)   :: hasPert     = .false. ! Was a Perturbation dictionary given?
     integer(shortInt)  :: nPM         = 0       ! Profile entries per material: 2*nG + nG*nG
     integer(shortInt)  :: nBatches    = 20      ! Batches of active cycles for uncertainties
+    logical(defBool)   :: splitSlope  = .true.  ! Slope products from different halves of the active cycles
     integer(shortInt)  :: batchLen    = 0
     integer(shortInt)  :: batchIt     = 0
     integer(shortInt)  :: batchCount  = 0
@@ -291,6 +300,9 @@ module adjointLSRRPhysicsPackage_class
     real(defReal), dimension(:), allocatable   :: adjFluxScore ! Active sum of adjoint scalar flux
     real(defReal), dimension(:,:), allocatable :: momScore     ! Active sums of forward flux moments x, y, z
     real(defReal), dimension(:,:), allocatable :: adjMomScore  ! Active sums of adjoint flux moments x, y, z
+    real(defReal), dimension(:,:), allocatable :: momHalf      ! As momScore, first half of the active cycles
+    real(defReal), dimension(:,:), allocatable :: adjMomHalf   ! As adjMomScore, first half of the active cycles
+    real(defReal), dimension(:), allocatable   :: profSame     ! Final profile with same-cycle slope products
     real(defReal), dimension(:), allocatable   :: profBatch    ! Sum of cycle profiles in current batch
     real(defReal), dimension(:,:), allocatable :: profScore    ! Batch means: (:,1) sum, (:,2) sum sq -> SEM
     real(defReal), dimension(:), allocatable   :: profMean     ! Final sensitivity profile
@@ -368,7 +380,7 @@ contains
     character(:),allocatable                      :: string
     class(dictionary),pointer                     :: tempDict, graphDict
     class(mgNeutronDatabase),pointer              :: db
-    character(nameLen)                            :: geomName, graphType, nucData, ipMethod
+    character(nameLen)                            :: geomName, graphType, nucData, ipMethod, slopeMethod
     class(geometry), pointer                      :: geom
     type(outputFile)                              :: test_out
     class(baseMgNeutronMaterial), pointer         :: mat
@@ -443,6 +455,15 @@ contains
         call fatalError(Here, "Unrecognised innerProduct: "//trim(ipMethod)//". Use 'scalar' or 'angular'.")
     end select
     call dict % getOrDefault(self % nBatches, 'sensBatches', 20)
+    call dict % getOrDefault(slopeMethod, 'slopeProduct', 'split')
+    select case(slopeMethod)
+      case('split')
+        self % splitSlope = .true.
+      case('same')
+        self % splitSlope = .false.
+      case default
+        call fatalError(Here, "Unrecognised slopeProduct: "//trim(slopeMethod)//". Use 'split' or 'same'.")
+    end select
 
     ! Perturbation is required by the legacy method and optional otherwise
     self % hasPert = dict % isPresent('Perturbation')
@@ -598,6 +619,10 @@ contains
       allocate(self % adjFluxScore(self % nCells * self % nG))
       allocate(self % momScore(self % nCells * self % nG, 3))
       allocate(self % adjMomScore(self % nCells * self % nG, 3))
+      if (self % splitSlope) then
+        allocate(self % momHalf(self % nCells * self % nG, 3))
+        allocate(self % adjMomHalf(self % nCells * self % nG, 3))
+      end if
     end if
     
     ! Set active length traveled per iteration
@@ -662,6 +687,7 @@ contains
       allocate(self % profBatch(self % nMat * self % nPM + 1))
       allocate(self % profScore(self % nMat * self % nPM + 1, 2))
       allocate(self % profMean(self % nMat * self % nPM + 1))
+      if (self % splitSlope) allocate(self % profSame(self % nMat * self % nPM + 1))
       self % nBatches = max(1, min(self % nBatches, self % active))
       self % batchLen = self % active / self % nBatches
 
@@ -775,6 +801,8 @@ contains
       self % adjFluxScore = ZERO
       self % momScore     = ZERO
       self % adjMomScore  = ZERO
+      if (allocated(self % momHalf))    self % momHalf    = ZERO
+      if (allocated(self % adjMomHalf)) self % adjMomHalf = ZERO
       self % profBatch    = ZERO
       self % profScore    = ZERO
       self % profMean     = ZERO
@@ -2190,6 +2218,14 @@ contains
         self % adjMomScore(idx,1) = self % adjMomScore(idx,1) + real(self % adjScalarX(idx), defReal)
         self % adjMomScore(idx,2) = self % adjMomScore(idx,2) + real(self % adjScalarY(idx), defReal)
         self % adjMomScore(idx,3) = self % adjMomScore(idx,3) + real(self % adjScalarZ(idx), defReal)
+        if (self % splitSlope .and. itAct <= self % active / 2) then
+          self % momHalf(idx,1)    = self % momHalf(idx,1) + real(self % scalarX(idx), defReal)
+          self % momHalf(idx,2)    = self % momHalf(idx,2) + real(self % scalarY(idx), defReal)
+          self % momHalf(idx,3)    = self % momHalf(idx,3) + real(self % scalarZ(idx), defReal)
+          self % adjMomHalf(idx,1) = self % adjMomHalf(idx,1) + real(self % adjScalarX(idx), defReal)
+          self % adjMomHalf(idx,2) = self % adjMomHalf(idx,2) + real(self % adjScalarY(idx), defReal)
+          self % adjMomHalf(idx,3) = self % adjMomHalf(idx,3) + real(self % adjScalarZ(idx), defReal)
+        end if
       end do
     end do
     !$omp end parallel do
@@ -2231,19 +2267,30 @@ contains
   !!   capture(g) at g, fission(g) at nG + g, scatter g1 -> g2 at 2*nG + nG*(g2 - 1) + g1.
   !!   prof(nMat*nPM + 1) is the sum of the entries requested in the Perturbation dictionary (or 0).
   !!
-  subroutine sensitivityProfile(self, prof, phi, adjPhi, mx, my, mz, amx, amy, amz, removal, k)
+  !! If the optional moments mxB ... amzB are given, mx ... amz and mxB ... amzB are averages over two
+  !! separate sets of cycles, A and B, and each slope product is the cross average
+  !!   (grad+_B^T M grad_A + grad+_A^T M grad_B) / 2,
+  !! which has no bias from errors shared by forward and adjoint slopes tallied in the same cycles.
+  !! Without them, A is used on both sides, i.e. grad+_A^T M grad_A.
+  !!
+  subroutine sensitivityProfile(self, prof, phi, adjPhi, mx, my, mz, amx, amy, amz, removal, k, &
+                                mxB, myB, mzB, amxB, amyB, amzB)
     class(adjointLSRRPhysicsPackage), intent(in) :: self
     real(defReal), dimension(:), intent(out)     :: prof
     real(defFlt), dimension(:), intent(in)       :: phi, adjPhi, mx, my, mz, amx, amy, amz
     real(defReal), dimension(:), intent(in)      :: removal
     real(defReal), intent(in)                    :: k
+    real(defFlt), dimension(:), intent(in), optional :: mxB, myB, mzB, amxB, amyB, amzB
     real(defReal), dimension(:), allocatable     :: remM, prodM, scatM
-    real(defReal), dimension(self % nG)          :: gx, gy, ax, ay
-    real(defReal)                                :: vol, chiAdj, cgx, cgy, den, sigS, det, &
+    real(defReal), dimension(self % nG)          :: gx, gy, ax, ay, gxB, gyB, axB, ayB
+    real(defReal)                                :: vol, chiAdj, cgx, cgy, cgxB, cgyB, den, sigS, det, &
                                                     Mxx, Mxy, Mxz, Myy, Myz, Mzz, iMxx, iMxy, iMxz, iMyy, iMyz
     integer(shortInt)                            :: cIdx, m, g, g1, g2, baseIdx, mIdx, sIdx, off, i, nG, mo
+    logical(defBool)                             :: split
 
     nG = self % nG
+    split = present(mxB) .and. present(myB) .and. present(mzB) .and. &
+            present(amxB) .and. present(amyB) .and. present(amzB)
     allocate(remM(self % nMat * nG), prodM(self % nMat * nG), scatM(self % nMat * nG * nG))
     remM  = ZERO
     prodM = ZERO
@@ -2251,8 +2298,8 @@ contains
 
     ! Reduce cell contributions to per-material sums
     !$omp parallel do schedule(static) reduction(+: remM, prodM, scatM) &
-    !$omp& private(m, vol, chiAdj, cgx, cgy, g, g1, g2, baseIdx, mIdx, sIdx, mo, det, gx, gy, ax, ay, &
-    !$omp& Mxx, Mxy, Mxz, Myy, Myz, Mzz, iMxx, iMxy, iMxz, iMyy, iMyz)
+    !$omp& private(m, vol, chiAdj, cgx, cgy, cgxB, cgyB, g, g1, g2, baseIdx, mIdx, sIdx, mo, det, &
+    !$omp& gx, gy, ax, ay, gxB, gyB, axB, ayB, Mxx, Mxy, Mxz, Myy, Myz, Mzz, iMxx, iMxy, iMxz, iMyy, iMyz)
     do cIdx = 1, self % nCells
       m = self % geom % geom % graph % getMatFromUID(cIdx)
       if (m < 1 .or. m > self % nMat) cycle
@@ -2286,22 +2333,39 @@ contains
 
       ! Flux gradients from the moments, and the fission-spectrum weighted adjoint and its gradient
       chiAdj = ZERO
-      cgx = ZERO
-      cgy = ZERO
+      cgx  = ZERO
+      cgy  = ZERO
+      cgxB = ZERO
+      cgyB = ZERO
       do g = 1, nG
         gx(g) = iMxx * mx(baseIdx + g) + iMxy * my(baseIdx + g) + iMxz * mz(baseIdx + g)
         gy(g) = iMxy * mx(baseIdx + g) + iMyy * my(baseIdx + g) + iMyz * mz(baseIdx + g)
         ax(g) = iMxx * amx(baseIdx + g) + iMxy * amy(baseIdx + g) + iMxz * amz(baseIdx + g)
         ay(g) = iMxy * amx(baseIdx + g) + iMyy * amy(baseIdx + g) + iMyz * amz(baseIdx + g)
+        if (split) then
+          gxB(g) = iMxx * mxB(baseIdx + g) + iMxy * myB(baseIdx + g) + iMxz * mzB(baseIdx + g)
+          gyB(g) = iMxy * mxB(baseIdx + g) + iMyy * myB(baseIdx + g) + iMyz * mzB(baseIdx + g)
+          axB(g) = iMxx * amxB(baseIdx + g) + iMxy * amyB(baseIdx + g) + iMxz * amzB(baseIdx + g)
+          ayB(g) = iMxy * amxB(baseIdx + g) + iMyy * amyB(baseIdx + g) + iMyz * amzB(baseIdx + g)
+        else
+          gxB(g) = gx(g)
+          gyB(g) = gy(g)
+          axB(g) = ax(g)
+          ayB(g) = ay(g)
+        end if
         chiAdj = chiAdj + self % chi(mIdx + g) * real(adjPhi(baseIdx + g), defReal)
-        cgx = cgx + self % chi(mIdx + g) * ax(g)
-        cgy = cgy + self % chi(mIdx + g) * ay(g)
+        cgx  = cgx  + self % chi(mIdx + g) * ax(g)
+        cgy  = cgy  + self % chi(mIdx + g) * ay(g)
+        cgxB = cgxB + self % chi(mIdx + g) * axB(g)
+        cgyB = cgyB + self % chi(mIdx + g) * ayB(g)
       end do
 
+      ! Slope products as cross averages of A and B (identical to A x A when B = A)
       do g = 1, nG
         remM(mIdx + g)  = remM(mIdx + g)  + removal(baseIdx + g)
-        prodM(mIdx + g) = prodM(mIdx + g) + vol * (chiAdj * real(phi(baseIdx + g), defReal) &
-                          + cgx * gx(g) * Mxx + (cgx * gy(g) + cgy * gx(g)) * Mxy + cgy * gy(g) * Myy)
+        prodM(mIdx + g) = prodM(mIdx + g) + vol * (chiAdj * real(phi(baseIdx + g), defReal) + HALF * ( &
+                            cgxB * gx(g) * Mxx + (cgxB * gy(g) + cgyB * gx(g)) * Mxy + cgyB * gy(g) * Myy &
+                          + cgx * gxB(g) * Mxx + (cgx * gyB(g) + cgy * gxB(g)) * Mxy + cgy * gyB(g) * Myy))
       end do
 
       ! In-scatter g1 -> g2, only where the scattering matrix is non-zero
@@ -2310,7 +2374,9 @@ contains
           sIdx = nG * nG * (m - 1) + nG * (g2 - 1) + g1
           if (self % sigmaS(sIdx) == 0.0_defFlt) cycle
           scatM(sIdx) = scatM(sIdx) + vol * (real(adjPhi(baseIdx + g2), defReal) * real(phi(baseIdx + g1), defReal) &
-                        + ax(g2) * gx(g1) * Mxx + (ax(g2) * gy(g1) + ay(g2) * gx(g1)) * Mxy + ay(g2) * gy(g1) * Myy)
+                        + HALF * ( &
+                            axB(g2) * gx(g1) * Mxx + (axB(g2) * gy(g1) + ayB(g2) * gx(g1)) * Mxy + ayB(g2) * gy(g1) * Myy &
+                          + ax(g2) * gxB(g1) * Mxx + (ax(g2) * gyB(g1) + ay(g2) * gxB(g1)) * Mxy + ay(g2) * gyB(g1) * Myy))
         end do
       end do
     end do
@@ -2375,15 +2441,44 @@ contains
   subroutine finaliseSensitivity(self, itAct)
     class(adjointLSRRPhysicsPackage), intent(inout) :: self
     integer(shortInt), intent(in)                   :: itAct
-    real(defReal)                                   :: N1, B
-    integer(shortInt)                               :: j
+    real(defReal)                                   :: N1, B, invA, invB
+    integer(shortInt)                               :: j, nHalf
 
     N1 = ONE / itAct
-    call self % sensitivityProfile(self % profMean, real(self % fluxScores(:,1), defFlt), &
-             real(self % adjFluxScore * N1, defFlt), real(self % momScore(:,1) * N1, defFlt), &
-             real(self % momScore(:,2) * N1, defFlt), real(self % momScore(:,3) * N1, defFlt), &
-             real(self % adjMomScore(:,1) * N1, defFlt), real(self % adjMomScore(:,2) * N1, defFlt), &
-             real(self % adjMomScore(:,3) * N1, defFlt), self % diagIPScore * N1, self % keffScore(1))
+    nHalf = min(itAct, self % active / 2)
+
+    ! With split slope products, profMean pairs moments averaged over the first (A) and second (B)
+    ! halves of the active cycles; profSame keeps the same-cycle products for comparison
+    if (self % splitSlope .and. nHalf > 0 .and. itAct - nHalf > 0) then
+      invA = ONE / nHalf
+      invB = ONE / (itAct - nHalf)
+      call self % sensitivityProfile(self % profSame, real(self % fluxScores(:,1), defFlt), &
+               real(self % adjFluxScore * N1, defFlt), real(self % momScore(:,1) * N1, defFlt), &
+               real(self % momScore(:,2) * N1, defFlt), real(self % momScore(:,3) * N1, defFlt), &
+               real(self % adjMomScore(:,1) * N1, defFlt), real(self % adjMomScore(:,2) * N1, defFlt), &
+               real(self % adjMomScore(:,3) * N1, defFlt), self % diagIPScore * N1, self % keffScore(1))
+      call self % sensitivityProfile(self % profMean, real(self % fluxScores(:,1), defFlt), &
+               real(self % adjFluxScore * N1, defFlt), real(self % momHalf(:,1) * invA, defFlt), &
+               real(self % momHalf(:,2) * invA, defFlt), real(self % momHalf(:,3) * invA, defFlt), &
+               real(self % adjMomHalf(:,1) * invA, defFlt), real(self % adjMomHalf(:,2) * invA, defFlt), &
+               real(self % adjMomHalf(:,3) * invA, defFlt), self % diagIPScore * N1, self % keffScore(1), &
+               mxB  = real((self % momScore(:,1) - self % momHalf(:,1)) * invB, defFlt), &
+               myB  = real((self % momScore(:,2) - self % momHalf(:,2)) * invB, defFlt), &
+               mzB  = real((self % momScore(:,3) - self % momHalf(:,3)) * invB, defFlt), &
+               amxB = real((self % adjMomScore(:,1) - self % adjMomHalf(:,1)) * invB, defFlt), &
+               amyB = real((self % adjMomScore(:,2) - self % adjMomHalf(:,2)) * invB, defFlt), &
+               amzB = real((self % adjMomScore(:,3) - self % adjMomHalf(:,3)) * invB, defFlt))
+    else
+      if (self % splitSlope) then
+        print *, 'slopeProduct split needs at least 2 active cycles; using same-cycle slope products'
+        self % splitSlope = .false.
+      end if
+      call self % sensitivityProfile(self % profMean, real(self % fluxScores(:,1), defFlt), &
+               real(self % adjFluxScore * N1, defFlt), real(self % momScore(:,1) * N1, defFlt), &
+               real(self % momScore(:,2) * N1, defFlt), real(self % momScore(:,3) * N1, defFlt), &
+               real(self % adjMomScore(:,1) * N1, defFlt), real(self % adjMomScore(:,2) * N1, defFlt), &
+               real(self % adjMomScore(:,3) * N1, defFlt), self % diagIPScore * N1, self % keffScore(1))
+    end if
 
     B = real(self % batchCount, defReal)
     do j = 1, size(self % profMean)
@@ -2610,8 +2705,9 @@ contains
     type(particleState), save                     :: s
     integer(shortInt),dimension(:),allocatable    :: resArrayShape
     real(defReal), dimension(:), allocatable      :: groupFlux, fiss, fissSTD
-    integer(shortInt)                             :: m, off, j, nProf
+    integer(shortInt)                             :: m, off, j, nProf, iP
     real(defReal)                                 :: dk, dkSTD
+    real(defReal), dimension(:), allocatable      :: pv
     class(baseMgNeutronMaterial), pointer, save   :: mat
     class(materialHandle), pointer, save          :: matPtr
     !$omp threadprivate(idx, matIdx, i, mat, matPtr, vol, s, SigmaF, g)
@@ -2661,6 +2757,14 @@ contains
     else
       call out % printValue('scalar', name)
     end if
+    if (.not. self % legacyIP) then
+      name = 'slopeProduct'
+      if (self % splitSlope) then
+        call out % printValue('split', name)
+      else
+        call out % printValue('same', name)
+      end if
+    end if
 
     if (self % legacyIP) then
       name = 'delta_keff'
@@ -2707,8 +2811,16 @@ contains
       name = 'sensitivity_batches'
       call out % printValue(self % batchCount, name)
 
-      ! Full profile: per material, capture(g), fission(g) and scatter(g_from, g_to)
-      name = 'sensitivity_profile'
+      ! Full profile: per material, capture(g), fission(g) and scatter(g_from, g_to). With split slope
+      ! products the same-cycle profile follows as 'sensitivity_profile_same' (same uncertainties).
+      do iP = 1, merge(2, 1, self % splitSlope)
+      if (iP == 1) then
+        pv = self % profMean
+        name = 'sensitivity_profile'
+      else
+        pv = self % profSame
+        name = 'sensitivity_profile_same'
+      end if
       call out % startBlock(name)
       do m = 1, self % nMat
         off  = (m - 1) * self % nPM
@@ -2719,14 +2831,14 @@ contains
         name = 'capture'
         call out % startArray(name, resArrayShape)
         do j = 1, self % nG
-          call out % addResult(self % profMean(off + j), self % profScore(off + j, 2))
+          call out % addResult(pv(off + j), self % profScore(off + j, 2))
         end do
         call out % endArray()
 
         name = 'fission'
         call out % startArray(name, resArrayShape)
         do j = 1, self % nG
-          call out % addResult(self % profMean(off + self % nG + j), self % profScore(off + self % nG + j, 2))
+          call out % addResult(pv(off + self % nG + j), self % profScore(off + self % nG + j, 2))
         end do
         call out % endArray()
 
@@ -2736,7 +2848,7 @@ contains
         call out % startArray(name, resArrayShape)
         do g1 = 1, self % nG
           do j = 1, self % nG
-            call out % addResult(self % profMean(off + 2 * self % nG + self % nG * (j - 1) + g1), &
+            call out % addResult(pv(off + 2 * self % nG + self % nG * (j - 1) + g1), &
                                  self % profScore(off + 2 * self % nG + self % nG * (j - 1) + g1, 2))
           end do
         end do
@@ -2745,6 +2857,7 @@ contains
         call out % endBlock()
       end do
       call out % endBlock()
+      end do
     end if
 
     ! Print cell volumes
@@ -3070,6 +3183,9 @@ contains
     if(allocated(self % adjFluxScore)) deallocate(self % adjFluxScore)
     if(allocated(self % momScore)) deallocate(self % momScore)
     if(allocated(self % adjMomScore)) deallocate(self % adjMomScore)
+    if(allocated(self % momHalf)) deallocate(self % momHalf)
+    if(allocated(self % adjMomHalf)) deallocate(self % adjMomHalf)
+    if(allocated(self % profSame)) deallocate(self % profSame)
     if(allocated(self % profBatch)) deallocate(self % profBatch)
     if(allocated(self % profScore)) deallocate(self % profScore)
     if(allocated(self % profMean)) deallocate(self % profMean)
@@ -3088,6 +3204,7 @@ contains
     self % hasPert    = .false.
     self % nPM        = 0
     self % nBatches   = 20
+    self % splitSlope = .true.
     self % batchLen   = 0
     self % batchIt    = 0
     self % batchCount = 0
