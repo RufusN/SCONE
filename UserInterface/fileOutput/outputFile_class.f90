@@ -12,7 +12,7 @@ module outputFile_class
   implicit none
   private
 
-  character(*),parameter :: DEF_REAL_FORMAT = '(ES12.5)'
+  character(*),parameter :: DEF_REAL_FORMAT = '(ES16.9)'
   character(*),parameter :: DEF_INT_FORMAT  = '(I12)'
 
   integer(shortInt), parameter :: NOT_ARRAY      = 0, &
