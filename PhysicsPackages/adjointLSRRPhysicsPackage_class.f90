@@ -111,12 +111,16 @@ module adjointLSRRPhysicsPackage_class
   !!                            //  'angular' - legacy nG x nG angular inner product, one perturbation.
   !!     #sensBatches 20;#      // Batches of active cycles for profile uncertainties ('scalar' only)
   !!     #slopeProduct split;#  // Within-cell slope products in the gain terms ('scalar' only):
-  !!                            //  'split' (default) - forward slopes from one half of the active
-  !!                            //              cycles times adjoint slopes from the other half, and
-  !!                            //              vice versa. Forward and adjoint slopes tallied on the
-  !!                            //              same rays have correlated errors, so multiplying averages
-  !!                            //              over the same cycles biases the product upwards.
-  !!                            //              The same-cycle profile is also printed for comparison.
+  !!                            //  'split' (default) - forward slopes averaged over one set of active
+  !!                            //              cycles times adjoint slopes from another, and vice versa.
+  !!                            //              Forward and adjoint slopes tallied on the same rays have
+  !!                            //              correlated errors, so multiplying averages over the same
+  !!                            //              cycles biases the product upwards. The sets are alternate
+  !!                            //              batches, so slow drift of the slope estimates (the
+  !!                            //              centroids and moment matrices are running averages) affects
+  !!                            //              both sets equally. The same-cycle profile is also printed.
+  !!                            //  'halves'  - as 'split' with the first and second halves of the cycles
+  !!                            //              as the two sets (biased low when the slopes drift).
   !!                            //  'same'    - run averages over the same cycles (tag sens-eigen-v1).
   !!     #Perturbation {material 5; XStype 2; XSchange 0.01; energyGroups (6);}#
   !!                            // XStype 1 capture, 2 fission, 3 scatter (groups as from-to pairs).
@@ -247,7 +251,9 @@ module adjointLSRRPhysicsPackage_class
     logical(defBool)   :: hasPert     = .false. ! Was a Perturbation dictionary given?
     integer(shortInt)  :: nPM         = 0       ! Profile entries per material: 2*nG + nG*nG
     integer(shortInt)  :: nBatches    = 20      ! Batches of active cycles for uncertainties
-    logical(defBool)   :: splitSlope  = .true.  ! Slope products from different halves of the active cycles
+    logical(defBool)   :: splitSlope  = .true.  ! Slope products from two separate sets of active cycles
+    logical(defBool)   :: splitHalves = .false. ! Sets are the two halves of the cycles, not alternate batches
+    integer(shortInt)  :: nAIt        = 0       ! Active cycles in set A
     integer(shortInt)  :: batchLen    = 0
     integer(shortInt)  :: batchIt     = 0
     integer(shortInt)  :: batchCount  = 0
@@ -458,11 +464,15 @@ contains
     call dict % getOrDefault(slopeMethod, 'slopeProduct', 'split')
     select case(slopeMethod)
       case('split')
-        self % splitSlope = .true.
+        self % splitSlope  = .true.
+        self % splitHalves = .false.
+      case('halves')
+        self % splitSlope  = .true.
+        self % splitHalves = .true.
       case('same')
-        self % splitSlope = .false.
+        self % splitSlope  = .false.
       case default
-        call fatalError(Here, "Unrecognised slopeProduct: "//trim(slopeMethod)//". Use 'split' or 'same'.")
+        call fatalError(Here, "Unrecognised slopeProduct: "//trim(slopeMethod)//". Use 'split', 'halves' or 'same'.")
     end select
 
     ! Perturbation is required by the legacy method and optional otherwise
@@ -803,6 +813,7 @@ contains
       self % adjMomScore  = ZERO
       if (allocated(self % momHalf))    self % momHalf    = ZERO
       if (allocated(self % adjMomHalf)) self % adjMomHalf = ZERO
+      self % nAIt = 0
       self % profBatch    = ZERO
       self % profScore    = ZERO
       self % profMean     = ZERO
@@ -2197,8 +2208,20 @@ contains
     real(defReal), dimension(:), allocatable        :: prof
     real(defReal)                                   :: norm, vol
     integer(shortInt)                               :: idx, cIdx, g
+    logical(defBool)                                :: inA
 
     norm = ONE / self % lengthPerIt
+
+    ! Set A of the split slope products: alternate batches ('split') or the first half ('halves')
+    inA = .false.
+    if (self % splitSlope) then
+      if (self % splitHalves) then
+        inA = itAct <= self % active / 2
+      else
+        inA = mod(self % batchCount, 2) == 0
+      end if
+    end if
+    if (inA) self % nAIt = self % nAIt + 1
 
     ! Removal inner product per cell: sum(length * (psi+ psi - q+ q)) / lengthPerIt + V * q+ q, with
     ! q+ q the cell-average flat-source product. Using the expected track length V * lengthPerIt for
@@ -2218,7 +2241,7 @@ contains
         self % adjMomScore(idx,1) = self % adjMomScore(idx,1) + real(self % adjScalarX(idx), defReal)
         self % adjMomScore(idx,2) = self % adjMomScore(idx,2) + real(self % adjScalarY(idx), defReal)
         self % adjMomScore(idx,3) = self % adjMomScore(idx,3) + real(self % adjScalarZ(idx), defReal)
-        if (self % splitSlope .and. itAct <= self % active / 2) then
+        if (inA) then
           self % momHalf(idx,1)    = self % momHalf(idx,1) + real(self % scalarX(idx), defReal)
           self % momHalf(idx,2)    = self % momHalf(idx,2) + real(self % scalarY(idx), defReal)
           self % momHalf(idx,3)    = self % momHalf(idx,3) + real(self % scalarZ(idx), defReal)
@@ -2445,10 +2468,10 @@ contains
     integer(shortInt)                               :: j, nHalf
 
     N1 = ONE / itAct
-    nHalf = min(itAct, self % active / 2)
+    nHalf = self % nAIt
 
-    ! With split slope products, profMean pairs moments averaged over the first (A) and second (B)
-    ! halves of the active cycles; profSame keeps the same-cycle products for comparison
+    ! With split slope products, profMean pairs moments averaged over set A with those over set B (the
+    ! other active cycles); profSame keeps the same-cycle products for comparison
     if (self % splitSlope .and. nHalf > 0 .and. itAct - nHalf > 0) then
       invA = ONE / nHalf
       invB = ONE / (itAct - nHalf)
@@ -2470,7 +2493,7 @@ contains
                amzB = real((self % adjMomScore(:,3) - self % adjMomHalf(:,3)) * invB, defFlt))
     else
       if (self % splitSlope) then
-        print *, 'slopeProduct split needs at least 2 active cycles; using same-cycle slope products'
+        print *, 'slopeProduct split needs two sets of active cycles; using same-cycle slope products'
         self % splitSlope = .false.
       end if
       call self % sensitivityProfile(self % profMean, real(self % fluxScores(:,1), defFlt), &
@@ -2759,7 +2782,9 @@ contains
     end if
     if (.not. self % legacyIP) then
       name = 'slopeProduct'
-      if (self % splitSlope) then
+      if (self % splitSlope .and. self % splitHalves) then
+        call out % printValue('halves', name)
+      else if (self % splitSlope) then
         call out % printValue('split', name)
       else
         call out % printValue('same', name)
@@ -3205,6 +3230,8 @@ contains
     self % nPM        = 0
     self % nBatches   = 20
     self % splitSlope = .true.
+    self % splitHalves = .false.
+    self % nAIt = 0
     self % batchLen   = 0
     self % batchIt    = 0
     self % batchCount = 0
