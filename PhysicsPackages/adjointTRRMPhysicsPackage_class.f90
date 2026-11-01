@@ -98,6 +98,11 @@ module adjointTRRMPhysicsPackage_class !currently backward
   !!                            //              Outputs the full sensitivity profile (every material;
   !!                            //              capture and fission per group; scatter per group pair).
   !!                            //  'angular' - legacy nG x nG angular inner product, one perturbation.
+  !!     #removalProduct exact;# // Removal inner product along each ray segment ('scalar' only):
+  !!                                 //  'exact' (default) - exact integral of psi+ psi along the segment, from
+  !!                                 //              the known exponential (and, for LS, linear) variation of both.
+  !!                                 //  'average' - product of the segment means; only accurate on fine meshes
+  !!                                 //              (segments much shorter than a mean free path).
   !!     #sensBatches 20;#      // Batches of active cycles for profile uncertainties ('scalar' only)
   !!     #Perturbation {material 5; XStype 2; XSchange 0.01; energyGroups (6);}#
   !!                            // XStype 1 capture, 2 fission, 3 scatter (groups as from-to pairs).
@@ -198,6 +203,7 @@ module adjointTRRMPhysicsPackage_class !currently backward
     logical(defBool)   :: hasPert     = .false. ! Was a Perturbation dictionary given?
     integer(shortInt)  :: nPM         = 0       ! Profile entries per material: 2*nG + nG*nG
     integer(shortInt)  :: nBatches    = 20      ! Batches of active cycles for uncertainties
+    logical(defBool)   :: exactRemoval = .true.  ! Integrate psi+ psi exactly along each segment
     integer(shortInt)  :: batchLen    = 0
     integer(shortInt)  :: batchIt     = 0
     integer(shortInt)  :: batchCount  = 0
@@ -316,7 +322,7 @@ contains
     character(:),allocatable                      :: string
     class(dictionary),pointer                     :: tempDict, graphDict
     class(mgNeutronDatabase),pointer              :: db
-    character(nameLen)                            :: geomName, graphType, nucData, ipMethod
+    character(nameLen)                            :: geomName, graphType, nucData, ipMethod, remMethod
     class(geometry), pointer                      :: geom
     type(outputFile)                              :: test_out
     class(baseMgNeutronMaterial), pointer         :: mat
@@ -391,6 +397,15 @@ contains
         call fatalError(Here, "Unrecognised innerProduct: "//trim(ipMethod)//". Use 'scalar' or 'angular'.")
     end select
     call dict % getOrDefault(self % nBatches, 'sensBatches', 20)
+    call dict % getOrDefault(remMethod, 'removalProduct', 'exact')
+    select case(remMethod)
+      case('average')
+        self % exactRemoval = .false.
+      case('exact')
+        self % exactRemoval = .true.
+      case default
+        call fatalError(Here, "Unrecognised removalProduct: "//trim(remMethod)//". Use 'average' or 'exact'.")
+    end select
 
     ! Perturbation is required by the legacy method and optional otherwise
     self % hasPert = dict % isPresent('Perturbation')
@@ -911,6 +926,7 @@ contains
     real(defFlt), dimension(self % nG)                    :: attenuate, delta, fluxVec, avgFluxVec, tau
     real(defFlt), pointer, dimension(:)                   :: scalarVec, sourceVec, totVec, scalarVecFW, sourceVecFW, deltaFW
     real(defReal), pointer, dimension(:)                  :: angularProd, diagVec
+    real(defReal)                                         :: segF, F1d
     real(defReal), dimension(3)                           :: r0, mu0
     real(defFlt), dimension(self % NSegMax*2)             :: lenBack
     integer(shortInt), dimension(self % NSegMax*2)        :: cIdxBack
@@ -1185,11 +1201,19 @@ contains
             ! Diagonal angular product only, track-length weighted. With psi = q + delta on each
             ! segment, accumulate length * (psi+ psi - q+ q); the flat-source part q+ q is added
             ! per cell with its expected track length in accumulateSensitivity.
+            ! With removalProduct 'exact', the delta+ delta term is integrated exactly along the segment:
+            ! psi = q + b exp(-Sigma s) and psi+ = q+ + d exp(-Sigma (l - s)) give l b d exp(-tau), i.e.
+            ! l delta+ delta F(tau) with F = tau^2 exp(-tau) / (1 - exp(-tau))^2 = (1 - tau F1) / F1^2.
+            ! The q+ delta and delta+ q terms are exact already; 'average' uses F = 1.
             diagVec => self % diagIP((baseIdx + 1):(baseIdx + self % nG))
-            !$omp simd
             do g = 1, self % nG
+              segF = ONE
+              if (self % exactRemoval) then
+                F1d = real(attenuate(g), defReal)
+                if (F1d > ZERO) segF = max(ZERO, ONE - real(tau(g), defReal) * F1d) / (F1d * F1d)
+              end if
               diagVec(g) = diagVec(g) + length * &
-                  (real(delta(g), defReal) * real(deltaFW(g), defReal) &
+                  (real(delta(g), defReal) * real(deltaFW(g), defReal) * segF &
                  + real(sourceVec(g), defReal) * real(deltaFW(g), defReal) &
                  + real(delta(g), defReal) * real(sourceVecFW(g), defReal))
             end do
@@ -1759,7 +1783,9 @@ contains
     integer(shortInt)                             :: cIdx
     class(baseMgNeutronMaterial), pointer, save   :: mat
     class(materialHandle), pointer, save          :: matPtr
-    !$omp threadprivate(mat, matPtr, fissLocal, prevFissLocal, matIdx, g, idx, mIdx, vol)
+    ! adjfissLocal and adjprevFissLocal were missing here: as saved variables they were shared between
+    ! threads inside the parallel loop below
+    !$omp threadprivate(mat, matPtr, fissLocal, prevFissLocal, matIdx, g, idx, mIdx, vol, adjfissLocal, adjprevFissLocal)
 
     fissionRate        = 0.0_defFlt
     prevFissionRate    = 0.0_defFlt
@@ -2000,6 +2026,12 @@ contains
       call out % printValue('angular', name)
     else
       call out % printValue('scalar', name)
+      name = 'removalProduct'
+      if (self % exactRemoval) then
+        call out % printValue('exact', name)
+      else
+        call out % printValue('average', name)
+      end if
     end if
 
     if (self % legacyIP) then
@@ -2399,6 +2431,7 @@ contains
     self % hasPert    = .false.
     self % nPM        = 0
     self % nBatches   = 20
+    self % exactRemoval = .true.
     self % batchLen   = 0
     self % batchIt    = 0
     self % batchCount = 0

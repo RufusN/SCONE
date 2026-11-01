@@ -109,6 +109,13 @@ module adjointLSRRPhysicsPackage_class
   !!                            //              Outputs the full sensitivity profile (every material;
   !!                            //              capture and fission per group; scatter per group pair).
   !!                            //  'angular' - legacy nG x nG angular inner product, one perturbation.
+  !!     #removalProduct exact;# // Removal inner product along each ray segment ('scalar' only):
+  !!                                 //  'exact' (default) - exact integral of psi+ psi along the segment, from
+  !!                                 //              the known exponential (and, for LS, linear) variation of both.
+  !!                                 //  'full'    - LS only: also the slope terms of the exact integral (same-ray
+  !!                                 //              slope products: biased at low ray counts; for study).
+  !!                                 //  'average' - product of the segment means; only accurate on fine meshes
+  !!                                 //              (segments much shorter than a mean free path).
   !!     #sensBatches 20;#      // Batches of active cycles for profile uncertainties ('scalar' only)
   !!     #slopeProduct split;#  // Within-cell slope products in the gain terms ('scalar' only):
   !!                            //  'split' (default) - forward slopes averaged over one set of active
@@ -254,6 +261,8 @@ module adjointLSRRPhysicsPackage_class
     logical(defBool)   :: splitSlope  = .true.  ! Slope products from two separate sets of active cycles
     logical(defBool)   :: splitHalves = .false. ! Sets are the two halves of the cycles, not alternate batches
     integer(shortInt)  :: nAIt        = 0       ! Active cycles in set A
+    logical(defBool)   :: exactRemoval = .true.  ! Relaxation correction to the removal product along each segment
+    logical(defBool)   :: fullRemoval = .false. ! Also include the LS slope terms (same-ray product: biased)
     integer(shortInt)  :: batchLen    = 0
     integer(shortInt)  :: batchIt     = 0
     integer(shortInt)  :: batchCount  = 0
@@ -386,7 +395,7 @@ contains
     character(:),allocatable                      :: string
     class(dictionary),pointer                     :: tempDict, graphDict
     class(mgNeutronDatabase),pointer              :: db
-    character(nameLen)                            :: geomName, graphType, nucData, ipMethod, slopeMethod
+    character(nameLen)                            :: geomName, graphType, nucData, ipMethod, slopeMethod, remMethod
     class(geometry), pointer                      :: geom
     type(outputFile)                              :: test_out
     class(baseMgNeutronMaterial), pointer         :: mat
@@ -461,6 +470,18 @@ contains
         call fatalError(Here, "Unrecognised innerProduct: "//trim(ipMethod)//". Use 'scalar' or 'angular'.")
     end select
     call dict % getOrDefault(self % nBatches, 'sensBatches', 20)
+    call dict % getOrDefault(remMethod, 'removalProduct', 'exact')
+    select case(remMethod)
+      case('average')
+        self % exactRemoval = .false.
+      case('exact')
+        self % exactRemoval = .true.
+      case('full')
+        self % exactRemoval = .true.
+        self % fullRemoval  = .true.
+      case default
+        call fatalError(Here, "Unrecognised removalProduct: "//trim(remMethod)//". Use 'average', 'exact' or 'full'.")
+    end select
     call dict % getOrDefault(slopeMethod, 'slopeProduct', 'split')
     select case(slopeMethod)
       case('split')
@@ -1093,6 +1114,12 @@ contains
     real(defFlt), target, allocatable, dimension(:)       :: avgRecordOversized
     real(defFlt), allocatable, dimension(:)               :: avgRecordBuffer
     real(defFlt), target, dimension(self % nG * self % NSegMax*2) :: avgRecord
+    real(defFlt), target, allocatable, dimension(:)       :: gradRecordOversized
+    real(defFlt), allocatable, dimension(:)               :: gradRecordBuffer
+    real(defFlt), target, dimension(self % nG * self % NSegMax*2) :: gradRecord
+    real(defFlt), pointer, dimension(:)                   :: gradFW
+    real(defReal), dimension(self % nG)                   :: dIvec
+    real(defReal)                                         :: cP, cQ, cS, R0F, R0A
 
     
     
@@ -1344,6 +1371,9 @@ contains
           allocate(avgRecordOversized(size(avgRecord) * 2))
           avgRecordOversized(1:size(avgRecord)) = avgRecord
 
+          allocate(gradRecordOversized(size(gradRecord) * 2))
+          gradRecordOversized(1:size(gradRecord)) = gradRecord
+
         elseif (oversized) then
 
           if  (segCount >= (size(vacBackOversized) - 1) ) then
@@ -1391,6 +1421,10 @@ contains
             avgRecordBuffer(1:size(avgRecordOversized)) = avgRecordOversized
             call move_alloc(avgRecordBuffer, avgRecordOversized)
 
+            allocate(gradRecordBuffer(size(gradRecordOversized) * 2))
+            gradRecordBuffer(1:size(gradRecordOversized)) = gradRecordOversized
+            call move_alloc(gradRecordBuffer, gradRecordOversized)
+
           end if
 
         end if
@@ -1420,6 +1454,7 @@ contains
               xIncRecordOversized((segCount - 1) * self % nG + g) = xInc(g)
               yIncRecordOversized((segCount - 1) * self % nG + g) = yInc(g)
               zIncRecordOversized((segCount - 1) * self % nG + g) = zInc(g)
+              gradRecordOversized((segCount - 1) * self % nG + g) = gradQ(g)
             end do
           else
             !$omp simd
@@ -1429,6 +1464,7 @@ contains
               xIncRecord((segCount - 1) * self % nG + g) = xInc(g)
               yIncRecord((segCount - 1) * self % nG + g) = yInc(g)
               zIncRecord((segCount - 1) * self % nG + g) = zInc(g)
+              gradRecord((segCount - 1) * self % nG + g) = gradQ(g)
             end do
           end if
 
@@ -1486,6 +1522,7 @@ contains
         xIncFW  => xIncRecordOversized((segIdx + 1) : (segIdx + self % nG))
         yIncFW  => yIncRecordOversized((segIdx + 1) : (segIdx + self % nG))
         zIncFW  => zIncRecordOversized((segIdx + 1) : (segIdx + self % nG))
+        gradFW  => gradRecordOversized((segIdx + 1) : (segIdx + self % nG))
       else
         lenFlt = real(lenBack(i),defFlt)
         length = lenBack(i)
@@ -1500,6 +1537,7 @@ contains
         xIncFW  => xIncRecord((segIdx + 1) : (segIdx + self % nG))
         yIncFW  => yIncRecord((segIdx + 1) : (segIdx + self % nG))
         zIncFW  => zIncRecord((segIdx + 1) : (segIdx + self % nG))
+        gradFW  => gradRecord((segIdx + 1) : (segIdx + self % nG))
       end if
 
       lenFlt2_2 = lenFlt * lenFlt * one_two
@@ -1578,6 +1616,37 @@ contains
           avgFluxVec(g) = (flatQ(g) + delta(g))
         end do
 
+        ! removalProduct 'exact': add int (psi - mean)(psi+ - mean+) ds along the segment, so the removal
+        ! product is the exact integral of psi+ psi rather than the product of the segment means. From each
+        ! ray's inflow minus its source at the segment start (R0) and its source slope along its own direction
+        ! (g): dI = g g+ l^3 P(tau) + l^2 (g R0+ + R0 g+) Q(tau) + R0 R0+ l S(tau). The forward R0 follows
+        ! from its recorded delta, slope and midpoint source, and both use the same tau.
+        dIvec = ZERO
+        if (self % exactRemoval .and. isActive .and. .not. self % legacyIP) then
+          if (self % fullRemoval) then
+            do g = 1, self % nG
+              call lsSegCoeffs(real(tau(g), defReal), cP, cQ, cS)
+              R0F = (real(deltaFW(g), defReal) + HALF * real(gradFW(g), defReal) * real(F2(g), defReal)) &
+                    / real(F1(g), defReal) + HALF * real(gradFW(g), defReal) * length
+              R0A = real(fluxVec0(g), defReal) - real(flatQ(g), defReal) + HALF * real(gradQ(g), defReal) * length
+              dIvec(g) = real(gradFW(g), defReal) * real(gradQ(g), defReal) * length**3 * cP &
+                       + length**2 * (real(gradFW(g), defReal) * R0A + R0F * real(gradQ(g), defReal)) * cQ &
+                       + R0F * R0A * length * cS
+            end do
+          else
+            ! Relaxation part only: l delta+ delta (F(tau) - 1), F = tau^2 exp(-tau)/(1 - exp(-tau))^2, as for flat
+            ! source. The slope terms of the full integral multiply forward and adjoint source slopes estimated
+            ! from the same rays, whose correlated noise biases the product (0.25 % low on the 2-group infinite
+            ! medium at 500 rays, scaling as 1/rays), so they are left out unless 'full' is requested.
+            do g = 1, self % nG
+              if (F1(g) > 0.0_defFlt) then
+                dIvec(g) = length * real(delta(g), defReal) * real(deltaFW(g), defReal) * &
+                           (max(ZERO, ONE - real(tau(g), defReal) * real(F1(g), defReal)) / real(F1(g) * F1(g), defReal) - ONE)
+              end if
+            end do
+          end if
+        end if
+
         lenFlt2_2 = lenFlt * lenFlt * one_two
         
         !$omp simd
@@ -1653,7 +1722,7 @@ contains
             do g = 1, self % nG
               diagVec(g) = diagVec(g) + length * &
                   (real(avgFluxVec(g), defReal) * real(avgFluxVecFW(g), defReal) &
-                 - real(sourceVec(g), defReal) * real(sourceVecFW(g), defReal))
+                 - real(sourceVec(g), defReal) * real(sourceVecFW(g), defReal)) + dIvec(g)
             end do
           end if
         end if
@@ -2527,7 +2596,9 @@ contains
     integer(shortInt)                             :: cIdx
     class(baseMgNeutronMaterial), pointer, save   :: mat
     class(materialHandle), pointer, save          :: matPtr
-    !$omp threadprivate(mat, matPtr, fissLocal, prevFissLocal, matIdx, g, idx, mIdx, vol)
+    ! adjfissLocal and adjprevFissLocal were missing here: as saved variables they were shared between
+    ! threads inside the parallel loop below
+    !$omp threadprivate(mat, matPtr, fissLocal, prevFissLocal, matIdx, g, idx, mIdx, vol, adjfissLocal, adjprevFissLocal)
 
     fissionRate        = 0.0_defFlt
     prevFissionRate    = 0.0_defFlt
@@ -2781,6 +2852,12 @@ contains
       call out % printValue('scalar', name)
     end if
     if (.not. self % legacyIP) then
+      name = 'removalProduct'
+      if (self % exactRemoval) then
+        call out % printValue('exact', name)
+      else
+        call out % printValue('average', name)
+      end if
       name = 'slopeProduct'
       if (self % splitSlope .and. self % splitHalves) then
         call out % printValue('halves', name)
@@ -3232,10 +3309,71 @@ contains
     self % splitSlope = .true.
     self % splitHalves = .false.
     self % nAIt = 0
+    self % exactRemoval = .true.
+    self % fullRemoval  = .false.
     self % batchLen   = 0
     self % batchIt    = 0
     self % batchCount = 0
 
   end subroutine kill
+
+  !!
+  !! Coefficients of the exact segment correction to the LS removal product (removalProduct 'exact'):
+  !!   P = -1/12 + 2 (F1/2 - K)/tau + (exp(-tau) - F1^2)/tau^2,  Q = (F1/2 - K) + (exp(-tau) - F1^2)/tau,
+  !!   S = exp(-tau) - F1^2,  with F1 = (1 - exp(-tau))/tau and K = (1 - exp(-tau)(1 + tau))/tau^2.
+  !! All are O(tau^2); a series is used below tau = 0.1 to avoid cancellation. Checked against 60-digit
+  !! values (worst relative error 7e-11 for tau in [1e-6, 60]).
+  !!
+  pure subroutine lsSegCoeffs(tau, P, Q, S)
+    real(defReal), intent(in)  :: tau
+    real(defReal), intent(out) :: P, Q, S
+    real(defReal), parameter, dimension(10) :: cP = [ &
+        -1.94444444444444448E-02_defReal, 1.11111111111111115E-02_defReal, &
+        -3.91865079365079361E-03_defReal, 1.05820105820105827E-03_defReal, &
+        -2.37544091710758387E-04_defReal, 4.62962962962962940E-05_defReal, &
+        -8.04590214312436578E-06_defReal, 1.26930682486238039E-06_defReal, &
+        -1.84059583861171162E-07_defReal, 2.47584572981398372E-08_defReal]
+    real(defReal), parameter, dimension(10) :: cQ = [ &
+        4.16666666666666644E-02_defReal, -3.19444444444444420E-02_defReal, &
+        1.38888888888888881E-02_defReal, -4.41468253968253961E-03_defReal, &
+        1.13260582010582013E-03_defReal, -2.47189153439153454E-04_defReal, &
+        4.73985890652557304E-05_defReal, -8.15863663085885351E-06_defReal, &
+        1.27974520335631454E-06_defReal, -1.84942831272196353E-07_defReal]
+    real(defReal), parameter, dimension(10) :: cS = [ &
+        -8.33333333333333287E-02_defReal, 8.33333333333333287E-02_defReal, &
+        -4.44444444444444461E-02_defReal, 1.66666666666666664E-02_defReal, &
+        -4.91071428571428562E-03_defReal, 1.20701058201058199E-03_defReal, &
+        -2.56834215167548493E-04_defReal, 4.85008818342151668E-05_defReal, &
+        -8.27137111859334125E-06_defReal, 1.29018358185024849E-06_defReal]
+    real(defReal)                           :: e, f1, k, a, s2, tn
+    integer(shortInt)                       :: n
+
+    if (tau <= ZERO) then
+      P = ZERO
+      Q = ZERO
+      S = ZERO
+    else if (tau < 0.1_defReal) then
+      P = ZERO
+      Q = ZERO
+      S = ZERO
+      tn = tau * tau
+      do n = 1, 10
+        P = P + cP(n) * tn
+        Q = Q + cQ(n) * tn
+        S = S + cS(n) * tn
+        tn = tn * tau
+      end do
+    else
+      e  = exp(-tau)
+      f1 = (ONE - e) / tau
+      k  = (ONE - e - tau * e) / (tau * tau)
+      s2 = e - f1 * f1
+      a  = HALF * f1 - k
+      P  = -ONE / 12.0_defReal + 2.0_defReal * a / tau + s2 / (tau * tau)
+      Q  = a + s2 / tau
+      S  = s2
+    end if
+
+  end subroutine lsSegCoeffs
 
 end module adjointLSRRPhysicsPackage_class
