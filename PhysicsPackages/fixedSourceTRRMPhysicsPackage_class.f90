@@ -1554,9 +1554,10 @@ contains
       ! Fudge if a non-mapped region is found
       ! Fudge if distance is so short that it would risk dubious results
       ! Simply skips transport for the given movement
-      ! if (cIdx > 0 .and. length > self % skipLength) then
-      
-        totalLength = totalLength + length
+      totalLength = totalLength + length
+      ! Tally only inside mapped cells: a ray outside the mapped geometry (cIdx = -1, e.g. after escaping
+      ! through a vacuum face) indexed the cell arrays and the lock out of bounds and hung the sweep.
+      if (cIdx > 0) then
  
         ! Set new cell's position. Use half distance across cell
         ! to try and avoid FP error
@@ -1598,13 +1599,7 @@ contains
       
         end if
 
-      ! elseif((totalLength + length) >= self % termination) then
-      !   totalLength = self % termination
-
-      ! elseif ((totalLength + length) >= self % dead .and. .not. activeRay) then
-      !   totalLength = self % dead
-
-      ! end if
+      end if
 
       ! Check for a vacuum hit
       if (hitVacuum) then
