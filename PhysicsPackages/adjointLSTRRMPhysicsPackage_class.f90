@@ -1843,7 +1843,7 @@ module adjointLSTRRMPhysicsPackage_class
       type(ray), intent(inout)                              :: r
       integer(longInt), intent(out)                         :: ints
       logical(defBool), intent(in)                          :: isActive
-      integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
+      integer(shortInt)                                     :: stuck, moves, matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
                                                                  segCount, i, segCountCrit, segIdx, gIn, pIdx, &
                                                                  centIdx, momIdx
       real(defReal)                                         :: totalLength, length, len2_12
@@ -1907,6 +1907,8 @@ module adjointLSTRRMPhysicsPackage_class
       segCount = 0
       vacBack(1) = .false.
       totalLength = ZERO
+      stuck = 0
+      moves = 0
       activeRay = .false.
       tally = .true.
       oversized = .false.
@@ -1953,6 +1955,28 @@ module adjointLSTRRMPhysicsPackage_class
           call self % geom % moveRay_withCache(r % coords, length, event, cache, hitVacuum)
         else
           call self % geom % moveRay_noCache(r % coords, length, event, hitVacuum)
+        end if
+
+        ! Guard against a ray stuck on a surface: a move shorter than skipLength does not advance
+        ! ints, so the periodic cache reset above never fires. Reset the cache after a few such
+        ! moves and give the ray up if they persist (seen once in 1500 rays x 1500 cycles on the
+        ! fine pin cell: one thread looped here while the others waited at the barrier).
+        moves = moves + 1
+        if (moves > 200000) then
+          print *, 'WARNING: ray terminated after 200000 moves (normal rays need a few thousand)'
+          print *, '  position ', r % rGlobal(), ' direction ', r % dirGlobal()
+          print *, '  last move length ', length, ' totalLength ', totalLength, ' cell ', cIdx, ' mat ', matIdx, ' event ', event
+          exit
+        end if
+        if (length > self % skipLength) then
+          stuck = 0
+        else
+          stuck = stuck + 1
+          if (stuck == 10) cache % lvl = 0
+          if (stuck > 1000) then
+            print *, 'WARNING: ray stuck on a surface after 1000 zero-length moves; ray terminated'
+            exit
+          end if
         end if
 
         if (cIdx > 0 .and. length > self % skipLength) then

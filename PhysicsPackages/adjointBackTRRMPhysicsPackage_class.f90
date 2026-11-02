@@ -1709,7 +1709,7 @@ module adjointBackTRRMPhysicsPackage_class
       type(ray), intent(inout)                              :: r
       integer(longInt), intent(out)                         :: ints
       logical(defBool), intent(in)                          :: isActive
-      integer(shortInt)                                     :: matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
+      integer(shortInt)                                     :: stuck, moves, matIdx, g, cIdx, idx, event, matIdx0, baseIdx, &
                                                                  segCount, i, segCountCrit, segIdx, gIn, pIdx
       real(defReal)                                         :: totalLength, length
       logical(defBool)                                      :: activeRay, hitVacuum, tally,  oversized
@@ -1747,6 +1747,8 @@ module adjointBackTRRMPhysicsPackage_class
       segCount = 0
       vacBack(1) = .false.
       totalLength = ZERO
+      stuck = 0
+      moves = 0
       activeRay = .false.
       tally = .true.
       oversized = .false.
@@ -1796,6 +1798,28 @@ module adjointBackTRRMPhysicsPackage_class
           call self % geom % moveRay_withCache(r % coords, length, event, cache, hitVacuum)
         else
           call self % geom % moveRay_noCache(r % coords, length, event, hitVacuum)
+        end if
+
+        ! Guard against a ray stuck on a surface: a move shorter than skipLength does not advance
+        ! ints, so the periodic cache reset above never fires. Reset the cache after a few such
+        ! moves and give the ray up if they persist (seen once in 1500 rays x 1500 cycles on the
+        ! fine pin cell: one thread looped here while the others waited at the barrier).
+        moves = moves + 1
+        if (moves > 200000) then
+          print *, 'WARNING: ray terminated after 200000 moves (normal rays need a few thousand)'
+          print *, '  position ', r % rGlobal(), ' direction ', r % dirGlobal()
+          print *, '  last move length ', length, ' totalLength ', totalLength, ' cell ', cIdx, ' mat ', matIdx, ' event ', event
+          exit
+        end if
+        if (length > self % skipLength) then
+          stuck = 0
+        else
+          stuck = stuck + 1
+          if (stuck == 10) cache % lvl = 0
+          if (stuck > 1000) then
+            print *, 'WARNING: ray stuck on a surface after 1000 zero-length moves; ray terminated'
+            exit
+          end if
         end if
 
         if (cIdx > 0 .and. length > self % skipLength) then
@@ -1905,6 +1929,11 @@ module adjointBackTRRMPhysicsPackage_class
             if (self % cellHit(cIdx) == 0) self % cellHit(cIdx) = 1
           end if
 
+        elseif (cIdx <= 0 .and. totalLength >= self % termination) then
+          ! Ray outside the mapped geometry (e.g. escaped through a vacuum face) after its termination
+          ! length: totalLength is never advanced for such moves, so without this exit the loop ran
+          ! until the move-count backstop (rays found millions of cm outside the domain).
+          exit
         elseif((totalLength + length) >= self % termination) then
           totalLength = self % termination
   
